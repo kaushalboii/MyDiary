@@ -25,15 +25,27 @@ function loadDefaultBooks() {
   return JSON.parse(fs.readFileSync(DEFAULT_BOOKS_PATH, "utf8"));
 }
 
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 function isLegacyDefaultShelf(books) {
-  return (
-    Array.isArray(books) &&
+  if (!Array.isArray(books)) return false;
+  if (
     books.length === 19 &&
     books[0]?.id === "memories-2022" &&
     books[18]?.id === "milestones-and-ascents"
-  );
+  ) {
+    return true;
+  }
+  if (
+    books.length === 4 &&
+    books[0]?.id === "memories-2022" &&
+    books[1]?.id === "pocket-notes" &&
+    books[2]?.id === "memories-2025" &&
+    books[3]?.id === "current-diary"
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function readDb() {
@@ -395,13 +407,13 @@ app.post("/api/books", requireAuth, async (req, res) => {
       description: "",
       quote: "",
       quoteBy: "",
-      format: "Clothbound Hardcover",
-      cover: "#6f2130",
-      accent: "#d5a756",
-      ink: "#f4ead7",
+      format: "Soft Linen Hardcover",
+      cover: "#7d9489",
+      accent: "#dfd2bd",
+      ink: "#f9f6ef",
       motif: "lattice",
       coverTemplate: "clean-minimal",
-      spineStyle: "banded",
+      spineStyle: "minimal",
       paperStyle: "cream",
       fontStyle: "serif",
       height: 2.12,

@@ -179,7 +179,17 @@ async function deleteFromStore(storeName: "books" | "memories", id: string): Pro
   });
 }
 
-const OFFLINE_BOOK_ORDER_KEY = "mydiary_offline_book_order_v2";
+const OFFLINE_BOOK_ORDER_KEY = "mydiary_offline_book_order_v3";
+
+function isDefaultSeedSnapshot(books: DiaryBook[]): boolean {
+  if (books.length === 4 && books[0]?.id === "memories-2022" && books[1]?.id === "pocket-notes") {
+    return true;
+  }
+  if (books.length === 19 && books[0]?.id === "memories-2022" && books[18]?.id === "milestones-and-ascents") {
+    return true;
+  }
+  return false;
+}
 
 function loadOfflineOrder(): string[] | null {
   if (typeof window === "undefined") return null;
@@ -215,7 +225,26 @@ async function seedOfflineBooksIfEmpty(): Promise<DiaryBook[]> {
 async function getOfflineBooks(): Promise<DiaryBook[]> {
   let storedBooks = await getAllFromStore<DiaryBook>("books");
   const storedMemories = await getAllFromStore<MemoryAlbum>("memories");
-  const order = loadOfflineOrder();
+  let order = loadOfflineOrder();
+
+  if (
+    !order &&
+    storedMemories.length === 0 &&
+    (storedBooks.length === 0 || isDefaultSeedSnapshot(storedBooks))
+  ) {
+    for (const b of defaultBooks) {
+      await putInStore("books", b);
+    }
+    const seededIds = defaultBooks.map((b) => b.id);
+    for (const stale of storedBooks) {
+      if (!seededIds.includes(stale.id)) {
+        await deleteFromStore("books", stale.id);
+      }
+    }
+    saveOfflineOrder(seededIds);
+    storedBooks = defaultBooks.map((b) => ({ ...b }));
+    order = seededIds;
+  }
 
   if (storedBooks.length === 0 && !order) {
     storedBooks = await seedOfflineBooksIfEmpty();
@@ -370,13 +399,13 @@ export async function createBook(
       description: input.description?.trim() || "",
       quote: input.quote?.trim() || "",
       quoteBy: input.quoteBy?.trim() || "",
-      format: input.format || "Clothbound Hardcover",
-      cover: input.cover || "#6f2130",
-      accent: input.accent || "#d5a756",
-      ink: input.ink || "#f4ead7",
+      format: input.format || "Soft Linen Hardcover",
+      cover: input.cover || "#7d9489",
+      accent: input.accent || "#dfd2bd",
+      ink: input.ink || "#f9f6ef",
       motif: input.motif || "lattice",
       coverTemplate: input.coverTemplate || "clean-minimal",
-      spineStyle: input.spineStyle || "banded",
+      spineStyle: input.spineStyle || "minimal",
       paperStyle: input.paperStyle || "cream",
       fontStyle: input.fontStyle || "serif",
       height: input.height ?? 2.12,

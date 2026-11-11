@@ -58,31 +58,38 @@ function BookMemoriesContent() {
     return requestedBookId || books[0]?.id || "memories-2022";
   }, [requestedBookId, books]);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const booksRes = await fetchBooks();
-      setBooks(booksRes.books);
-      const targetId =
-        requestedBookId && booksRes.books.some((b) => b.id === requestedBookId)
-          ? requestedBookId
-          : booksRes.books[0]?.id || "memories-2022";
+  const loadData = useCallback(
+    async (preserveSpread = false) => {
+      setLoading(true);
+      try {
+        const booksRes = await fetchBooks();
+        setBooks(booksRes.books);
+        const targetId =
+          requestedBookId && booksRes.books.some((b) => b.id === requestedBookId)
+            ? requestedBookId
+            : booksRes.books[0]?.id || "memories-2022";
 
-      const memRes = await fetchMemories({ bookId: targetId });
-      setMemories(memRes.memories);
+        const memRes = await fetchMemories({ bookId: targetId });
+        setMemories(memRes.memories);
 
-      if (requestedMemoryId) {
-        const memIdx = memRes.memories.findIndex((m) => m.id === requestedMemoryId);
-        setActiveSpreadIndex(memIdx >= 0 ? memIdx + 1 : 0);
-      } else if (memRes.memories.length > 0) {
-        setActiveSpreadIndex(1);
-      } else {
-        setActiveSpreadIndex(0);
+        if (!preserveSpread) {
+          if (requestedMemoryId) {
+            const memIdx = memRes.memories.findIndex(
+              (m) => m.id === requestedMemoryId,
+            );
+            setActiveSpreadIndex(memIdx >= 0 ? memIdx + 1 : 0);
+          } else if (memRes.memories.length > 0) {
+            setActiveSpreadIndex(1);
+          } else {
+            setActiveSpreadIndex(0);
+          }
+        }
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, [requestedBookId, requestedMemoryId]);
+    },
+    [requestedBookId, requestedMemoryId],
+  );
 
   useEffect(() => {
     void loadData();
@@ -141,7 +148,7 @@ function BookMemoriesContent() {
     setDeletingMemoryId(mem.id);
     try {
       await deleteMemory(mem.id);
-      await loadData();
+      await loadData(true);
     } finally {
       setDeletingMemoryId(null);
     }
@@ -156,18 +163,18 @@ function BookMemoriesContent() {
       id: "opening-welcome",
       label: "Opening Pages",
       left: (
-        <div className="flex min-h-[500px] flex-col justify-between">
+        <div className="flex min-h-[120px] md:min-h-[500px] flex-col justify-between">
           <div />
           <div className="text-[11px] italic opacity-35">p. 01</div>
         </div>
       ),
       right: (
-        <div className="flex min-h-[500px] flex-col justify-between">
-          <div className="my-auto py-8 sm:px-4">
+        <div className="flex min-h-[260px] md:min-h-[500px] flex-col justify-between">
+          <div className="my-auto py-6 sm:px-4">
             <h1 className="m-0 text-3xl sm:text-4xl font-normal tracking-tight leading-tight">
               {book.title}
             </h1>
-            <p className="mt-5 max-w-md text-base sm:text-lg leading-relaxed text-[#463f36]">
+            <p className="mt-5 max-w-md text-base sm:text-lg leading-relaxed text-[#4b443b]">
               {welcomeText}
             </p>
 
@@ -198,7 +205,7 @@ function BookMemoriesContent() {
               <div className="mt-8">
                 <Link
                   href={`/compose?bookId=${encodeURIComponent(book.id)}`}
-                  className="inline-flex items-center gap-2 border border-[var(--ink)] bg-[var(--ink)] px-4 py-2 text-[11px] font-semibold tracking-widest text-[var(--paper-light)] uppercase no-underline hover:bg-[var(--walnut-deep)]"
+                  className="inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-[11px] font-semibold tracking-widest text-[var(--paper-light)] uppercase no-underline hover:bg-[var(--walnut-deep)]"
                 >
                   <PenLine className="h-3.5 w-3.5" />
                   <span>Write First Entry</span>
@@ -219,13 +226,13 @@ function BookMemoriesContent() {
         id: "blank-1",
         label: "Blank Pages · 03–04",
         left: (
-          <div className="flex min-h-[500px] flex-col justify-between">
+          <div className="flex min-h-[120px] md:min-h-[500px] flex-col justify-between">
             <div />
             <div className="text-[11px] italic opacity-35">p. 03</div>
           </div>
         ),
         right: (
-          <div className="flex min-h-[500px] flex-col justify-between">
+          <div className="flex min-h-[120px] md:min-h-[500px] flex-col justify-between">
             <div />
             <div className="flex items-center justify-between text-[11px] italic opacity-35">
               <Link
@@ -244,13 +251,13 @@ function BookMemoriesContent() {
         id: "blank-2",
         label: "Blank Pages · 05–06",
         left: (
-          <div className="flex min-h-[500px] flex-col justify-between">
+          <div className="flex min-h-[120px] md:min-h-[500px] flex-col justify-between">
             <div />
             <div className="text-[11px] italic opacity-35">p. 05</div>
           </div>
         ),
         right: (
-          <div className="flex min-h-[500px] flex-col justify-between">
+          <div className="flex min-h-[120px] md:min-h-[500px] flex-col justify-between">
             <div />
             <div className="text-right text-[11px] italic opacity-35">p. 06</div>
           </div>
@@ -268,7 +275,7 @@ function BookMemoriesContent() {
         id: mem.id,
         label: `${mem.title} · pp. ${pageLeftNum}–${pageRightNum}`,
         left: (
-          <div className="flex min-h-[500px] flex-col justify-between">
+          <div className="flex min-h-[260px] md:min-h-[500px] flex-col justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-3 text-[10px] font-semibold tracking-[0.15em] uppercase text-[var(--ink-soft)]">
                 <span className="inline-flex items-center gap-1">
@@ -281,7 +288,7 @@ function BookMemoriesContent() {
                     {mem.location}
                   </span>
                 )}
-                <span className="ml-auto border border-[var(--hairline)] bg-[var(--paper)] px-2 py-0.5 text-[var(--accent)]">
+                <span className="ml-auto rounded-full border border-[var(--hairline)] bg-[var(--paper)] px-2.5 py-0.5 text-[var(--accent)]">
                   {mem.mood}
                 </span>
               </div>
@@ -296,13 +303,13 @@ function BookMemoriesContent() {
                     <StickyNote className="h-3 w-3" />
                     <span>Keepsake Note</span>
                   </div>
-                  <p className="m-0 text-base italic leading-relaxed text-[#322c25]">
+                  <p className="m-0 text-base italic leading-relaxed text-[#38312a]">
                     “{mem.note}”
                   </p>
                 </div>
               )}
 
-              <div className="mt-6 space-y-4 text-[16px] leading-[1.7] text-[#352f28]">
+              <div className="mt-6 space-y-4 text-[16px] leading-[1.7] text-[#3a332b]">
                 {mem.paragraphs.length > 0 ? (
                   mem.paragraphs.map((paragraph, pIdx) => (
                     <p key={pIdx} className="m-0">
@@ -341,7 +348,7 @@ function BookMemoriesContent() {
           </div>
         ),
         right: (
-          <div className="flex min-h-[500px] flex-col justify-between">
+          <div className="flex min-h-[260px] md:min-h-[500px] flex-col justify-between">
             <div>
               <div className="mb-5 flex items-center justify-between border-b border-[var(--hairline)] pb-2.5 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)]">
                 <span className="inline-flex items-center gap-1.5">
@@ -463,7 +470,7 @@ function BookMemoriesContent() {
       id: "trailing-blank",
       label: "New Blank Page",
       left: (
-        <div className="flex min-h-[500px] flex-col justify-between">
+        <div className="flex min-h-[120px] md:min-h-[500px] flex-col justify-between">
           <div />
           <div className="text-[11px] italic opacity-35">
             p. {String((memories.length + 1) * 2 + 1).padStart(2, "0")}
@@ -471,10 +478,10 @@ function BookMemoriesContent() {
         </div>
       ),
       right: (
-        <div className="flex min-h-[500px] flex-col items-center justify-center text-center">
+        <div className="flex min-h-[180px] md:min-h-[500px] flex-col items-center justify-center text-center">
           <Link
             href={`/compose?bookId=${encodeURIComponent(book.id)}`}
-            className="inline-flex items-center gap-2 border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase no-underline hover:bg-[var(--walnut-deep)]"
+            className="inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase no-underline hover:bg-[var(--walnut-deep)]"
           >
             <PenLine className="h-3.5 w-3.5" />
             <span>Write Next Memory</span>
@@ -506,7 +513,7 @@ function BookMemoriesContent() {
             onChange={(e) =>
               router.push(`/book?id=${encodeURIComponent(e.target.value)}`)
             }
-            className="hidden sm:block border border-[var(--hairline)] bg-[var(--paper-light)] px-3 py-1.5 text-xs font-medium"
+            className="max-w-[165px] sm:max-w-xs truncate rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-3.5 py-1.5 text-xs font-medium"
           >
             {books.map((item) => (
               <option key={item.id} value={item.id}>

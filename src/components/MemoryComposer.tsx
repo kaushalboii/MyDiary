@@ -92,6 +92,7 @@ export function MemoryComposer({
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingExisting, setLoadingExisting] = useState(Boolean(editMemoryId));
+  const [editMissing, setEditMissing] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -115,13 +116,19 @@ export function MemoryComposer({
   useEffect(() => {
     if (!editMemoryId) {
       setLoadingExisting(false);
+      setEditMissing(false);
       return;
     }
     let cancelled = false;
     setLoadingExisting(true);
+    setEditMissing(false);
     void fetchMemory(editMemoryId)
       .then((res) => {
-        if (cancelled || !res.memory) return;
+        if (cancelled) return;
+        if (!res.memory) {
+          setEditMissing(true);
+          return;
+        }
         const m = res.memory;
         setBookId(m.bookId);
         setTitle(m.title);
@@ -163,8 +170,10 @@ export function MemoryComposer({
 
   async function handleFilesSelected(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
-    const imageFiles = Array.from(fileList).filter((f) =>
-      f.type.startsWith("image/"),
+    const imageFiles = Array.from(fileList).filter(
+      (f) =>
+        f.type.startsWith("image/") ||
+        /\.(jpe?g|png|webp|gif|avif|heic|heif)$/i.test(f.name),
     );
     if (imageFiles.length === 0) {
       setError("Please select image files (JPG, PNG, WebP, GIF).");
@@ -310,6 +319,24 @@ export function MemoryComposer({
         {loadingExisting ? (
           <div className="stationery-card p-12 text-center font-serif text-lg italic text-[var(--ink-soft)]">
             Loading memory page...
+          </div>
+        ) : editMissing ? (
+          <div className="stationery-card p-12 text-center">
+            <h2
+              className="m-0 text-2xl font-normal"
+              style={{ fontFamily: "var(--serif)" }}
+            >
+              Memory Entry Not Found
+            </h2>
+            <p className="mt-2 text-sm text-[var(--ink-soft)]">
+              This entry could not be loaded from your current storage.
+            </p>
+            <Link
+              href={`/book?id=${encodeURIComponent(activeBook.id)}`}
+              className="mt-5 inline-flex items-center gap-2 rounded-full bg-[var(--ink)] px-5 py-2.5 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase no-underline"
+            >
+              Return to {activeBook.shortTitle}
+            </Link>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-8">
@@ -639,14 +666,14 @@ export function MemoryComposer({
             <div className="flex flex-wrap items-center justify-between gap-4 border-t border-[var(--hairline)] pt-6">
               <Link
                 href={`/book?id=${encodeURIComponent(bookId)}`}
-                className="border border-[var(--hairline)] bg-[var(--paper-light)] px-5 py-3 text-xs font-semibold tracking-widest uppercase no-underline hover:border-[var(--ink)]"
+                className="rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-5 py-3 text-xs font-semibold tracking-widest uppercase no-underline hover:border-[var(--ink)]"
               >
                 Cancel
               </Link>
               <button
                 type="submit"
                 disabled={saving || uploading}
-                className="inline-flex items-center gap-2.5 bg-[var(--ink)] px-7 py-3.5 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)] disabled:opacity-50"
+                className="inline-flex items-center gap-2.5 rounded-full bg-[var(--ink)] px-7 py-3.5 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)] disabled:opacity-50"
               >
                 {saving ? (
                   <>

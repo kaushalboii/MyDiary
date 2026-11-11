@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -48,16 +48,16 @@ const MOTIFS: BookMotif[] = [
 ];
 
 const CLOTH_PRESETS = [
-  { name: "Burgundy", cover: "#6f2130", accent: "#d5a756", ink: "#f4ead7" },
-  { name: "Parchment", cover: "#e8ddc6", accent: "#2457a6", ink: "#bf493f" },
-  { name: "Midnight", cover: "#162c55", accent: "#9eb4e8", ink: "#f1eee5" },
-  { name: "Sage", cover: "#4d746d", accent: "#d9b37c", ink: "#f4ead7" },
-  { name: "Charcoal", cover: "#262421", accent: "#f16f5b", ink: "#d9edf0" },
-  { name: "Terracotta", cover: "#d36e5d", accent: "#172f49", ink: "#f8ecdc" },
-  { name: "Olive", cover: "#626a49", accent: "#c7a45e", ink: "#eee5cf" },
-  { name: "Forest", cover: "#365943", accent: "#c7a45e", ink: "#eee7d6" },
-  { name: "Plum", cover: "#4c3970", accent: "#9ad3bf", ink: "#f3ecdb" },
-  { name: "Sand", cover: "#d8bd8c", accent: "#8e2f36", ink: "#272523" },
+  { name: "Oat Linen", cover: "#ebe3d4", accent: "#697b8c", ink: "#3b352f" },
+  { name: "Sage Mist", cover: "#7d9489", accent: "#dfd2bd", ink: "#f9f6ef" },
+  { name: "Dusty Rose", cover: "#b98c86", accent: "#ede5d6", ink: "#fbf8f2" },
+  { name: "Powder Slate", cover: "#a3bcc9", accent: "#d4a988", ink: "#2f353b" },
+  { name: "Soft Clay", cover: "#c68c7b", accent: "#4e5964", ink: "#fbf8f2" },
+  { name: "Eucalyptus", cover: "#657f70", accent: "#d8c59e", ink: "#f6f2e8" },
+  { name: "Buttercream", cover: "#e7dbb9", accent: "#a97477", ink: "#3a342e" },
+  { name: "Lavender Ash", cover: "#a99db3", accent: "#dec29e", ink: "#f9f6ef" },
+  { name: "Stone Grey", cover: "#d4d0c7", accent: "#647c92", ink: "#2e2c29" },
+  { name: "Soft Espresso", cover: "#45403b", accent: "#cfa593", ink: "#f7f2e9" },
 ];
 
 const COVER_TEMPLATES: Array<{ id: CoverTemplate; label: string; hint: string }> = [
@@ -180,6 +180,15 @@ export function VolumeEditorModal({
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -962,12 +971,14 @@ export function VolumeEditorModal({
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {Array.from({ length: totalSlots }).map((_, idx) => {
                     const active = positionIndex === idx;
+                    const occupant = shelfBooks[idx]?.title;
                     return (
                       <button
                         key={idx}
                         type="button"
+                        title={occupant ? `Slot #${idx + 1} (${occupant})` : `Slot #${idx + 1}`}
                         onClick={() => setPositionIndex(idx)}
-                        className={`px-3 py-1.5 text-xs font-medium cursor-pointer transition ${
+                        className={`rounded-full px-3 py-1.5 text-xs font-medium cursor-pointer transition ${
                           active
                             ? "bg-[var(--ink)] text-[var(--paper-light)]"
                             : "border border-[var(--hairline)] bg-[var(--paper-light)] text-[var(--ink-soft)] hover:border-[var(--ink)]"
@@ -993,15 +1004,15 @@ export function VolumeEditorModal({
                       <span>Remove This Book From Shelf</span>
                     </button>
                   ) : (
-                    <div className="flex flex-wrap items-center justify-between gap-3 border border-[var(--accent)]/40 bg-[#f6ebe7] p-3">
-                      <span className="text-xs text-[#6f2130]">
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--accent)]/35 bg-[#f7efec] p-3">
+                      <span className="text-xs text-[#6f4439]">
                         Remove “{book.title}” and its memories from the shelf?
                       </span>
                       <div className="flex gap-2">
                         <button
                           type="button"
                           onClick={() => setConfirmDelete(false)}
-                          className="border border-[var(--hairline)] bg-[var(--paper-light)] px-3 py-1 text-xs cursor-pointer"
+                          className="rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-3 py-1 text-xs cursor-pointer"
                         >
                           Keep
                         </button>
@@ -1009,7 +1020,7 @@ export function VolumeEditorModal({
                           type="button"
                           disabled={saving}
                           onClick={() => void handleDelete()}
-                          className="bg-[#9c2f3b] px-3 py-1 text-xs font-semibold text-white cursor-pointer"
+                          className="rounded-full bg-[var(--accent)] px-3 py-1 text-xs font-semibold text-white cursor-pointer"
                         >
                           Remove Book
                         </button>
@@ -1022,7 +1033,7 @@ export function VolumeEditorModal({
           )}
 
           {error && (
-            <div className="border border-[#9c2f3b]/40 bg-[#f6ebe7] px-3 py-2 text-xs text-[#6f2130]">
+            <div className="rounded-xl border border-[#9b6254]/40 bg-[#f7efec] px-3 py-2 text-xs text-[#6f4439]">
               {error}
             </div>
           )}
@@ -1031,14 +1042,14 @@ export function VolumeEditorModal({
             <button
               type="button"
               onClick={onClose}
-              className="border border-[var(--hairline)] px-4 py-2 text-xs font-semibold tracking-wider uppercase cursor-pointer"
+              className="rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving || uploadingCover}
-              className="bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)] disabled:opacity-50"
+              className="rounded-full bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)] disabled:opacity-50"
             >
               {saving
                 ? "Saving..."

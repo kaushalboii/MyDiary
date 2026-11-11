@@ -22,22 +22,22 @@ type FlipState = {
 function paperPatternStyle(paperStyle: PaperStyle | undefined): React.CSSProperties {
   if (paperStyle === "lined") {
     return {
-      backgroundColor: "#fbf8f0",
+      backgroundColor: "#fcfaf5",
       backgroundImage:
-        "repeating-linear-gradient(to bottom, transparent 0px, transparent 30px, rgba(64, 56, 46, 0.085) 30px, rgba(64, 56, 46, 0.085) 31px)",
+        "repeating-linear-gradient(to bottom, transparent 0px, transparent 30px, rgba(64, 56, 46, 0.065) 30px, rgba(64, 56, 46, 0.065) 31px)",
       backgroundPosition: "0 18px",
     };
   }
   if (paperStyle === "dotgrid") {
     return {
-      backgroundColor: "#fbf8f0",
+      backgroundColor: "#fcfaf5",
       backgroundImage:
-        "radial-gradient(rgba(64, 56, 46, 0.18) 1px, transparent 1px)",
+        "radial-gradient(rgba(64, 56, 46, 0.14) 1px, transparent 1px)",
       backgroundSize: "20px 20px",
     };
   }
   return {
-    backgroundColor: "#fbf8f0",
+    backgroundColor: "#fcfaf5",
   };
 }
 
@@ -186,7 +186,6 @@ export function FlipBookReader({
     const targetIndex = activeIndex + direction;
     if (targetIndex < 0 || targetIndex >= spreads.length) return;
 
-    e.currentTarget.setPointerCapture(e.pointerId);
     dragRef.current = {
       active: true,
       pointerId: e.pointerId,
@@ -230,13 +229,18 @@ export function FlipBookReader({
     const dy = e.clientY - drag.startY;
 
     if (!drag.moved) {
-      if (Math.hypot(dx, dy) < 7) return;
-      // Abort drag if user is mostly scrolling vertically inside long notes
-      if (Math.abs(dy) > Math.abs(dx) * 1.35) {
+      if (Math.hypot(dx, dy) < 8) return;
+      // Abort drag if user is scrolling vertically inside long notes
+      if (Math.abs(dy) >= Math.abs(dx) * 1.15) {
         dragRef.current = null;
         return;
       }
       drag.moved = true;
+      try {
+        e.currentTarget.setPointerCapture(drag.pointerId);
+      } catch {
+        // Ignore if pointer already lifted
+      }
     }
 
     const directionalDelta = drag.direction === 1 ? -dx : dx;
@@ -305,7 +309,7 @@ export function FlipBookReader({
   const pageEdgeShadow = Array.from({ length: thicknessLayers })
     .map((_, i) => {
       const offset = (i + 1) * 2;
-      const color = i % 2 === 0 ? "#ebe3d2" : "#d5cbb6";
+      const color = i % 2 === 0 ? "#f3ede1" : "#e3dbc9";
       return `${offset}px ${offset * 0.35}px 0 0 ${color}, -${offset}px ${offset * 0.35}px 0 0 ${color}`;
     })
     .join(", ");
@@ -330,9 +334,9 @@ export function FlipBookReader({
 
   return (
     <div className="space-y-4">
-      {/* Clothbound Hardcover Frame */}
+      {/* Soft Linen Hardcover Frame */}
       <div
-        className="relative rounded-[10px] p-2.5 sm:p-4 lg:p-5 transition-colors duration-300 shadow-[0_32px_68px_-28px_rgba(37,35,31,0.56)]"
+        className="relative rounded-2xl p-2.5 sm:p-4 lg:p-5 transition-colors duration-300 shadow-[0_28px_60px_-30px_rgba(51,46,41,0.36)]"
         style={{ backgroundColor: book.cover }}
       >
         {/* Ribbon Bookmark */}
@@ -348,25 +352,25 @@ export function FlipBookReader({
         {isMobileSingle ? (
           /* Mobile / Narrow Portrait: Clean stacked single-sheet card flow with tactile paper */
           <div
-            className="overflow-hidden rounded-[3px] border border-black/10"
+            className="overflow-hidden rounded-xl border border-black/10"
             style={{ ...paperCss, fontFamily: fontCss }}
           >
-            <div className="border-b border-[var(--hairline)] p-5 sm:p-8">
+            <div className="border-b border-[var(--hairline)] p-5 sm:p-7">
               <div
                 className={
                   framedInner
-                    ? "border border-[var(--hairline)]/80 p-4"
+                    ? "rounded-lg border border-[var(--hairline)]/80 p-4"
                     : ""
                 }
               >
                 {currentSpread?.left}
               </div>
             </div>
-            <div className="bg-[#f5f0e5]/75 p-5 sm:p-8">
+            <div className="p-5 sm:p-7" style={{ backgroundColor: "#faf7f0" }}>
               <div
                 className={
                   framedInner
-                    ? "border border-[var(--hairline)]/80 p-4"
+                    ? "rounded-lg border border-[var(--hairline)]/80 p-4"
                     : ""
                 }
               >
@@ -394,20 +398,20 @@ export function FlipBookReader({
             }}
           >
             {/* Stationary Spread Base */}
-            <div className="grid min-h-[580px] grid-cols-2 overflow-hidden rounded-[3px] border border-black/15">
+            <div className="grid h-[590px] lg:h-[630px] grid-cols-2 overflow-hidden rounded-lg border border-black/10">
               {/* Left Base Page */}
               <div
-                className="relative min-h-[580px] overflow-y-auto p-8 lg:p-11"
+                className="relative h-full overflow-y-auto overflow-x-hidden p-8 lg:p-11"
                 style={{
                   ...paperCss,
                   boxShadow:
-                    "inset -26px 0 34px -26px rgba(37, 35, 31, 0.34), inset 0 0 0 1px rgba(37,35,31,0.05)",
+                    "inset -26px 0 34px -26px rgba(51, 46, 41, 0.22), inset 0 0 0 1px rgba(51,46,41,0.04)",
                 }}
               >
                 <div
                   className={
                     framedInner
-                      ? "min-h-full border border-[var(--hairline)]/80 p-5"
+                      ? "min-h-full rounded-md border border-[var(--hairline)]/75 p-5"
                       : "min-h-full"
                   }
                 >
@@ -419,7 +423,7 @@ export function FlipBookReader({
                   <div
                     className="pointer-events-none absolute inset-0"
                     style={{
-                      background: `rgba(28, 22, 16, ${shadowPeak * 0.55})`,
+                      background: `rgba(36, 30, 24, ${shadowPeak * 0.45})`,
                     }}
                   />
                 )}
@@ -431,8 +435,8 @@ export function FlipBookReader({
                     className="pointer-events-none absolute bottom-0 left-0 h-12 w-12"
                     style={{
                       background:
-                        "linear-gradient(225deg, transparent 50%, rgba(224,215,197,0.92) 52%, rgba(246,241,231,0.98) 100%)",
-                      boxShadow: "3px -3px 10px rgba(37,35,31,0.18)",
+                        "linear-gradient(225deg, transparent 50%, rgba(232,224,210,0.92) 52%, rgba(252,250,245,0.98) 100%)",
+                      boxShadow: "3px -3px 10px rgba(51,46,41,0.12)",
                     }}
                   />
                 )}
@@ -440,18 +444,17 @@ export function FlipBookReader({
 
               {/* Right Base Page */}
               <div
-                className="relative min-h-[580px] overflow-y-auto p-8 lg:p-11"
+                className="relative h-full overflow-y-auto overflow-x-hidden p-8 lg:p-11"
                 style={{
                   ...paperCss,
-                  backgroundColor: "#f7f3e8",
                   boxShadow:
-                    "inset 26px 0 34px -26px rgba(37, 35, 31, 0.3), inset 0 0 0 1px rgba(37,35,31,0.05)",
+                    "inset 26px 0 34px -26px rgba(51, 46, 41, 0.2), inset 0 0 0 1px rgba(51,46,41,0.04)",
                 }}
               >
                 <div
                   className={
                     framedInner
-                      ? "min-h-full border border-[var(--hairline)]/80 p-5"
+                      ? "min-h-full rounded-md border border-[var(--hairline)]/75 p-5"
                       : "min-h-full"
                   }
                 >
@@ -463,7 +466,7 @@ export function FlipBookReader({
                   <div
                     className="pointer-events-none absolute inset-0"
                     style={{
-                      background: `rgba(28, 22, 16, ${shadowPeak * 0.55})`,
+                      background: `rgba(36, 30, 24, ${shadowPeak * 0.45})`,
                     }}
                   />
                 )}
@@ -475,8 +478,8 @@ export function FlipBookReader({
                     className="pointer-events-none absolute right-0 bottom-0 h-12 w-12"
                     style={{
                       background:
-                        "linear-gradient(135deg, transparent 50%, rgba(224,215,197,0.92) 52%, rgba(246,241,231,0.98) 100%)",
-                      boxShadow: "-3px -3px 10px rgba(37,35,31,0.18)",
+                        "linear-gradient(135deg, transparent 50%, rgba(232,224,210,0.92) 52%, rgba(252,250,245,0.98) 100%)",
+                      boxShadow: "-3px -3px 10px rgba(51,46,41,0.12)",
                     }}
                   />
                 )}
@@ -489,7 +492,7 @@ export function FlipBookReader({
               className="pointer-events-none absolute top-0 bottom-0 left-1/2 z-10 w-6 -translate-x-1/2"
               style={{
                 background:
-                  "linear-gradient(90deg, transparent, rgba(37,35,31,0.18) 50%, transparent)",
+                  "linear-gradient(90deg, transparent, rgba(51,46,41,0.14) 50%, transparent)",
               }}
             />
 
@@ -503,10 +506,11 @@ export function FlipBookReader({
                   transformOrigin:
                     flip.direction === 1 ? "left center" : "right center",
                   transformStyle: "preserve-3d",
+                  willChange: "transform",
                   transform:
                     flip.direction === 1
-                      ? `rotateY(${-flip.progress * 180}deg)`
-                      : `rotateY(${flip.progress * 180}deg)`,
+                      ? `rotateY(${-flip.progress * 180}deg) translateZ(1px)`
+                      : `rotateY(${flip.progress * 180}deg) translateZ(1px)`,
                 }}
               >
                 {/* Leaf Front Face */}
@@ -518,14 +522,14 @@ export function FlipBookReader({
                     WebkitBackfaceVisibility: "hidden",
                     boxShadow:
                       flip.direction === 1
-                        ? "inset 24px 0 30px -24px rgba(37,35,31,0.3), -6px 4px 20px rgba(37,35,31,0.14)"
-                        : "inset -24px 0 30px -24px rgba(37,35,31,0.3), 6px 4px 20px rgba(37,35,31,0.14)",
+                        ? "inset 24px 0 30px -24px rgba(51,46,41,0.22), -6px 4px 20px rgba(51,46,41,0.1)"
+                        : "inset -24px 0 30px -24px rgba(51,46,41,0.22), 6px 4px 20px rgba(51,46,41,0.1)",
                   }}
                 >
                   <div
                     className={
                       framedInner
-                        ? "min-h-full border border-[var(--hairline)]/80 p-5"
+                        ? "min-h-full rounded-md border border-[var(--hairline)]/75 p-5"
                         : "min-h-full"
                     }
                   >
@@ -538,8 +542,8 @@ export function FlipBookReader({
                     style={{
                       background:
                         flip.direction === 1
-                          ? `linear-gradient(90deg, rgba(28,22,16,${shadowPeak * 0.4}) 0%, rgba(255,255,255,${shadowPeak * 0.35}) 55%, rgba(28,22,16,${shadowPeak * 0.7}) 100%)`
-                          : `linear-gradient(270deg, rgba(28,22,16,${shadowPeak * 0.4}) 0%, rgba(255,255,255,${shadowPeak * 0.35}) 55%, rgba(28,22,16,${shadowPeak * 0.7}) 100%)`,
+                          ? `linear-gradient(90deg, rgba(36,30,24,${shadowPeak * 0.34}) 0%, rgba(255,255,255,${shadowPeak * 0.28}) 55%, rgba(36,30,24,${shadowPeak * 0.56}) 100%)`
+                          : `linear-gradient(270deg, rgba(36,30,24,${shadowPeak * 0.34}) 0%, rgba(255,255,255,${shadowPeak * 0.28}) 55%, rgba(36,30,24,${shadowPeak * 0.56}) 100%)`,
                     }}
                   />
                 </div>
@@ -554,14 +558,14 @@ export function FlipBookReader({
                     transform: "rotateY(180deg)",
                     boxShadow:
                       flip.direction === 1
-                        ? "inset -24px 0 30px -24px rgba(37,35,31,0.3), 6px 4px 20px rgba(37,35,31,0.14)"
-                        : "inset 24px 0 30px -24px rgba(37,35,31,0.3), -6px 4px 20px rgba(37,35,31,0.14)",
+                        ? "inset -24px 0 30px -24px rgba(51,46,41,0.22), 6px 4px 20px rgba(51,46,41,0.1)"
+                        : "inset 24px 0 30px -24px rgba(51,46,41,0.22), -6px 4px 20px rgba(51,46,41,0.1)",
                   }}
                 >
                   <div
                     className={
                       framedInner
-                        ? "min-h-full border border-[var(--hairline)]/80 p-5"
+                        ? "min-h-full rounded-md border border-[var(--hairline)]/75 p-5"
                         : "min-h-full"
                     }
                   >
@@ -572,7 +576,7 @@ export function FlipBookReader({
                   <div
                     className="pointer-events-none absolute inset-0"
                     style={{
-                      background: `rgba(255, 252, 244, ${shadowPeak * 0.15})`,
+                      background: `rgba(255, 253, 248, ${shadowPeak * 0.14})`,
                     }}
                   />
                 </div>
@@ -588,7 +592,7 @@ export function FlipBookReader({
           type="button"
           disabled={safeIndex <= 0 || Boolean(flip)}
           onClick={() => turnPage(-1)}
-          className="inline-flex items-center gap-1.5 border border-[var(--hairline)] bg-[var(--paper-light)] px-3.5 py-2 text-[11px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)] disabled:opacity-35 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-4 py-2 text-[11px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)] disabled:opacity-35 disabled:cursor-not-allowed"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
           <span>Prev Page</span>
@@ -606,7 +610,7 @@ export function FlipBookReader({
           type="button"
           disabled={safeIndex >= spreads.length - 1 || Boolean(flip)}
           onClick={() => turnPage(1)}
-          className="inline-flex items-center gap-1.5 border border-[var(--hairline)] bg-[var(--paper-light)] px-3.5 py-2 text-[11px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)] disabled:opacity-35 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-4 py-2 text-[11px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)] disabled:opacity-35 disabled:cursor-not-allowed"
         >
           <span>Next Page</span>
           <ChevronRight className="h-3.5 w-3.5" />

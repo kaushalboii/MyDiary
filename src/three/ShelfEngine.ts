@@ -57,6 +57,7 @@ type RuntimeBook = {
   spineSurface: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshPhysicalMaterial>;
   titleDecal: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   pickProxy: THREE.Mesh;
+  livingMesh?: THREE.Mesh;
   livingMaterial?: THREE.ShaderMaterial;
   x: number;
   width: number;
@@ -70,8 +71,8 @@ type RuntimeBook = {
 const shelfTop = 0.34;
 const browseCamera = new THREE.Vector3(0, 1.42, 6.65);
 const browseTarget = new THREE.Vector3(0, 1.28, 0.15);
-const pageColor = new THREE.Color("#e9dfca");
-const shelfColor = new THREE.Color("#5a4132");
+const pageColor = new THREE.Color("#f0e9da");
+const shelfColor = new THREE.Color("#735c4b");
 const clamp = THREE.MathUtils.clamp;
 const focusInDuration = 0.46;
 const focusOutDuration = 0.34;
@@ -373,7 +374,7 @@ export class ShelfEngine {
         const inspectedIndex = nextBooks.findIndex(
           (b) => b.id === prevSelectedId,
         );
-        if (inspectedIndex >= 0 && !focusBookId) {
+        if (inspectedIndex >= 0 && (!focusBookId || focusBookId === prevSelectedId)) {
           this.selectedIndex = inspectedIndex;
           this.presentedIndex = inspectedIndex;
           this.focusProgress = 1;
@@ -393,6 +394,12 @@ export class ShelfEngine {
             ),
             false,
           );
+          const worldPosition = new THREE.Vector3();
+          this.runtimeBooks[inspectedIndex].content.getWorldPosition(
+            worldPosition,
+          );
+          this.frameFocusedBook(worldPosition, 1);
+          this.controls.target.copy(this.focusCameraTarget);
           this.callbacks.onMode(this.mode, inspectedIndex);
         } else {
           this.controls.enabled = false;
@@ -400,11 +407,21 @@ export class ShelfEngine {
           this.selectedIndex = null;
           this.presentedIndex = null;
           this.focusProgress = 0;
+          this.camera.clearViewOffset();
           this.camera.position.copy(this.responsiveBrowseCamera);
           this.camera.lookAt(browseTarget);
           this.callbacks.onMode("browse", null);
         }
       } else {
+        if (this.mode !== "browse") {
+          this.controls.enabled = false;
+          this.mode = "browse";
+          this.focusProgress = 0;
+          this.camera.clearViewOffset();
+          this.camera.position.copy(this.responsiveBrowseCamera);
+          this.camera.lookAt(browseTarget);
+          this.callbacks.onMode("browse", null);
+        }
         this.presentedIndex = null;
         this.selectedIndex = null;
       }
@@ -427,14 +444,15 @@ export class ShelfEngine {
 
       runtime.boardMaterial.color.set(nextBook.cover);
       runtime.boardMaterial.sheenColor.set(nextBook.ink);
-      runtime.boardMaterial.clearcoat = nextBook.motif === "gather" ? 0.12 : 0.03;
+      runtime.boardMaterial.clearcoat = 0.02;
       runtime.boardMaterial.needsUpdate = true;
 
       runtime.headbandMaterial.color.set(nextBook.accent);
       runtime.headbandMaterial.needsUpdate = true;
 
-      if (runtime.livingMaterial) {
+      if (runtime.livingMaterial && runtime.livingMesh) {
         runtime.livingMaterial.uniforms.uColor.value.set(nextBook.accent);
+        runtime.livingMesh.visible = nextLiving;
       } else if (!prevLiving && nextLiving) {
         const depth = runtime.data.thickness;
         const height = runtime.data.height;
@@ -446,6 +464,7 @@ export class ShelfEngine {
         shimmer.name = "livingCoverShimmer";
         shimmer.position.z = depth * 0.5 + 0.034;
         runtime.inspectionIdle.add(shimmer);
+        runtime.livingMesh = shimmer;
         runtime.livingMaterial = livingMat;
       }
 
@@ -482,13 +501,13 @@ export class ShelfEngine {
   }
 
   private setupScene() {
-    this.scene.background = new THREE.Color("#eee8db");
-    this.scene.fog = new THREE.Fog("#eee8db", 10, 26);
+    this.scene.background = new THREE.Color("#f2eee7");
+    this.scene.fog = new THREE.Fog("#f2eee7", 10, 26);
 
-    const hemisphere = new THREE.HemisphereLight("#fff8ea", "#6e5848", 2.4);
+    const hemisphere = new THREE.HemisphereLight("#fffaf1", "#8d7969", 2.55);
     this.scene.add(hemisphere);
 
-    const key = new THREE.DirectionalLight("#fff6e7", 4.6);
+    const key = new THREE.DirectionalLight("#fff8ee", 4.1);
     key.position.set(-4.2, 7.4, 5.5);
     key.castShadow = true;
     key.shadow.mapSize.set(
@@ -504,18 +523,18 @@ export class ShelfEngine {
     key.shadow.bias = -0.0005;
     this.scene.add(key);
 
-    const rim = new THREE.DirectionalLight("#c8d5e5", 2.1);
+    const rim = new THREE.DirectionalLight("#d5dfe9", 1.8);
     rim.position.set(5, 3, -4);
     this.scene.add(rim);
 
-    const warmBounce = new THREE.PointLight("#d79b72", 1.2, 10, 2);
+    const warmBounce = new THREE.PointLight("#e5c2a8", 0.9, 10, 2);
     warmBounce.position.set(-3, 0.4, 3.2);
     this.scene.add(warmBounce);
 
     const wall = new THREE.Mesh(
       new THREE.PlaneGeometry(34, 18),
       new THREE.MeshStandardMaterial({
-        color: "#eee8db",
+        color: "#f2eee7",
         roughness: 1,
         metalness: 0,
       }),
@@ -527,8 +546,8 @@ export class ShelfEngine {
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(36, 18),
       new THREE.MeshStandardMaterial({
-        color: "#e7dfd0",
-        roughness: 0.94,
+        color: "#ebe5d8",
+        roughness: 0.96,
         metalness: 0,
       }),
     );
@@ -589,10 +608,10 @@ export class ShelfEngine {
     const shelfEdge = new THREE.Mesh(
       new RoundedBoxGeometry(shelfWidth, 0.12, 0.16, 3, 0.025),
       new THREE.MeshPhysicalMaterial({
-        color: "#4b3429",
-        roughness: 0.46,
-        clearcoat: 0.14,
-        clearcoatRoughness: 0.5,
+        color: "#614b3c",
+        roughness: 0.58,
+        clearcoat: 0.06,
+        clearcoatRoughness: 0.65,
       }),
     );
     shelfEdge.position.set(cursor * 0.5, shelfTop - 0.08, 0.85);
@@ -637,13 +656,13 @@ export class ShelfEngine {
 
     const boardMaterial = new THREE.MeshPhysicalMaterial({
       color: book.cover,
-      roughness: 0.78,
+      roughness: 0.86,
       metalness: 0,
-      sheen: 0.36,
+      sheen: 0.24,
       sheenColor: new THREE.Color(book.ink),
-      sheenRoughness: 0.82,
-      clearcoat: book.motif === "gather" ? 0.12 : 0.03,
-      clearcoatRoughness: 0.7,
+      sheenRoughness: 0.88,
+      clearcoat: 0.02,
+      clearcoatRoughness: 0.78,
     });
     const paperMaterial = new THREE.MeshStandardMaterial({
       color: pageColor,
@@ -731,10 +750,10 @@ export class ShelfEngine {
       new THREE.PlaneGeometry(width - 0.065, height - 0.065),
       new THREE.MeshPhysicalMaterial({
         map: frontTexture,
-        roughness: 0.66,
-        metalness: 0.02,
-        clearcoat: book.motif === "gather" ? 0.18 : 0.05,
-        clearcoatRoughness: 0.48,
+        roughness: 0.76,
+        metalness: 0.01,
+        clearcoat: 0.03,
+        clearcoatRoughness: 0.68,
       }),
     );
     frontSurface.name = "frontArtwork";
@@ -783,6 +802,7 @@ export class ShelfEngine {
     physical.add(spineSurface);
 
     let livingMaterial: THREE.ShaderMaterial | undefined;
+    let livingMesh: THREE.Mesh | undefined;
     if (book.living) {
       livingMaterial = createLivingMaterial(book.accent);
       const shimmer = new THREE.Mesh(
@@ -792,6 +812,7 @@ export class ShelfEngine {
       shimmer.name = "livingCoverShimmer";
       shimmer.position.z = frontZ + 0.014;
       inspectionIdle.add(shimmer);
+      livingMesh = shimmer;
     }
 
     const pickProxy = new THREE.Mesh(
@@ -823,6 +844,7 @@ export class ShelfEngine {
       spineSurface,
       titleDecal,
       pickProxy,
+      livingMesh,
       livingMaterial,
       x,
       width,
@@ -1215,6 +1237,9 @@ export class ShelfEngine {
     this.renderer.render(this.scene, this.camera);
     if (timestamp - this.lastDiagnosticsAt > 500) {
       const diagnostics = this.getDiagnostics();
+      this.canvas.dataset.mode = diagnostics.mode;
+      this.canvas.dataset.focus = this.focusProgress.toFixed(2);
+      this.canvas.dataset.frames = String(Number(this.canvas.dataset.frames || 0) + 1);
       this.canvas.dataset.drawCalls = String(diagnostics.drawCalls);
       this.canvas.dataset.triangles = String(diagnostics.triangles);
       this.canvas.dataset.motionPhase = diagnostics.motionPhase;

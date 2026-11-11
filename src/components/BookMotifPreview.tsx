@@ -33,10 +33,10 @@ export function BookMotifPreview({
         height: h,
         backgroundColor: book.cover,
         color: book.ink,
-        borderRadius: "2px 5px 5px 2px",
+        borderRadius: "4px 8px 8px 4px",
         boxShadow:
-          "inset 6px 0 10px rgba(0,0,0,0.22), 4px 10px 22px -12px rgba(37,35,31,0.55)",
-        border: "1px solid rgba(37, 35, 31, 0.16)",
+          "inset 6px 0 12px rgba(0,0,0,0.14), 4px 10px 22px -14px rgba(51,46,41,0.38)",
+        border: "1px solid rgba(51, 46, 41, 0.14)",
         padding: baseDims.pad,
       }}
       aria-hidden="true"
@@ -83,9 +83,9 @@ export function BookMotifPreview({
             right: size === "sm" ? 7 : 11,
             top: "22%",
             height: coverSrc ? "34%" : "44%",
-            backgroundColor: "#f4efe3",
+            backgroundColor: "#faf7f0",
             border: `1.5px solid ${book.accent}`,
-            borderRadius: 2,
+            borderRadius: 5,
           }}
         />
       )}

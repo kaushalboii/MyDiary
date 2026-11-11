@@ -160,7 +160,7 @@ function MemoryAlbumContent() {
             </p>
             <Link
               href={`/book?id=${encodeURIComponent(book.id)}`}
-              className="mt-5 inline-flex items-center gap-2 bg-[var(--ink)] px-5 py-2.5 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase no-underline"
+              className="mt-5 inline-flex items-center gap-2 rounded-full bg-[var(--ink)] px-5 py-2.5 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase no-underline"
             >
               Return to {book.shortTitle}
             </Link>
@@ -194,7 +194,7 @@ function MemoryAlbumContent() {
                           {memory.location}
                         </span>
                       )}
-                      <span className="border border-[var(--hairline)] bg-[var(--paper)] px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase text-[var(--accent)]">
+                      <span className="rounded-full border border-[var(--hairline)] bg-[var(--paper)] px-2.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase text-[var(--accent)]">
                         {memory.mood}
                       </span>
                     </div>
@@ -237,7 +237,7 @@ function MemoryAlbumContent() {
               </div>
 
               {/* Right Folio: Curated Photo Album */}
-              <div className="bg-[#f3ede1] p-6 sm:p-10 lg:col-span-6">
+              <div className="bg-[#f8f5ee] p-6 sm:p-10 lg:col-span-6">
                 <div className="mb-6 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--hairline)] pb-3">
                   <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.18em] uppercase text-[var(--ink-soft)]">
                     <Images className="h-3.5 w-3.5 text-[var(--accent)]" />

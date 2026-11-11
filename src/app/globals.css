@@ -1,64 +1,66 @@
 @import "tailwindcss";
 
 :root {
-  --paper: #eee8db;
-  --paper-deep: #e4dccd;
-  --paper-light: #f6f1e7;
-  --walnut: #5a4132;
-  --walnut-deep: #432e22;
-  --ink: #25231f;
-  --ink-soft: rgba(37, 35, 31, 0.64);
-  --hairline: rgba(37, 35, 31, 0.18);
-  --accent: #a74735;
+  --paper: #f2eee7;
+  --paper-deep: #e7e1d6;
+  --paper-light: #faf8f3;
+  --walnut: #735c4b;
+  --walnut-deep: #5a4637;
+  --ink: #332e29;
+  --ink-soft: rgba(51, 46, 41, 0.56);
+  --hairline: rgba(51, 46, 41, 0.13);
+  --accent: #9b6254;
   --serif: "Newsreader Variable", "Iowan Old Style", Georgia, serif;
   --sans: "Inter Variable", Inter, Helvetica, Arial, sans-serif;
 }
 
-* {
-  box-sizing: border-box;
-}
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
 
-html,
-body {
-  width: 100%;
-  min-height: 100%;
-  margin: 0;
-  background: var(--paper);
-}
+  html,
+  body {
+    width: 100%;
+    min-height: 100%;
+    margin: 0;
+    background: var(--paper);
+  }
 
-body {
-  color: var(--ink);
-  font-family: var(--sans);
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-}
+  body {
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
 
-button,
-a,
-input,
-textarea,
-select {
-  color: inherit;
-  font: inherit;
-}
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    color: inherit;
+    font: inherit;
+  }
 
-button {
-  border: 0;
-}
+  button {
+    border: 0;
+  }
 
-button:focus-visible,
-a:focus-visible,
-canvas:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
-  outline: 1.5px solid var(--ink);
-  outline-offset: 3px;
-}
+  button:focus-visible,
+  a:focus-visible,
+  canvas:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: 1.5px solid var(--ink);
+    outline-offset: 3px;
+  }
 
-::selection {
-  color: var(--paper-light);
-  background: var(--ink);
+  ::selection {
+    color: var(--paper-light);
+    background: var(--ink);
+  }
 }
 
 /* ---------------- 3D SHELF EXPERIENCE (FULLSCREEN ROUTE) ---------------- */
@@ -81,7 +83,7 @@ select:focus-visible {
   inset: 0;
   pointer-events: none;
   content: "";
-  opacity: 0.15;
+  opacity: 0.06;
   mix-blend-mode: multiply;
   background-image:
     radial-gradient(circle at 12% 31%, rgba(45, 35, 24, 0.12) 0 0.7px, transparent 0.8px),
@@ -219,9 +221,9 @@ select:focus-visible {
   content: "";
   background: linear-gradient(
     90deg,
-    rgba(238, 232, 219, 0.92) 0%,
-    rgba(238, 232, 219, 0.72) 62%,
-    rgba(238, 232, 219, 0) 100%
+    rgba(242, 238, 231, 0.94) 0%,
+    rgba(242, 238, 231, 0.72) 62%,
+    rgba(242, 238, 231, 0) 100%
   );
   pointer-events: none;
 }
@@ -313,7 +315,7 @@ select:focus-visible {
 .shelf-arrow {
   position: absolute;
   z-index: 17;
-  top: 49%;
+  top: clamp(132px, 24vh, 210px);
   display: grid;
   width: 50px;
   height: 50px;
@@ -426,16 +428,16 @@ select:focus-visible {
 }
 
 .shelf-index__ticks {
-  display: grid;
-  grid-template-columns: repeat(19, 1fr);
-  align-items: end;
+  display: flex;
+  align-items: flex-end;
   height: 24px;
 }
 
 .shelf-index__ticks button {
   position: relative;
   display: block;
-  width: 100%;
+  flex: 1 1 0;
+  min-width: 6px;
   height: 24px;
   padding: 0;
   background: transparent;
@@ -520,7 +522,7 @@ select:focus-visible {
   inset: 0;
   content: "";
   background:
-    linear-gradient(90deg, rgba(238, 232, 219, 0), rgba(238, 232, 219, 0.88) 10%, var(--paper) 24%),
+    linear-gradient(90deg, rgba(242, 238, 231, 0), rgba(242, 238, 231, 0.9) 10%, var(--paper) 24%),
     var(--paper);
 }
 
@@ -679,16 +681,17 @@ select:focus-visible {
   justify-content: space-between;
   max-width: 500px;
   margin-top: 18px;
-  padding: 14px 16px;
+  padding: 13px 18px;
   border: 1px solid var(--ink);
+  border-radius: 12px;
   background: var(--ink);
   color: var(--paper-light);
   text-decoration: none;
   font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.15em;
+  font-weight: 600;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  transition: background-color 180ms ease;
+  transition: background-color 180ms ease, transform 180ms ease;
 }
 
 .official-link:hover {
@@ -704,7 +707,7 @@ select:focus-visible {
 
 .official-link--secondary:hover {
   background: var(--paper-deep);
-  border-color: var(--ink);
+  border-color: var(--ink-soft);
 }
 
 .focus-controls {
@@ -866,9 +869,9 @@ select:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 16px clamp(18px, 4vw, 56px);
+  padding: 15px clamp(18px, 4vw, 56px);
   border-bottom: 1px solid var(--hairline);
-  background: rgba(238, 232, 219, 0.88);
+  background: rgba(242, 238, 231, 0.86);
   backdrop-filter: blur(12px);
 }
 
@@ -881,27 +884,30 @@ select:focus-visible {
 .stationery-card {
   background: var(--paper-light);
   border: 1px solid var(--hairline);
-  box-shadow: 0 18px 40px -28px rgba(37, 35, 31, 0.25);
+  border-radius: 14px;
+  box-shadow: 0 20px 44px -30px rgba(51, 46, 41, 0.18);
 }
 
 .note-slip {
   position: relative;
-  padding: 22px 24px 20px;
-  background: #fbf7ee;
-  border: 1px solid rgba(37, 35, 31, 0.14);
-  box-shadow: 0 10px 24px -18px rgba(37, 35, 31, 0.32);
+  padding: 20px 22px 18px;
+  background: #fdfbf7;
+  border: 1px solid rgba(51, 46, 41, 0.11);
+  border-radius: 12px;
+  box-shadow: 0 10px 24px -20px rgba(51, 46, 41, 0.22);
 }
 
 .note-slip::before {
   content: "";
   position: absolute;
-  top: -8px;
-  left: 28px;
-  width: 58px;
-  height: 16px;
-  background: rgba(213, 167, 86, 0.34);
-  border: 1px solid rgba(167, 71, 53, 0.14);
-  transform: rotate(-2deg);
+  top: -7px;
+  left: 26px;
+  width: 52px;
+  height: 14px;
+  border-radius: 2px;
+  background: rgba(205, 182, 148, 0.28);
+  border: 1px solid rgba(155, 98, 84, 0.1);
+  transform: rotate(-1.5deg);
 }
 
 .diary-prose p {
@@ -909,24 +915,25 @@ select:focus-visible {
   font-family: var(--serif);
   font-size: clamp(17px, 1.35vw, 20px);
   line-height: 1.66;
-  color: #2c2924;
+  color: #36302a;
 }
 
 .diary-prose p:first-of-type::first-letter {
   float: left;
   padding: 4px 10px 0 0;
   font-family: var(--serif);
-  font-size: 3.1em;
-  font-weight: 500;
+  font-size: 3em;
+  font-weight: 480;
   line-height: 0.84;
   color: var(--accent);
 }
 
 .polaroid-frame {
-  background: #fcfaf4;
-  border: 1px solid rgba(37, 35, 31, 0.12);
-  padding: 12px 12px 18px;
-  box-shadow: 0 16px 32px -22px rgba(37, 35, 31, 0.42);
+  background: #fefcf8;
+  border: 1px solid rgba(51, 46, 41, 0.09);
+  border-radius: 10px;
+  padding: 10px 10px 16px;
+  box-shadow: 0 14px 28px -20px rgba(51, 46, 41, 0.28);
   transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 240ms ease;
 }
 
@@ -986,7 +993,17 @@ select:focus-visible {
 
 @media (max-width: 760px) {
   .site-header {
-    padding: 16px 16px;
+    padding: 14px 16px;
+    gap: 10px;
+  }
+
+  .header-actions {
+    gap: 8px;
+  }
+
+  .header-pill-btn {
+    padding: 7px 11px;
+    font-size: 9px;
   }
 
   .wordmark {
@@ -1020,8 +1037,8 @@ select:focus-visible {
     padding: 52px 20px 19px;
     background: linear-gradient(
       180deg,
-      rgba(238, 232, 219, 0),
-      rgba(238, 232, 219, 0.96) 45px,
+      rgba(242, 238, 231, 0),
+      rgba(242, 238, 231, 0.96) 45px,
       var(--paper) 64px
     );
   }
@@ -1073,7 +1090,7 @@ select:focus-visible {
   .book-details::before {
     top: -48px;
     background:
-      linear-gradient(180deg, rgba(238, 232, 219, 0), rgba(238, 232, 219, 0.94) 47px, var(--paper) 48px),
+      linear-gradient(180deg, rgba(242, 238, 231, 0), rgba(242, 238, 231, 0.94) 47px, var(--paper) 48px),
       var(--paper);
   }
 

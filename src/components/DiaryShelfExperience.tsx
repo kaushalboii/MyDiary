@@ -208,13 +208,13 @@ function ShelfExperienceInner() {
     description: "",
     quote: "",
     quoteBy: "",
-    format: "Clothbound Hardcover",
-    cover: "#365943",
-    accent: "#c7a45e",
-    ink: "#eee7d6",
+    format: "Soft Linen Hardcover",
+    cover: "#7d9489",
+    accent: "#dfd2bd",
+    ink: "#f9f6ef",
     motif: "lattice",
     coverTemplate: "clean-minimal",
-    spineStyle: "banded",
+    spineStyle: "minimal",
     paperStyle: "cream",
     fontStyle: "serif",
     height: 2.12,
@@ -410,7 +410,7 @@ function ShelfExperienceInner() {
                   onClick={() =>
                     setEditorState({ mode: "edit", book: selectedBook })
                   }
-                  className="inline-flex items-center gap-1.5 border border-[var(--hairline)] px-2.5 py-1 text-[9px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-3 py-1 text-[9px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
                 >
                   <SlidersHorizontal className="h-3 w-3" />
                   <span>Customize Book</span>
@@ -458,7 +458,7 @@ function ShelfExperienceInner() {
                         <Link
                           key={mem.id}
                           href={`/book?id=${encodeURIComponent(selectedBook.id)}&memory=${encodeURIComponent(mem.id)}`}
-                          className="flex items-center gap-3 border border-[var(--hairline)] bg-[var(--paper-light)] p-2.5 no-underline transition hover:border-[var(--ink)]"
+                          className="flex items-center gap-3 rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] p-2.5 no-underline transition hover:border-[var(--ink-soft)]"
                         >
                           {coverPhoto ? (
                             <img
