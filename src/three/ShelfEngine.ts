@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
+import { resolveMediaUrl } from "@/lib/storage-client";
 import type { DiaryBook } from "@/lib/types";
 import {
   bookFootprintsOverlap,
@@ -109,6 +110,7 @@ function bookVisualSignature(book: DiaryBook) {
     book.coverImprint ?? "",
     book.coverFooter ?? "",
     book.spineMark ?? "",
+    book.welcomeNote ?? "",
     book.description,
     book.quote,
     book.quoteBy,
@@ -116,9 +118,26 @@ function bookVisualSignature(book: DiaryBook) {
     book.accent,
     book.ink,
     book.motif,
+    book.coverTemplate ?? "classic",
+    book.spineStyle ?? "classic",
+    book.coverImage ?? "",
+    book.showCoverTextWithImage ?? true,
+    book.living ?? false,
+    book.height,
+    book.thickness,
+    book.width ?? "",
     book.memoryCount ?? 0,
     book.photoCount ?? 0,
   ].join("|");
+}
+
+function bookStructureSignature(books: DiaryBook[]) {
+  return books
+    .map(
+      (b) =>
+        `${b.id}:${Number(b.height).toFixed(3)}:${Number(b.thickness).toFixed(3)}:${b.width !== undefined ? Number(b.width).toFixed(3) : ""}`,
+    )
+    .join(";");
 }
 
 function toTexture(
@@ -288,15 +307,120 @@ export class ShelfEngine {
     }
   }
 
-  public syncBooks(nextBooks: DiaryBook[]) {
-    if (this.isDisposed) return;
+  private clearBooksAndShelf() {
+    this.runtimeBooks.forEach((runtime) => {
+      runtime.slot.traverse((object) => {
+        if (!(object instanceof THREE.Mesh)) return;
+        object.geometry?.dispose();
+        const materials = Array.isArray(object.material)
+          ? object.material
+          : [object.material];
+        materials.forEach((material) => material?.dispose());
+      });
+      runtime.textures.forEach((tex) => tex.dispose());
+      this.shelfGroup.remove(runtime.slot);
+    });
+    this.runtimeBooks = [];
+    this.pickTargets = [];
+
+    this.shelfFurniture.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      object.geometry?.dispose();
+      const materials = Array.isArray(object.material)
+        ? object.material
+        : [object.material];
+      materials.forEach((material) => material?.dispose());
+    });
+    this.shelfFurniture.clear();
+  }
+
+  public syncBooks(nextBooks: DiaryBook[], focusBookId?: string) {
+    if (this.isDisposed || nextBooks.length === 0) return;
+
+    const currentStructSig = bookStructureSignature(
+      this.runtimeBooks.map((r) => r.data),
+    );
+    const nextStructSig = bookStructureSignature(nextBooks);
     this.booksData = nextBooks;
+
+    if (currentStructSig !== nextStructSig) {
+      const prevSelectedId =
+        this.selectedIndex !== null
+          ? this.runtimeBooks[this.selectedIndex]?.data.id
+          : null;
+      const prevActiveId =
+        this.runtimeBooks[this.activeIndex]?.data.id ?? null;
+      const targetId = focusBookId || prevSelectedId || prevActiveId;
+
+      this.clearBooksAndShelf();
+
+      let targetIndex = targetId
+        ? nextBooks.findIndex((b) => b.id === targetId)
+        : -1;
+      if (targetIndex < 0) {
+        targetIndex = clamp(this.activeIndex, 0, nextBooks.length - 1);
+      }
+
+      this.createBooks(targetIndex);
+      this.activeIndex = targetIndex;
+      this.scrollIndex = targetIndex;
+      this.targetScrollIndex = targetIndex;
+      this.pendingFocusIndex = null;
+      this.browseMotionPhase = "idle";
+      this.motionBookIndex = null;
+
+      if (this.mode === "inspect" && prevSelectedId) {
+        const inspectedIndex = nextBooks.findIndex(
+          (b) => b.id === prevSelectedId,
+        );
+        if (inspectedIndex >= 0 && !focusBookId) {
+          this.selectedIndex = inspectedIndex;
+          this.presentedIndex = inspectedIndex;
+          this.focusProgress = 1;
+          const focusX = window.innerWidth < 760 ? 0 : desktopFocusX;
+          const focusZ =
+            window.innerWidth < 760 ? mobileFocusZ : desktopFocusZ;
+          const focusScale =
+            window.innerWidth < 760 ? mobileFocusScale : desktopFocusScale;
+          this.commitBookPose(
+            this.runtimeBooks[inspectedIndex],
+            focusedBookPose(
+              1,
+              this.motionLayout,
+              focusX,
+              focusZ,
+              focusScale,
+            ),
+            false,
+          );
+          this.callbacks.onMode(this.mode, inspectedIndex);
+        } else {
+          this.controls.enabled = false;
+          this.mode = "browse";
+          this.selectedIndex = null;
+          this.presentedIndex = null;
+          this.focusProgress = 0;
+          this.camera.position.copy(this.responsiveBrowseCamera);
+          this.camera.lookAt(browseTarget);
+          this.callbacks.onMode("browse", null);
+        }
+      } else {
+        this.presentedIndex = null;
+        this.selectedIndex = null;
+      }
+
+      this.callbacks.onActiveIndex(targetIndex);
+      return;
+    }
 
     nextBooks.forEach((nextBook) => {
       const runtime = this.runtimeBooks.find((b) => b.data.id === nextBook.id);
       if (!runtime) return;
       const nextSig = bookVisualSignature(nextBook);
       if (nextSig === runtime.signature) return;
+
+      const prevLiving = Boolean(runtime.data.living);
+      const nextLiving = Boolean(nextBook.living);
 
       runtime.data = nextBook;
       runtime.signature = nextSig;
@@ -311,6 +435,18 @@ export class ShelfEngine {
 
       if (runtime.livingMaterial) {
         runtime.livingMaterial.uniforms.uColor.value.set(nextBook.accent);
+      } else if (!prevLiving && nextLiving) {
+        const depth = runtime.data.thickness;
+        const height = runtime.data.height;
+        const livingMat = createLivingMaterial(nextBook.accent);
+        const shimmer = new THREE.Mesh(
+          new THREE.PlaneGeometry(runtime.width - 0.07, height - 0.07),
+          livingMat,
+        );
+        shimmer.name = "livingCoverShimmer";
+        shimmer.position.z = depth * 0.5 + 0.034;
+        runtime.inspectionIdle.add(shimmer);
+        runtime.livingMaterial = livingMat;
       }
 
       const oldTextures = [...runtime.textures];
@@ -333,7 +469,16 @@ export class ShelfEngine {
 
       runtime.textures = [frontTexture, titleTexture, spineTexture, backTexture];
       oldTextures.forEach((tex) => tex.dispose());
+
+      if (nextBook.coverImage) {
+        void this.loadCustomCover(runtime, nextBook);
+      }
     });
+
+    if (focusBookId) {
+      const idx = nextBooks.findIndex((b) => b.id === focusBookId);
+      if (idx >= 0) this.browseToImmediate(idx);
+    }
   }
 
   private setupScene() {
@@ -401,20 +546,21 @@ export class ShelfEngine {
     const gap = 0.045;
 
     this.booksData.forEach((book, index) => {
-      cursor += book.thickness * 0.5;
+      const depth = clamp(book.thickness ?? 0.24, 0.095, 0.6);
+      cursor += depth * 0.5;
       const runtime = this.createBook(book, index, cursor);
       this.runtimeBooks.push(runtime);
       this.shelfGroup.add(runtime.slot);
       if (book.coverImage) {
-        void this.loadCustomCover(runtime, book.coverImage);
+        void this.loadCustomCover(runtime, book);
       }
-      cursor += book.thickness * 0.5 + gap;
+      cursor += depth * 0.5 + gap;
     });
 
     this.motionLayout = createMotionLayout(
       this.runtimeBooks.map((book) => ({
         width: book.width,
-        thickness: book.data.thickness,
+        thickness: clamp(book.data.thickness ?? 0.24, 0.095, 0.6),
       })),
     );
     this.runtimeBooks.forEach((book) => {
@@ -426,7 +572,7 @@ export class ShelfEngine {
     });
     this.shelfGroup.position.x = -this.xAtIndex(initialIndex);
 
-    const shelfWidth = cursor + 8;
+    const shelfWidth = Math.max(18, cursor + 12);
     const shelfGeometry = new RoundedBoxGeometry(shelfWidth, 0.22, 1.72, 4, 0.045);
     const shelfMaterial = new THREE.MeshStandardMaterial({
       color: shelfColor,
@@ -455,11 +601,19 @@ export class ShelfEngine {
   }
 
   private createBook(book: DiaryBook, index: number, x: number): RuntimeBook {
-    const width = 1.31 + ((index % 5) - 2) * 0.018;
-    const depth = book.thickness;
+    const width = clamp(
+      book.width ?? (1.3 + ((index % 5) - 2) * 0.018),
+      0.96,
+      1.65,
+    );
+    const height = clamp(book.height ?? 2.12, 1.4, 2.6);
+    const depth = clamp(book.thickness ?? 0.24, 0.095, 0.6);
+    const boardThickness = Math.min(0.034, depth * 0.26);
+    const spineBevel = Math.min(0.016, depth * 0.14);
+
     const slot = new THREE.Group();
     slot.name = `bookSlot:${book.id}`;
-    slot.position.set(x, shelfTop + book.height * 0.5, 0.04);
+    slot.position.set(x, shelfTop + height * 0.5, 0.04);
 
     const content = new THREE.Group();
     content.name = `bookPresentation:${book.id}`;
@@ -497,13 +651,14 @@ export class ShelfEngine {
       metalness: 0,
     });
 
+    const pageDepth = Math.max(0.045, depth - boardThickness * 1.4);
     const pageBlock = new THREE.Mesh(
       new RoundedBoxGeometry(
         width - 0.075,
-        book.height - 0.105,
-        Math.max(0.08, depth - 0.052),
+        height - 0.105,
+        pageDepth,
         3,
-        0.018,
+        Math.min(0.016, pageDepth * 0.25),
       ),
       paperMaterial,
     );
@@ -514,10 +669,10 @@ export class ShelfEngine {
 
     const boardGeometry = new RoundedBoxGeometry(
       width,
-      book.height,
-      0.034,
+      height,
+      boardThickness,
       4,
-      0.025,
+      Math.min(0.022, boardThickness * 0.45),
     );
     const frontBoard = new THREE.Mesh(boardGeometry, boardMaterial);
     frontBoard.name = "frontBoard";
@@ -534,7 +689,7 @@ export class ShelfEngine {
     physical.add(backBoard);
 
     const spine = new THREE.Mesh(
-      new RoundedBoxGeometry(0.055, book.height - 0.01, depth + 0.012, 3, 0.018),
+      new RoundedBoxGeometry(0.055, height - 0.01, depth + 0.012, 3, spineBevel),
       boardMaterial,
     );
     spine.name = "spine";
@@ -547,18 +702,19 @@ export class ShelfEngine {
       roughness: 0.62,
       metalness: 0.2,
     });
+    const headbandRadius = Math.min(0.017, pageDepth * 0.35);
     const headbandGeometry = new THREE.CylinderGeometry(
-      0.017,
-      0.017,
+      headbandRadius,
+      headbandRadius,
       width - 0.1,
       10,
     );
     headbandGeometry.rotateZ(Math.PI / 2);
     const headbandTop = new THREE.Mesh(headbandGeometry, headbandMaterial);
-    headbandTop.position.set(0, book.height * 0.5 - 0.045, 0);
+    headbandTop.position.set(0, height * 0.5 - 0.045, 0);
     physical.add(headbandTop);
     const headbandBottom = headbandTop.clone();
-    headbandBottom.position.y = -book.height * 0.5 + 0.045;
+    headbandBottom.position.y = -height * 0.5 + 0.045;
     physical.add(headbandBottom);
 
     const frontTexture = toTexture(createFrontCover(book), this.renderer);
@@ -567,11 +723,12 @@ export class ShelfEngine {
     const backTexture = toTexture(createBackCover(book), this.renderer);
     const textures = [frontTexture, titleTexture, spineTexture, backTexture];
 
+    const frontZ = depth * 0.5 + boardThickness * 0.5 + 0.002;
     const frontSurface = new THREE.Mesh<
       THREE.PlaneGeometry,
       THREE.MeshPhysicalMaterial
     >(
-      new THREE.PlaneGeometry(width - 0.065, book.height - 0.065),
+      new THREE.PlaneGeometry(width - 0.065, height - 0.065),
       new THREE.MeshPhysicalMaterial({
         map: frontTexture,
         roughness: 0.66,
@@ -581,11 +738,11 @@ export class ShelfEngine {
       }),
     );
     frontSurface.name = "frontArtwork";
-    frontSurface.position.z = depth * 0.5 + 0.019;
+    frontSurface.position.z = frontZ;
     physical.add(frontSurface);
 
     const titleDecal = new THREE.Mesh(
-      new THREE.PlaneGeometry(width - 0.065, book.height - 0.065),
+      new THREE.PlaneGeometry(width - 0.065, height - 0.065),
       new THREE.MeshBasicMaterial({
         map: titleTexture,
         transparent: true,
@@ -596,24 +753,24 @@ export class ShelfEngine {
       }),
     );
     titleDecal.name = "accurateTitleDecal";
-    titleDecal.position.z = depth * 0.5 + 0.026;
+    titleDecal.position.z = frontZ + 0.007;
     titleDecal.visible = false;
     inspectionIdle.add(titleDecal);
 
     const backSurface = new THREE.Mesh(
-      new THREE.PlaneGeometry(width - 0.065, book.height - 0.065),
+      new THREE.PlaneGeometry(width - 0.065, height - 0.065),
       new THREE.MeshStandardMaterial({
         map: backTexture,
         roughness: 0.72,
       }),
     );
     backSurface.name = "backArtwork";
-    backSurface.position.z = -depth * 0.5 - 0.019;
+    backSurface.position.z = -(depth * 0.5 + boardThickness * 0.5 + 0.002);
     backSurface.rotation.y = Math.PI;
     physical.add(backSurface);
 
     const spineSurface = new THREE.Mesh(
-      new THREE.PlaneGeometry(depth - 0.02, book.height - 0.04),
+      new THREE.PlaneGeometry(Math.max(0.06, depth - 0.015), height - 0.04),
       new THREE.MeshPhysicalMaterial({
         map: spineTexture,
         roughness: 0.68,
@@ -622,23 +779,23 @@ export class ShelfEngine {
     );
     spineSurface.name = "spineArtwork";
     spineSurface.rotation.y = -Math.PI / 2;
-    spineSurface.position.x = -width * 0.5 - 0.019;
+    spineSurface.position.x = -width * 0.5 - 0.011;
     physical.add(spineSurface);
 
     let livingMaterial: THREE.ShaderMaterial | undefined;
     if (book.living) {
       livingMaterial = createLivingMaterial(book.accent);
       const shimmer = new THREE.Mesh(
-        new THREE.PlaneGeometry(width - 0.07, book.height - 0.07),
+        new THREE.PlaneGeometry(width - 0.07, height - 0.07),
         livingMaterial,
       );
       shimmer.name = "livingCoverShimmer";
-      shimmer.position.z = depth * 0.5 + 0.034;
+      shimmer.position.z = frontZ + 0.014;
       inspectionIdle.add(shimmer);
     }
 
     const pickProxy = new THREE.Mesh(
-      new THREE.BoxGeometry(width, book.height, depth + 0.07),
+      new THREE.BoxGeometry(width, height, depth + 0.07),
       new THREE.MeshBasicMaterial({
         transparent: true,
         opacity: 0,
@@ -1382,31 +1539,35 @@ export class ShelfEngine {
     return promise;
   }
 
-  private async loadCustomCover(runtime: RuntimeBook, coverImage: string) {
+  private async loadCustomCover(runtime: RuntimeBook, book: DiaryBook) {
+    const rawUrl = book.coverImage;
+    if (!rawUrl) return;
+    const src = resolveMediaUrl(rawUrl);
     try {
-      const texture = await new THREE.TextureLoader().loadAsync(coverImage);
-      if (this.isDisposed) {
-        texture.dispose();
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.crossOrigin = "anonymous";
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error("Cover image load failed"));
+        el.src = src;
+      });
+      if (this.isDisposed || runtime.data.coverImage !== rawUrl) {
         return;
       }
 
+      const texture = toTexture(createFrontCover(runtime.data, img), this.renderer);
       texture.name = `customCover:${runtime.data.id}`;
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = Math.min(
-        8,
-        this.renderer.capabilities.getMaxAnisotropy(),
-      );
 
       const material = runtime.frontSurface.material;
-      const proceduralTexture = material.map;
+      const previousMap = material.map;
       material.map = texture;
       material.needsUpdate = true;
       runtime.textures.push(texture);
 
-      if (proceduralTexture) {
-        const index = runtime.textures.indexOf(proceduralTexture);
+      if (previousMap) {
+        const index = runtime.textures.indexOf(previousMap);
         if (index >= 0) runtime.textures.splice(index, 1);
-        proceduralTexture.dispose();
+        previousMap.dispose();
       }
     } catch {
       // Fallback to generated cover

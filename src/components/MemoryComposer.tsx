@@ -76,7 +76,9 @@ export function MemoryComposer({
 
   const [books, setBooks] = useState<DiaryBook[]>(defaultBooks);
 
-  const [bookId, setBookId] = useState(initialBookId || "memories-2022");
+  const [bookId, setBookId] = useState(
+    initialBookId || defaultBooks[0]?.id || "memories-2022",
+  );
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [location, setLocation] = useState("");
@@ -96,6 +98,9 @@ export function MemoryComposer({
   const loadBooks = useCallback(async () => {
     const res = await fetchBooks();
     setBooks(res.books);
+    setBookId((prev) =>
+      res.books.some((b) => b.id === prev) ? prev : res.books[0]?.id || prev,
+    );
   }, []);
 
   useEffect(() => {

@@ -179,12 +179,55 @@ async function deleteFromStore(storeName: "books" | "memories", id: string): Pro
   });
 }
 
+const OFFLINE_BOOK_ORDER_KEY = "mydiary_offline_book_order_v2";
+
+function loadOfflineOrder(): string[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(OFFLINE_BOOK_ORDER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveOfflineOrder(orderedIds: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(OFFLINE_BOOK_ORDER_KEY, JSON.stringify(orderedIds));
+  } catch {
+    // Ignore storage quota issues
+  }
+}
+
+async function seedOfflineBooksIfEmpty(): Promise<DiaryBook[]> {
+  const existing = await getAllFromStore<DiaryBook>("books");
+  if (existing.length > 0) return existing;
+  for (const b of defaultBooks) {
+    await putInStore("books", b);
+  }
+  saveOfflineOrder(defaultBooks.map((b) => b.id));
+  return defaultBooks.map((b) => ({ ...b }));
+}
+
 async function getOfflineBooks(): Promise<DiaryBook[]> {
-  const storedBooks = await getAllFromStore<DiaryBook>("books");
+  let storedBooks = await getAllFromStore<DiaryBook>("books");
   const storedMemories = await getAllFromStore<MemoryAlbum>("memories");
+  const order = loadOfflineOrder();
+
+  if (storedBooks.length === 0 && !order) {
+    storedBooks = await seedOfflineBooksIfEmpty();
+  }
+
   const bookMap = new Map<string, DiaryBook>();
-  defaultBooks.forEach((b) => bookMap.set(b.id, { ...b }));
   storedBooks.forEach((b) => bookMap.set(b.id, { ...b }));
+  if (!order) {
+    defaultBooks.forEach((b) => {
+      if (!bookMap.has(b.id)) bookMap.set(b.id, { ...b });
+    });
+  }
 
   const stats = new Map<
     string,
@@ -213,18 +256,36 @@ async function getOfflineBooks(): Promise<DiaryBook[]> {
     stats.set(m.bookId, curr);
   }
 
-  return defaultBooks.map((base) => {
-    const resolved = bookMap.get(base.id) || base;
-    return {
+  const orderedIds = order
+    ? [...order, ...Array.from(bookMap.keys()).filter((id) => !order.includes(id))]
+    : Array.from(bookMap.keys());
+
+  const result: DiaryBook[] = [];
+  for (const id of orderedIds) {
+    const resolved = bookMap.get(id);
+    if (!resolved) continue;
+    result.push({
       ...resolved,
-      ...(stats.get(base.id) || {
+      ...(stats.get(id) || {
         memoryCount: 0,
         photoCount: 0,
         latestMemoryDate: null,
         latestMemoryTitle: null,
       }),
-    };
-  });
+    });
+  }
+  if (result.length === 0) {
+    return defaultBooks.map((b) => ({
+      ...b,
+      ...(stats.get(b.id) || {
+        memoryCount: 0,
+        photoCount: 0,
+        latestMemoryDate: null,
+        latestMemoryTitle: null,
+      }),
+    }));
+  }
+  return result;
 }
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -266,24 +327,168 @@ export async function fetchBooks(): Promise<{
   }
 }
 
-export async function updateBook(
-  bookId: string,
-  patch: Partial<DiaryBook>,
-): Promise<{ book: DiaryBook; mode: StorageMode }> {
+export type BookPatchInput = Partial<DiaryBook> & { positionIndex?: number };
+
+export async function createBook(
+  input: BookPatchInput,
+): Promise<{ book: DiaryBook; books: DiaryBook[]; mode: StorageMode }> {
   try {
-    const res = await serverFetch<{ book: DiaryBook }>(`/api/books/${encodeURIComponent(bookId)}`, {
-      method: "PUT",
+    const res = await serverFetch<{ book: DiaryBook; books: DiaryBook[] }>("/api/books", {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
+      body: JSON.stringify(input),
     });
-    return { book: res.book, mode: "server" };
+    return { book: res.book, books: res.books, mode: "server" };
   } catch {
     const books = await getOfflineBooks();
-    const existing = books.find((b) => b.id === bookId) || defaultBooks.find((b) => b.id === bookId);
+    const baseTitle = (input.title || "Untitled Diary").trim() || "Untitled Diary";
+    const slugBase =
+      baseTitle
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "volume";
+    const taken = new Set(books.map((b) => b.id));
+    let id = slugBase;
+    let n = 2;
+    while (taken.has(id)) {
+      id = `${slugBase}-${n}`;
+      n += 1;
+    }
+    const { positionIndex, ...rest } = input;
+    const book: DiaryBook = {
+      id,
+      title: baseTitle,
+      shortTitle: input.shortTitle?.trim() || baseTitle,
+      subtitle: input.subtitle?.trim() || "",
+      yearLabel: input.yearLabel?.trim() || String(new Date().getFullYear()),
+      coverImprint: input.coverImprint ?? "PERSONAL ARCHIVE",
+      coverFooter: input.coverFooter ?? "",
+      spineMark: input.spineMark ?? String(books.length + 1),
+      welcomeNote:
+        input.welcomeNote ??
+        "Welcome to your new diary pages. Turn the leaf or write whenever you are ready.",
+      description: input.description?.trim() || "",
+      quote: input.quote?.trim() || "",
+      quoteBy: input.quoteBy?.trim() || "",
+      format: input.format || "Clothbound Hardcover",
+      cover: input.cover || "#6f2130",
+      accent: input.accent || "#d5a756",
+      ink: input.ink || "#f4ead7",
+      motif: input.motif || "lattice",
+      coverTemplate: input.coverTemplate || "clean-minimal",
+      spineStyle: input.spineStyle || "banded",
+      paperStyle: input.paperStyle || "cream",
+      fontStyle: input.fontStyle || "serif",
+      height: input.height ?? 2.12,
+      thickness: input.thickness ?? 0.24,
+      width: input.width ?? 1.3,
+      ...rest,
+    };
+    await seedOfflineBooksIfEmpty();
+    await putInStore("books", book);
+    const ids = books.map((b) => b.id);
+    const insertAt =
+      typeof positionIndex === "number" && Number.isFinite(positionIndex)
+        ? Math.min(ids.length, Math.max(0, Math.round(positionIndex)))
+        : ids.length;
+    ids.splice(insertAt, 0, id);
+    saveOfflineOrder(ids);
+    const updatedList = await getOfflineBooks();
+    return {
+      book: updatedList.find((b) => b.id === id) || book,
+      books: updatedList,
+      mode: "offline-fallback",
+    };
+  }
+}
+
+export async function updateBook(
+  bookId: string,
+  patch: BookPatchInput,
+): Promise<{ book: DiaryBook; books: DiaryBook[]; mode: StorageMode }> {
+  try {
+    const res = await serverFetch<{ book: DiaryBook; books?: DiaryBook[] }>(
+      `/api/books/${encodeURIComponent(bookId)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      },
+    );
+    const list = res.books ?? (await fetchBooks()).books;
+    return { book: res.book, books: list, mode: "server" };
+  } catch {
+    await seedOfflineBooksIfEmpty();
+    const books = await getOfflineBooks();
+    const currentIdx = books.findIndex((b) => b.id === bookId);
+    const existing =
+      (currentIdx >= 0 ? books[currentIdx] : undefined) ||
+      defaultBooks.find((b) => b.id === bookId);
     if (!existing) throw new Error("Book volume not found");
-    const updated = { ...existing, ...patch };
+    const { positionIndex, ...rest } = patch;
+    const updated = { ...existing, ...rest };
     await putInStore("books", updated);
-    return { book: updated, mode: "offline-fallback" };
+    if (typeof positionIndex === "number" && Number.isFinite(positionIndex) && currentIdx >= 0) {
+      const ids = books.map((b) => b.id);
+      const targetIdx = Math.min(ids.length - 1, Math.max(0, Math.round(positionIndex)));
+      if (targetIdx !== currentIdx) {
+        const [moved] = ids.splice(currentIdx, 1);
+        ids.splice(targetIdx, 0, moved);
+        saveOfflineOrder(ids);
+      }
+    }
+    const updatedList = await getOfflineBooks();
+    return {
+      book: updatedList.find((b) => b.id === bookId) || updated,
+      books: updatedList,
+      mode: "offline-fallback",
+    };
+  }
+}
+
+export async function reorderBooks(
+  orderedIds: string[],
+): Promise<{ books: DiaryBook[]; mode: StorageMode }> {
+  try {
+    const res = await serverFetch<{ books: DiaryBook[] }>("/api/books/reorder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderedIds }),
+    });
+    return { books: res.books, mode: "server" };
+  } catch {
+    await seedOfflineBooksIfEmpty();
+    saveOfflineOrder(orderedIds);
+    const books = await getOfflineBooks();
+    return { books, mode: "offline-fallback" };
+  }
+}
+
+export async function deleteBook(
+  bookId: string,
+): Promise<{ books: DiaryBook[]; mode: StorageMode }> {
+  try {
+    const res = await serverFetch<{ books: DiaryBook[] }>(`/api/books/${encodeURIComponent(bookId)}`, {
+      method: "DELETE",
+    });
+    return { books: res.books, mode: "server" };
+  } catch {
+    await seedOfflineBooksIfEmpty();
+    const books = await getOfflineBooks();
+    if (books.length <= 1) {
+      throw new Error("Keep at least one book on the shelf.");
+    }
+    await deleteFromStore("books", bookId);
+    const nextIds = books.map((b) => b.id).filter((id) => id !== bookId);
+    saveOfflineOrder(nextIds);
+    const memories = await getAllFromStore<MemoryAlbum>("memories");
+    for (const m of memories) {
+      if (m.bookId === bookId) {
+        await deleteFromStore("memories", m.id);
+      }
+    }
+    const updatedList = await getOfflineBooks();
+    return { books: updatedList, mode: "offline-fallback" };
   }
 }
 

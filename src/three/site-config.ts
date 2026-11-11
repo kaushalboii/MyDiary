@@ -12,5 +12,5 @@ export const siteConfig = {
   bookLinkLabel: "Open memory book",
   enableOptionalStripeArchive: false,
   independentNote:
-    "19 clothbound hardcover notebooks · Notes, stories & photo albums.",
+    "Clothbound hardcover notebooks · Notes, stories & photo albums.",
 } as const;

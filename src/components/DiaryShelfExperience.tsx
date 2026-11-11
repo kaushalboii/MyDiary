@@ -3,13 +3,16 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, Feather, Images, PenLine, SlidersHorizontal } from "lucide-react";
+import { BookOpen, Feather, Images, PenLine, Plus, SlidersHorizontal } from "lucide-react";
 import { defaultBooks } from "@/lib/default-books";
 import {
+  createBook,
+  deleteBook,
   fetchBooks,
   fetchMemories,
   resolveMediaUrl,
   updateBook,
+  type BookPatchInput,
 } from "@/lib/storage-client";
 import type { DiaryBook, MemoryAlbum } from "@/lib/types";
 import { ShelfEngine, type ShelfMode } from "@/three/ShelfEngine";
@@ -52,7 +55,9 @@ function ShelfExperienceInner() {
   const [ready, setReady] = useState(false);
   const [selectedMemories, setSelectedMemories] = useState<MemoryAlbum[]>([]);
   const [loadingMemories, setLoadingMemories] = useState(false);
-  const [editingVolume, setEditingVolume] = useState(false);
+  const [editorState, setEditorState] = useState<
+    { mode: "edit"; book: DiaryBook } | { mode: "create" } | null
+  >(null);
   const [storageOpen, setStorageOpen] = useState(false);
 
   const booksRef = useRef(books);
@@ -169,13 +174,53 @@ function ShelfExperienceInner() {
     };
   }, [router]);
 
-  async function handleSaveVolumeDetails(patch: Partial<DiaryBook>) {
-    if (!selectedBook) return;
-    const { book: updated } = await updateBook(selectedBook.id, patch);
-    const nextList = books.map((b) => (b.id === updated.id ? updated : b));
-    setBooks(nextList);
-    engineRef.current?.syncBooks(nextList);
+  async function handleSaveVolume(patch: BookPatchInput) {
+    if (!editorState) return;
+    if (editorState.mode === "create") {
+      const res = await createBook(patch);
+      setBooks(res.books);
+      engineRef.current?.syncBooks(res.books, res.book.id);
+      return;
+    }
+    const targetId = editorState.book.id;
+    const res = await updateBook(targetId, patch);
+    setBooks(res.books);
+    engineRef.current?.syncBooks(res.books, targetId);
   }
+
+  async function handleDeleteVolume(bookId: string) {
+    const res = await deleteBook(bookId);
+    setBooks(res.books);
+    engineRef.current?.syncBooks(res.books, res.books[0]?.id);
+  }
+
+  const createDraftBook: DiaryBook = {
+    id: "new-book-draft",
+    title: "New Diary",
+    shortTitle: "New Diary",
+    subtitle: "Personal Pages",
+    yearLabel: String(new Date().getFullYear()),
+    coverImprint: "PERSONAL ARCHIVE",
+    coverFooter: "",
+    spineMark: String(books.length + 1),
+    welcomeNote:
+      "Welcome to your new diary pages. Turn the leaf or write whenever you wish.",
+    description: "",
+    quote: "",
+    quoteBy: "",
+    format: "Clothbound Hardcover",
+    cover: "#365943",
+    accent: "#c7a45e",
+    ink: "#eee7d6",
+    motif: "lattice",
+    coverTemplate: "clean-minimal",
+    spineStyle: "banded",
+    paperStyle: "cream",
+    fontStyle: "serif",
+    height: 2.12,
+    thickness: 0.22,
+    width: 1.3,
+  };
 
   return (
     <main
@@ -203,6 +248,15 @@ function ShelfExperienceInner() {
         </div>
 
         <div className="header-actions">
+          <button
+            type="button"
+            onClick={() => setEditorState({ mode: "create" })}
+            className="header-pill-btn cursor-pointer"
+          >
+            <Plus className="h-3 w-3" />
+            <span>Add Book</span>
+          </button>
+
           <Link
             href={`/compose?bookId=${encodeURIComponent(activeBook.id)}`}
             className="header-pill-btn header-pill-btn--primary"
@@ -255,6 +309,16 @@ function ShelfExperienceInner() {
             <span>Open book</span>
             <span aria-hidden="true">→</span>
           </Link>
+          <button
+            type="button"
+            className="inspect-button"
+            disabled={isFocused}
+            onClick={() => setEditorState({ mode: "edit", book: activeBook })}
+            aria-label={`Customize ${activeBook.title}`}
+          >
+            <SlidersHorizontal className="h-3 w-3" />
+            <span>Customize</span>
+          </button>
         </div>
       </section>
 
@@ -343,11 +407,13 @@ function ShelfExperienceInner() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => setEditingVolume(true)}
+                  onClick={() =>
+                    setEditorState({ mode: "edit", book: selectedBook })
+                  }
                   className="inline-flex items-center gap-1.5 border border-[var(--hairline)] px-2.5 py-1 text-[9px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
                 >
                   <SlidersHorizontal className="h-3 w-3" />
-                  <span>Customize Wordings</span>
+                  <span>Customize Book</span>
                 </button>
               </div>
 
@@ -477,13 +543,21 @@ function ShelfExperienceInner() {
         <p>Assembling {books.length} memory volumes</p>
       </div>
 
-      {selectedBook && (
+      {editorState && (
         <VolumeEditorModal
-          key={`${selectedBook.id}-${editingVolume}`}
-          book={selectedBook}
-          open={editingVolume}
-          onClose={() => setEditingVolume(false)}
-          onSave={handleSaveVolumeDetails}
+          key={
+            editorState.mode === "create"
+              ? `create-${books.length}`
+              : `edit-${editorState.book.id}`
+          }
+          mode={editorState.mode}
+          book={editorState.mode === "create" ? createDraftBook : editorState.book}
+          shelfBooks={books}
+          defaultInsertIndex={Math.min(books.length, activeIndex + 1)}
+          open={true}
+          onClose={() => setEditorState(null)}
+          onSave={handleSaveVolume}
+          onDelete={handleDeleteVolume}
         />
       )}
 

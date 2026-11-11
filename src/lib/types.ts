@@ -19,6 +19,19 @@ export type BookMotif =
   | "windows"
   | "steps";
 
+export type CoverTemplate =
+  | "classic"
+  | "clean-minimal"
+  | "bordered-plaque"
+  | "split-band"
+  | "photo-card";
+
+export type SpineStyle = "classic" | "banded" | "minimal" | "bordered";
+
+export type PaperStyle = "cream" | "lined" | "dotgrid" | "framed";
+
+export type BookFontStyle = "serif" | "sans" | "mono";
+
 export type DiaryBook = {
   id: string;
   title: string;
@@ -28,6 +41,7 @@ export type DiaryBook = {
   coverImprint?: string;
   coverFooter?: string;
   spineMark?: string;
+  welcomeNote?: string;
   description: string;
   quote: string;
   quoteBy: string;
@@ -36,8 +50,14 @@ export type DiaryBook = {
   accent: string;
   ink: string;
   motif: BookMotif;
+  coverTemplate?: CoverTemplate;
+  spineStyle?: SpineStyle;
+  paperStyle?: PaperStyle;
+  fontStyle?: BookFontStyle;
+  showCoverTextWithImage?: boolean;
   height: number;
   thickness: number;
+  width?: number;
   coverImage?: string;
   living?: boolean;
   memoryCount?: number;

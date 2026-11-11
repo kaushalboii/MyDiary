@@ -25,10 +25,21 @@ function loadDefaultBooks() {
   return JSON.parse(fs.readFileSync(DEFAULT_BOOKS_PATH, "utf8"));
 }
 
+const CURRENT_SCHEMA_VERSION = 2;
+
+function isLegacyDefaultShelf(books) {
+  return (
+    Array.isArray(books) &&
+    books.length === 19 &&
+    books[0]?.id === "memories-2022" &&
+    books[18]?.id === "milestones-and-ascents"
+  );
+}
+
 function readDb() {
   if (!fs.existsSync(DB_FILE)) {
     const initial = {
-      schemaVersion: 1,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       books: loadDefaultBooks(),
       memories: [],
       updatedAt: new Date().toISOString(),
@@ -38,18 +49,27 @@ function readDb() {
   }
   const raw = fs.readFileSync(DB_FILE, "utf8");
   const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed.memories)) {
+    parsed.memories = [];
+  }
   if (!Array.isArray(parsed.books) || parsed.books.length === 0) {
     parsed.books = loadDefaultBooks();
   }
-  if (!Array.isArray(parsed.memories)) {
-    parsed.memories = [];
+  if (
+    (parsed.schemaVersion ?? 1) < CURRENT_SCHEMA_VERSION &&
+    parsed.memories.length === 0 &&
+    isLegacyDefaultShelf(parsed.books)
+  ) {
+    parsed.books = loadDefaultBooks();
+    parsed.schemaVersion = CURRENT_SCHEMA_VERSION;
+    writeDbSync(parsed);
   }
   return parsed;
 }
 
 function writeDbSync(data) {
   const payload = {
-    schemaVersion: 1,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     books: data.books,
     memories: data.memories,
     updatedAt: new Date().toISOString(),
@@ -131,6 +151,12 @@ function cleanupOrphanedUploads(db) {
       if (photo.filename) referenced.add(path.basename(photo.filename));
     }
   }
+  for (const book of db.books || []) {
+    if (typeof book.coverImage === "string" && book.coverImage.includes("/uploads/")) {
+      const cleanName = path.basename(book.coverImage.split("?")[0]);
+      if (cleanName) referenced.add(cleanName);
+    }
+  }
   if (!fs.existsSync(UPLOADS_DIR)) return;
   for (const file of fs.readdirSync(UPLOADS_DIR)) {
     if (!referenced.has(file)) {
@@ -141,6 +167,110 @@ function cleanupOrphanedUploads(db) {
       }
     }
   }
+}
+
+const COVER_TEMPLATES = new Set([
+  "classic",
+  "clean-minimal",
+  "bordered-plaque",
+  "split-band",
+  "photo-card",
+]);
+const SPINE_STYLES = new Set(["classic", "banded", "minimal", "bordered"]);
+const PAPER_STYLES = new Set(["cream", "lined", "dotgrid", "framed"]);
+const FONT_STYLES = new Set(["serif", "sans", "mono"]);
+
+function clampNumber(value, min, max, fallback) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.min(max, Math.max(min, Number(num.toFixed(3))));
+}
+
+function makeBookId(title, existingBooks) {
+  const base =
+    String(title || "volume")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "volume";
+  const taken = new Set(existingBooks.map((b) => b.id));
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base}-${n}`)) n += 1;
+  return `${base}-${n}`;
+}
+
+function applyBookPatch(current, patch) {
+  const nextTitle =
+    typeof patch.title === "string" && patch.title.trim() ? patch.title.trim() : current.title;
+  const nextShort =
+    typeof patch.shortTitle === "string" && patch.shortTitle.trim()
+      ? patch.shortTitle.trim()
+      : typeof patch.title === "string" && patch.title.trim() && current.shortTitle === current.title
+        ? nextTitle
+        : current.shortTitle;
+
+  return {
+    ...current,
+    title: nextTitle,
+    shortTitle: nextShort,
+    subtitle: typeof patch.subtitle === "string" ? patch.subtitle.trim() : current.subtitle,
+    yearLabel: typeof patch.yearLabel === "string" ? patch.yearLabel.trim() : current.yearLabel,
+    coverImprint:
+      typeof patch.coverImprint === "string" ? patch.coverImprint.trim() : current.coverImprint,
+    coverFooter:
+      typeof patch.coverFooter === "string" ? patch.coverFooter.trim() : current.coverFooter,
+    spineMark: typeof patch.spineMark === "string" ? patch.spineMark.trim() : current.spineMark,
+    welcomeNote:
+      typeof patch.welcomeNote === "string" ? patch.welcomeNote.trim() : current.welcomeNote,
+    description:
+      typeof patch.description === "string" ? patch.description.trim() : current.description,
+    quote: typeof patch.quote === "string" ? patch.quote.trim() : current.quote,
+    quoteBy: typeof patch.quoteBy === "string" ? patch.quoteBy.trim() : current.quoteBy,
+    format: typeof patch.format === "string" && patch.format.trim() ? patch.format.trim() : current.format,
+    cover: typeof patch.cover === "string" && patch.cover ? patch.cover : current.cover,
+    accent: typeof patch.accent === "string" && patch.accent ? patch.accent : current.accent,
+    ink: typeof patch.ink === "string" && patch.ink ? patch.ink : current.ink,
+    motif: typeof patch.motif === "string" && patch.motif ? patch.motif : current.motif,
+    coverTemplate:
+      typeof patch.coverTemplate === "string" && COVER_TEMPLATES.has(patch.coverTemplate)
+        ? patch.coverTemplate
+        : current.coverTemplate,
+    spineStyle:
+      typeof patch.spineStyle === "string" && SPINE_STYLES.has(patch.spineStyle)
+        ? patch.spineStyle
+        : current.spineStyle,
+    paperStyle:
+      typeof patch.paperStyle === "string" && PAPER_STYLES.has(patch.paperStyle)
+        ? patch.paperStyle
+        : current.paperStyle,
+    fontStyle:
+      typeof patch.fontStyle === "string" && FONT_STYLES.has(patch.fontStyle)
+        ? patch.fontStyle
+        : current.fontStyle,
+    coverImage:
+      patch.coverImage === "" || patch.coverImage === null
+        ? undefined
+        : typeof patch.coverImage === "string"
+          ? patch.coverImage
+          : current.coverImage,
+    showCoverTextWithImage:
+      typeof patch.showCoverTextWithImage === "boolean"
+        ? patch.showCoverTextWithImage
+        : current.showCoverTextWithImage,
+    height:
+      patch.height !== undefined
+        ? clampNumber(patch.height, 1.5, 2.55, current.height)
+        : current.height,
+    thickness:
+      patch.thickness !== undefined
+        ? clampNumber(patch.thickness, 0.1, 0.55, current.thickness)
+        : current.thickness,
+    width:
+      patch.width !== undefined
+        ? clampNumber(patch.width, 1.0, 1.65, current.width ?? 1.3)
+        : current.width,
+    living: typeof patch.living === "boolean" ? patch.living : current.living,
+  };
 }
 
 const app = express();
@@ -246,45 +376,134 @@ app.get("/api/books", requireAuth, (_req, res) => {
   res.json({ books: enrichBooks(db) });
 });
 
+app.post("/api/books", requireAuth, async (req, res) => {
+  const body = req.body || {};
+  const title = typeof body.title === "string" && body.title.trim() ? body.title.trim() : "Untitled Diary";
+  const result = await mutateDb((db) => {
+    const baseTemplate = {
+      id: typeof body.id === "string" && body.id.trim() && !db.books.some((b) => b.id === body.id.trim())
+        ? body.id.trim()
+        : makeBookId(title, db.books),
+      title,
+      shortTitle: title,
+      subtitle: "",
+      yearLabel: String(new Date().getFullYear()),
+      coverImprint: "PERSONAL ARCHIVE",
+      coverFooter: "",
+      spineMark: String(db.books.length + 1),
+      welcomeNote: "Welcome to your new diary pages. Turn the leaf or write whenever you are ready.",
+      description: "",
+      quote: "",
+      quoteBy: "",
+      format: "Clothbound Hardcover",
+      cover: "#6f2130",
+      accent: "#d5a756",
+      ink: "#f4ead7",
+      motif: "lattice",
+      coverTemplate: "clean-minimal",
+      spineStyle: "banded",
+      paperStyle: "cream",
+      fontStyle: "serif",
+      height: 2.12,
+      thickness: 0.24,
+      width: 1.3,
+    };
+    const nextBook = applyBookPatch(baseTemplate, body);
+    const rawPos = Number(body.positionIndex);
+    const insertAt = Number.isFinite(rawPos)
+      ? Math.min(db.books.length, Math.max(0, Math.round(rawPos)))
+      : db.books.length;
+    db.books.splice(insertAt, 0, nextBook);
+    const books = enrichBooks(db);
+    return {
+      book: books.find((b) => b.id === nextBook.id),
+      books,
+    };
+  });
+  res.status(201).json(result);
+});
+
+app.put("/api/books/reorder", requireAuth, async (req, res) => {
+  const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds : null;
+  if (!orderedIds || orderedIds.length === 0) {
+    res.status(400).json({ error: "orderedIds array is required." });
+    return;
+  }
+  const books = await mutateDb((db) => {
+    const map = new Map(db.books.map((b) => [b.id, b]));
+    const reordered = [];
+    for (const id of orderedIds) {
+      const found = map.get(String(id));
+      if (found) {
+        reordered.push(found);
+        map.delete(String(id));
+      }
+    }
+    for (const remaining of map.values()) {
+      reordered.push(remaining);
+    }
+    db.books = reordered;
+    return enrichBooks(db);
+  });
+  res.json({ books });
+});
+
 app.put("/api/books/:id", requireAuth, async (req, res) => {
   const bookId = req.params.id;
-  const updated = await mutateDb((db) => {
+  const result = await mutateDb((db) => {
     const idx = db.books.findIndex((b) => b.id === bookId);
     if (idx === -1) return null;
     const current = db.books[idx];
     const patch = req.body || {};
-    const next = {
-      ...current,
-      title: typeof patch.title === "string" && patch.title.trim() ? patch.title.trim() : current.title,
-      shortTitle:
-        typeof patch.shortTitle === "string" && patch.shortTitle.trim()
-          ? patch.shortTitle.trim()
-          : typeof patch.title === "string" && patch.title.trim()
-            ? patch.title.trim()
-            : current.shortTitle,
-      subtitle: typeof patch.subtitle === "string" ? patch.subtitle.trim() : current.subtitle,
-      yearLabel: typeof patch.yearLabel === "string" ? patch.yearLabel.trim() : current.yearLabel,
-      coverImprint: typeof patch.coverImprint === "string" ? patch.coverImprint.trim() : current.coverImprint,
-      coverFooter: typeof patch.coverFooter === "string" ? patch.coverFooter.trim() : current.coverFooter,
-      spineMark: typeof patch.spineMark === "string" ? patch.spineMark.trim() : current.spineMark,
-      description: typeof patch.description === "string" ? patch.description.trim() : current.description,
-      quote: typeof patch.quote === "string" ? patch.quote.trim() : current.quote,
-      quoteBy: typeof patch.quoteBy === "string" ? patch.quoteBy.trim() : current.quoteBy,
-      cover: typeof patch.cover === "string" ? patch.cover : current.cover,
-      accent: typeof patch.accent === "string" ? patch.accent : current.accent,
-      ink: typeof patch.ink === "string" ? patch.ink : current.ink,
-      motif: typeof patch.motif === "string" ? patch.motif : current.motif,
-      living: typeof patch.living === "boolean" ? patch.living : current.living,
-    };
+    const next = applyBookPatch(current, patch);
     db.books[idx] = next;
-    return enrichBooks(db).find((b) => b.id === bookId);
+
+    if (typeof patch.positionIndex === "number" && Number.isFinite(patch.positionIndex)) {
+      const targetIdx = Math.min(db.books.length - 1, Math.max(0, Math.round(patch.positionIndex)));
+      if (targetIdx !== idx) {
+        const [moved] = db.books.splice(idx, 1);
+        db.books.splice(targetIdx, 0, moved);
+      }
+    }
+
+    cleanupOrphanedUploads(db);
+    const books = enrichBooks(db);
+    return {
+      book: books.find((b) => b.id === bookId),
+      books,
+    };
   });
 
-  if (!updated) {
+  if (!result) {
     res.status(404).json({ error: "Book volume not found." });
     return;
   }
-  res.json({ book: updated });
+  res.json(result);
+});
+
+app.delete("/api/books/:id", requireAuth, async (req, res) => {
+  const bookId = req.params.id;
+  const result = await mutateDb((db) => {
+    if (db.books.length <= 1) {
+      return { error: "Keep at least one book on the shelf." };
+    }
+    const idx = db.books.findIndex((b) => b.id === bookId);
+    if (idx === -1) return null;
+    db.books.splice(idx, 1);
+    db.memories = db.memories.filter((m) => m.bookId !== bookId);
+    cleanupOrphanedUploads(db);
+    return { ok: true, books: enrichBooks(db) };
+  });
+
+  if (!result) {
+    res.status(404).json({ error: "Book volume not found." });
+    return;
+  }
+  if (result.error) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json(result);
 });
 
 app.get("/api/memories", requireAuth, (req, res) => {
@@ -494,9 +713,26 @@ app.post("/api/sync", requireAuth, async (req, res) => {
     let addedMemories = 0;
 
     for (const incomingBook of Array.isArray(books) ? books : []) {
+      if (!incomingBook?.id) continue;
+      let normalizedCoverImage = incomingBook.coverImage;
+      if (typeof normalizedCoverImage === "string" && normalizedCoverImage.startsWith("data:image/")) {
+        const match = normalizedCoverImage.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
+        if (match) {
+          const rawExt = match[1].toLowerCase().replace("jpeg", "jpg").replace(/[^a-z0-9]/g, "");
+          const filename = `cover-${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${rawExt || "jpg"}`;
+          fs.writeFileSync(path.join(UPLOADS_DIR, filename), Buffer.from(match[2], "base64"));
+          normalizedCoverImage = `/uploads/${filename}`;
+        }
+      }
       const idx = db.books.findIndex((b) => b.id === incomingBook.id);
       if (idx !== -1) {
-        db.books[idx] = { ...db.books[idx], ...incomingBook };
+        db.books[idx] = applyBookPatch(db.books[idx], {
+          ...incomingBook,
+          coverImage: normalizedCoverImage,
+        });
+        updatedBooks += 1;
+      } else {
+        db.books.push(applyBookPatch(incomingBook, { coverImage: normalizedCoverImage }));
         updatedBooks += 1;
       }
     }
