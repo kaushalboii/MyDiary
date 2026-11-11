@@ -1,0 +1,7 @@
+{
+  "registryVersion": 1,
+  "assetRoot": "public",
+  "delivery": "mint_cdn",
+  "sourceExperience": "https://github.com/mintdotgg/mint-playground/tree/main/experiences/complete-shelf",
+  "assets": {}
+}
