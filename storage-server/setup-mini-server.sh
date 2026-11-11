@@ -18,6 +18,9 @@ if command -v pm2 >/dev/null 2>&1; then
   pm2 save || true
   echo "PM2 process 'mydiary-storage' is running on port 4321."
 else
-  echo "PM2 not found. Starting directly with Node..."
-  node server.mjs
+  echo "PM2 not found in PATH. Starting in background with nohup..."
+  pkill -f "node server.mjs" || true
+  nohup node server.mjs > server.log 2>&1 < /dev/null &
+  sleep 1
+  echo "Started mydiary-storage in background (PID $!). Logs: $(pwd)/server.log"
 fi

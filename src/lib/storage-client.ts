@@ -13,13 +13,28 @@ const CONFIG_KEY = "mydiary_storage_config_v1";
 const IDB_NAME = "mydiary_offline_fallback_v1";
 const IDB_VERSION = 1;
 
+export const DEFAULT_STORAGE_URL =
+  "https://4321-agq2i7yzuidu26jymgrfnit3ea.instabox.tech";
+
+function isLoopbackUrl(url: string): boolean {
+  return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/i.test(url.trim());
+}
+
+function isLocalBrowserHost(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname === "localhost"
+  );
+}
+
 export function getDefaultStorageConfig(): StorageConfig {
   const envUrl = (process.env.NEXT_PUBLIC_STORAGE_URL || "").trim();
   const envToken = (process.env.NEXT_PUBLIC_STORAGE_TOKEN || "").trim();
   return {
-    serverUrl: envUrl || "http://127.0.0.1:4321",
+    serverUrl: normalizeServerUrl(envUrl || DEFAULT_STORAGE_URL),
     token: envToken || "",
-    label: envUrl ? "kaushals-mini-server" : "Local Storage Server",
+    label: "kaushals-mini-server",
   };
 }
 
@@ -34,8 +49,13 @@ export function loadStorageConfig(): StorageConfig {
     const raw = window.localStorage.getItem(CONFIG_KEY);
     if (!raw) return defaults;
     const parsed = JSON.parse(raw) as Partial<StorageConfig>;
+    const candidate = normalizeServerUrl(parsed.serverUrl || defaults.serverUrl);
+    const serverUrl =
+      !isLocalBrowserHost() && isLoopbackUrl(candidate)
+        ? defaults.serverUrl
+        : candidate;
     return {
-      serverUrl: normalizeServerUrl(parsed.serverUrl || defaults.serverUrl),
+      serverUrl,
       token: typeof parsed.token === "string" ? parsed.token : defaults.token,
       label: typeof parsed.label === "string" && parsed.label.trim() ? parsed.label.trim() : defaults.label,
     };

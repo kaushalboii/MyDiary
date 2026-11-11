@@ -27,12 +27,16 @@ jobs:
           node-version: "22"
           cache: "npm"
 
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
       - name: Install dependencies
         run: npm ci
 
       - name: Build static site for GitHub Pages
         env:
           NEXT_PUBLIC_BASE_PATH: "/${{ github.event.repository.name }}"
+          NEXT_PUBLIC_STORAGE_URL: "https://4321-agq2i7yzuidu26jymgrfnit3ea.instabox.tech"
         run: npm run build
 
       - name: Upload artifact
@@ -50,4 +54,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-

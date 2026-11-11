@@ -13,7 +13,7 @@ An editorial 3D memory library powered by Three.js and inspired by [The Complete
 ## Architecture: GitHub Pages + Instabox
 
 - **Frontend (GitHub Pages):** Static export built via [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) into `./out` (`basePath: "/MyDiary"`). Enable in GitHub repo **Settings → Pages → Source: GitHub Actions**.
-- **Backend (`kaushals-mini-server`):** Node.js + Express + Multer + PM2 on port `4321` storing books, memories JSON, and uploaded photos under `storage-server/data/`.
+- **Backend (`kaushals-mini-server`):** Node.js + Express + Multer + PM2 on port `4321` (`https://4321-agq2i7yzuidu26jymgrfnit3ea.instabox.tech`) storing books, memories JSON, and uploaded photos under `storage-server/data/`.
 
 ## Storage on `kaushals-mini-server` (Instabox + PM2)
 

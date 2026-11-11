@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Check, Copy, HardDrive, RefreshCw, Server, Terminal, UploadCloud, X } from "lucide-react";
 import {
   checkStorageHealth,
+  getDefaultStorageConfig,
   getOfflineDraftCount,
   loadStorageConfig,
   saveStorageConfig,
@@ -23,11 +24,9 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-const MINI_SERVER_COMMANDS = `# On user@instabox-kaushals-mini-server:~$
-rm -rf MyDiary && git clone https://github.com/kaushalboii/MyDiary.git
-cd MyDiary/storage-server
-bash setup-mini-server.sh
-# Then open Port 4321 in Instabox dashboard -> Ports tab and paste the https:// URL above.`;
+const MINI_SERVER_COMMANDS = `# Already connected by default: https://4321-agq2i7yzuidu26jymgrfnit3ea.instabox.tech
+# To update kaushals-mini-server later:
+cd ~/MyDiary && git pull origin main && cd storage-server && bash setup-mini-server.sh`;
 
 export function StorageSettingsModal({
   open,
@@ -248,7 +247,7 @@ export function StorageSettingsModal({
 
           <div>
             <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-              Storage Server URL (Instabox Port URL or http://127.0.0.1:4321)
+              Storage Server URL (kaushals-mini-server or http://127.0.0.1:4321)
             </label>
             <input
               type="url"
@@ -257,7 +256,7 @@ export function StorageSettingsModal({
               onChange={(e) =>
                 setConfig({ ...config, serverUrl: e.target.value })
               }
-              placeholder="https://4321-....instabox.sh"
+              placeholder="https://4321-agq2i7yzuidu26jymgrfnit3ea.instabox.tech"
               className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3.5 py-2.5 text-sm"
             />
           </div>
@@ -269,6 +268,20 @@ export function StorageSettingsModal({
             >
               <HardDrive className="h-3.5 w-3.5" />
               <span>Save & Connect</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const defaults = getDefaultStorageConfig();
+                setConfig(defaults);
+                saveStorageConfig(defaults);
+                void runHealthCheck(defaults);
+                onConnected?.();
+              }}
+              className="inline-flex items-center gap-2 border border-[var(--hairline)] bg-[var(--paper-light)] px-4 py-2.5 text-xs font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
+            >
+              <span>Use Instabox Default</span>
             </button>
 
             {offlineCount > 0 && health && (
