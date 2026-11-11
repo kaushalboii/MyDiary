@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { BookMotifPreview } from "@/components/BookMotifPreview";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { defaultBooks } from "@/lib/default-books";
 import {
   deleteMemory,
@@ -119,6 +120,7 @@ function MemoryAlbumContent() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          <ThemeToggle />
           {memory && (
             <>
               <Link
@@ -215,7 +217,7 @@ function MemoryAlbumContent() {
                       <span>Keepsake Note</span>
                     </div>
                     <p
-                      className="m-0 text-base sm:text-lg italic leading-relaxed text-[#322c25]"
+                      className="m-0 text-base sm:text-lg italic leading-relaxed text-[var(--page-ink)]"
                       style={{ fontFamily: "var(--serif)" }}
                     >
                       “{memory.note}”
@@ -237,7 +239,7 @@ function MemoryAlbumContent() {
               </div>
 
               {/* Right Folio: Curated Photo Album */}
-              <div className="bg-[#f8f5ee] p-6 sm:p-10 lg:col-span-6">
+              <div className="bg-[var(--page-bg)] p-6 sm:p-10 lg:col-span-6">
                 <div className="mb-6 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--hairline)] pb-3">
                   <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.18em] uppercase text-[var(--ink-soft)]">
                     <Images className="h-3.5 w-3.5 text-[var(--accent)]" />
@@ -329,7 +331,7 @@ function MemoryAlbumContent() {
                         </button>
                         {(photo.caption || memory.photos.length > 1) && (
                           <figcaption className="mt-2 flex items-baseline justify-between gap-2 px-1 text-xs">
-                            <span className="font-serif italic text-[#3a342c]">
+                            <span className="font-serif italic text-[var(--page-ink-muted)]">
                               {photo.caption || "Untitled frame"}
                             </span>
                             <span className="text-[10px] text-[var(--ink-soft)]">
@@ -361,7 +363,7 @@ function MemoryAlbumContent() {
                             className="aspect-square w-full object-cover"
                           />
                         </button>
-                        <figcaption className="mt-3 px-1 text-center font-serif text-sm italic text-[#342e27]">
+                        <figcaption className="mt-3 px-1 text-center font-serif text-sm italic text-[var(--page-ink-muted)]">
                           {photo.caption || `${memory.date} · Frame ${idx + 1}`}
                         </figcaption>
                       </figure>

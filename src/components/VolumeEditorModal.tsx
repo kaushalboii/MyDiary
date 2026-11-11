@@ -48,16 +48,16 @@ const MOTIFS: BookMotif[] = [
 ];
 
 const CLOTH_PRESETS = [
-  { name: "Oat Linen", cover: "#ebe3d4", accent: "#697b8c", ink: "#3b352f" },
-  { name: "Sage Mist", cover: "#7d9489", accent: "#dfd2bd", ink: "#f9f6ef" },
-  { name: "Dusty Rose", cover: "#b98c86", accent: "#ede5d6", ink: "#fbf8f2" },
-  { name: "Powder Slate", cover: "#a3bcc9", accent: "#d4a988", ink: "#2f353b" },
-  { name: "Soft Clay", cover: "#c68c7b", accent: "#4e5964", ink: "#fbf8f2" },
-  { name: "Eucalyptus", cover: "#657f70", accent: "#d8c59e", ink: "#f6f2e8" },
-  { name: "Buttercream", cover: "#e7dbb9", accent: "#a97477", ink: "#3a342e" },
-  { name: "Lavender Ash", cover: "#a99db3", accent: "#dec29e", ink: "#f9f6ef" },
-  { name: "Stone Grey", cover: "#d4d0c7", accent: "#647c92", ink: "#2e2c29" },
-  { name: "Soft Espresso", cover: "#45403b", accent: "#cfa593", ink: "#f7f2e9" },
+  { name: "Ruby Cloth", cover: "#a63a3e", accent: "#f1d6a7", ink: "#fbf7ef" },
+  { name: "Botanical Emerald", cover: "#246b5b", accent: "#e9d5b0", ink: "#f9f6ee" },
+  { name: "Ultramarine", cover: "#26538d", accent: "#f2c6a0", ink: "#f8f6f0" },
+  { name: "Terracotta", cover: "#c85a3b", accent: "#f5ead8", ink: "#fbf7f0" },
+  { name: "Sunlit Marigold", cover: "#d99326", accent: "#1f1d1a", ink: "#24211d" },
+  { name: "Mediterranean Teal", cover: "#237887", accent: "#ecd6b4", ink: "#f9f6ef" },
+  { name: "Rich Plum", cover: "#6b4573", accent: "#cde0d5", ink: "#faf6ef" },
+  { name: "Matcha Leaf", cover: "#568049", accent: "#efe2c4", ink: "#faf7ef" },
+  { name: "Berry Rose", cover: "#b54865", accent: "#f5e8dc", ink: "#fcf8f2" },
+  { name: "Obsidian Indigo", cover: "#262b3d", accent: "#e5b98e", ink: "#f5f0e6" },
 ];
 
 const COVER_TEMPLATES: Array<{ id: CoverTemplate; label: string; hint: string }> = [
@@ -1004,8 +1004,8 @@ export function VolumeEditorModal({
                       <span>Remove This Book From Shelf</span>
                     </button>
                   ) : (
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--accent)]/35 bg-[#f7efec] p-3">
-                      <span className="text-xs text-[#6f4439]">
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--accent)]/40 bg-[var(--danger-bg)] p-3">
+                      <span className="text-xs text-[var(--danger-ink)]">
                         Remove “{book.title}” and its memories from the shelf?
                       </span>
                       <div className="flex gap-2">
@@ -1033,7 +1033,7 @@ export function VolumeEditorModal({
           )}
 
           {error && (
-            <div className="rounded-xl border border-[#9b6254]/40 bg-[#f7efec] px-3 py-2 text-xs text-[#6f4439]">
+            <div className="rounded-xl border border-[var(--accent)]/40 bg-[var(--danger-bg)] px-3 py-2 text-xs text-[var(--danger-ink)]">
               {error}
             </div>
           )}

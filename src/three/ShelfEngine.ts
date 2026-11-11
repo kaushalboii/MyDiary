@@ -32,6 +32,42 @@ import { addStripeFoilBlend, stripeFoilSettings } from "./stripe-foil";
 import { siteConfig } from "./site-config";
 
 export type ShelfMode = "browse" | "focusing" | "inspect" | "returning";
+export type ShelfTheme = "light" | "dark";
+
+const THEME_PALETTES = {
+  light: {
+    bg: "#f3efe8",
+    ground: "#eae3d6",
+    shelf: "#735a47",
+    shelfEdge: "#5f4837",
+    hemiSky: "#fffaf2",
+    hemiGround: "#8d7969",
+    hemiIntensity: 2.65,
+    keyColor: "#fff9f0",
+    keyIntensity: 4.25,
+    rimColor: "#dce6f0",
+    rimIntensity: 1.9,
+    bounceColor: "#e5c2a8",
+    bounceIntensity: 0.95,
+    exposure: 1.04,
+  },
+  dark: {
+    bg: "#171513",
+    ground: "#12100e",
+    shelf: "#4c3a2c",
+    shelfEdge: "#3b2c21",
+    hemiSky: "#ece0d2",
+    hemiGround: "#3b3029",
+    hemiIntensity: 1.95,
+    keyColor: "#fff5e8",
+    keyIntensity: 3.85,
+    rimColor: "#93b4d4",
+    rimIntensity: 2.15,
+    bounceColor: "#e08e68",
+    bounceIntensity: 1.15,
+    exposure: 1.1,
+  },
+} as const;
 
 type ShelfCallbacks = {
   onActiveIndex: (index: number) => void;
@@ -72,7 +108,6 @@ const shelfTop = 0.34;
 const browseCamera = new THREE.Vector3(0, 1.42, 6.65);
 const browseTarget = new THREE.Vector3(0, 1.28, 0.15);
 const pageColor = new THREE.Color("#f0e9da");
-const shelfColor = new THREE.Color("#735c4b");
 const clamp = THREE.MathUtils.clamp;
 const focusInDuration = 0.46;
 const focusOutDuration = 0.34;
@@ -197,6 +232,15 @@ export class ShelfEngine {
   private callbacks: ShelfCallbacks;
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
+  private hemisphereLight: THREE.HemisphereLight | null = null;
+  private keyLight: THREE.DirectionalLight | null = null;
+  private rimLight: THREE.DirectionalLight | null = null;
+  private bounceLight: THREE.PointLight | null = null;
+  private wallMaterial: THREE.MeshStandardMaterial | null = null;
+  private groundMaterial: THREE.MeshStandardMaterial | null = null;
+  private shelfMaterial: THREE.MeshStandardMaterial | null = null;
+  private shelfEdgeMaterial: THREE.MeshPhysicalMaterial | null = null;
+  private currentTheme: ShelfTheme = "light";
   private camera: THREE.PerspectiveCamera;
   private controls: OrbitControls;
   private shelfGroup = new THREE.Group();
@@ -253,10 +297,12 @@ export class ShelfEngine {
     books: DiaryBook[],
     callbacks: ShelfCallbacks,
     initialIndex = 0,
+    initialTheme: ShelfTheme = "light",
   ) {
     this.canvas = canvas;
     this.booksData = books;
     this.callbacks = callbacks;
+    this.currentTheme = initialTheme;
     this.reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -501,13 +547,19 @@ export class ShelfEngine {
   }
 
   private setupScene() {
-    this.scene.background = new THREE.Color("#f2eee7");
-    this.scene.fog = new THREE.Fog("#f2eee7", 10, 26);
+    const palette = THEME_PALETTES[this.currentTheme];
+    this.scene.background = new THREE.Color(palette.bg);
+    this.scene.fog = new THREE.Fog(palette.bg, 10, 26);
 
-    const hemisphere = new THREE.HemisphereLight("#fffaf1", "#8d7969", 2.55);
+    const hemisphere = new THREE.HemisphereLight(
+      palette.hemiSky,
+      palette.hemiGround,
+      palette.hemiIntensity,
+    );
+    this.hemisphereLight = hemisphere;
     this.scene.add(hemisphere);
 
-    const key = new THREE.DirectionalLight("#fff8ee", 4.1);
+    const key = new THREE.DirectionalLight(palette.keyColor, palette.keyIntensity);
     key.position.set(-4.2, 7.4, 5.5);
     key.castShadow = true;
     key.shadow.mapSize.set(
@@ -521,43 +573,94 @@ export class ShelfEngine {
     key.shadow.camera.near = 0.5;
     key.shadow.camera.far = 22;
     key.shadow.bias = -0.0005;
+    this.keyLight = key;
     this.scene.add(key);
 
-    const rim = new THREE.DirectionalLight("#d5dfe9", 1.8);
+    const rim = new THREE.DirectionalLight(palette.rimColor, palette.rimIntensity);
     rim.position.set(5, 3, -4);
+    this.rimLight = rim;
     this.scene.add(rim);
 
-    const warmBounce = new THREE.PointLight("#e5c2a8", 0.9, 10, 2);
+    const warmBounce = new THREE.PointLight(
+      palette.bounceColor,
+      palette.bounceIntensity,
+      10,
+      2,
+    );
     warmBounce.position.set(-3, 0.4, 3.2);
+    this.bounceLight = warmBounce;
     this.scene.add(warmBounce);
 
-    const wall = new THREE.Mesh(
-      new THREE.PlaneGeometry(34, 18),
-      new THREE.MeshStandardMaterial({
-        color: "#f2eee7",
-        roughness: 1,
-        metalness: 0,
-      }),
-    );
+    const wallMat = new THREE.MeshStandardMaterial({
+      color: palette.bg,
+      roughness: 1,
+      metalness: 0,
+    });
+    this.wallMaterial = wallMat;
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(34, 18), wallMat);
     wall.position.set(0, 5, -3.2);
     wall.receiveShadow = true;
     this.scene.add(wall);
 
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(36, 18),
-      new THREE.MeshStandardMaterial({
-        color: "#ebe5d8",
-        roughness: 0.96,
-        metalness: 0,
-      }),
-    );
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: palette.ground,
+      roughness: 0.96,
+      metalness: 0,
+    });
+    this.groundMaterial = groundMat;
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(36, 18), groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.24;
     ground.receiveShadow = true;
     this.scene.add(ground);
 
+    this.renderer.toneMappingExposure = palette.exposure;
+
     this.scene.add(this.shelfGroup);
     this.shelfGroup.add(this.shelfFurniture);
+  }
+
+  public setTheme(theme: ShelfTheme) {
+    this.currentTheme = theme;
+    const palette = THEME_PALETTES[theme];
+    if (this.scene.background instanceof THREE.Color) {
+      this.scene.background.set(palette.bg);
+    } else {
+      this.scene.background = new THREE.Color(palette.bg);
+    }
+    if (this.scene.fog instanceof THREE.Fog) {
+      this.scene.fog.color.set(palette.bg);
+    }
+    if (this.hemisphereLight) {
+      this.hemisphereLight.color.set(palette.hemiSky);
+      this.hemisphereLight.groundColor.set(palette.hemiGround);
+      this.hemisphereLight.intensity = palette.hemiIntensity;
+    }
+    if (this.keyLight) {
+      this.keyLight.color.set(palette.keyColor);
+      this.keyLight.intensity = palette.keyIntensity;
+    }
+    if (this.rimLight) {
+      this.rimLight.color.set(palette.rimColor);
+      this.rimLight.intensity = palette.rimIntensity;
+    }
+    if (this.bounceLight) {
+      this.bounceLight.color.set(palette.bounceColor);
+      this.bounceLight.intensity = palette.bounceIntensity;
+    }
+    if (this.wallMaterial) {
+      this.wallMaterial.color.set(palette.bg);
+    }
+    if (this.groundMaterial) {
+      this.groundMaterial.color.set(palette.ground);
+    }
+    if (this.shelfMaterial) {
+      this.shelfMaterial.color.set(palette.shelf);
+    }
+    if (this.shelfEdgeMaterial) {
+      this.shelfEdgeMaterial.color.set(palette.shelfEdge);
+    }
+    this.renderer.toneMappingExposure = palette.exposure;
   }
 
   private createBooks(initialIndex: number) {
@@ -591,13 +694,15 @@ export class ShelfEngine {
     });
     this.shelfGroup.position.x = -this.xAtIndex(initialIndex);
 
+    const palette = THEME_PALETTES[this.currentTheme];
     const shelfWidth = Math.max(18, cursor + 12);
     const shelfGeometry = new RoundedBoxGeometry(shelfWidth, 0.22, 1.72, 4, 0.045);
     const shelfMaterial = new THREE.MeshStandardMaterial({
-      color: shelfColor,
+      color: palette.shelf,
       roughness: 0.62,
       metalness: 0.03,
     });
+    this.shelfMaterial = shelfMaterial;
     const shelf = new THREE.Mesh(shelfGeometry, shelfMaterial);
     shelf.name = "continuousShelf";
     shelf.position.set(cursor * 0.5, shelfTop - 0.14, 0);
@@ -605,14 +710,16 @@ export class ShelfEngine {
     shelf.receiveShadow = true;
     this.shelfFurniture.add(shelf);
 
+    const shelfEdgeMat = new THREE.MeshPhysicalMaterial({
+      color: palette.shelfEdge,
+      roughness: 0.58,
+      clearcoat: 0.06,
+      clearcoatRoughness: 0.65,
+    });
+    this.shelfEdgeMaterial = shelfEdgeMat;
     const shelfEdge = new THREE.Mesh(
       new RoundedBoxGeometry(shelfWidth, 0.12, 0.16, 3, 0.025),
-      new THREE.MeshPhysicalMaterial({
-        color: "#614b3c",
-        roughness: 0.58,
-        clearcoat: 0.06,
-        clearcoatRoughness: 0.65,
-      }),
+      shelfEdgeMat,
     );
     shelfEdge.position.set(cursor * 0.5, shelfTop - 0.08, 0.85);
     shelfEdge.castShadow = true;
@@ -656,13 +763,13 @@ export class ShelfEngine {
 
     const boardMaterial = new THREE.MeshPhysicalMaterial({
       color: book.cover,
-      roughness: 0.86,
+      roughness: 0.78,
       metalness: 0,
-      sheen: 0.24,
+      sheen: 0.34,
       sheenColor: new THREE.Color(book.ink),
-      sheenRoughness: 0.88,
-      clearcoat: 0.02,
-      clearcoatRoughness: 0.78,
+      sheenRoughness: 0.82,
+      clearcoat: 0.03,
+      clearcoatRoughness: 0.74,
     });
     const paperMaterial = new THREE.MeshStandardMaterial({
       color: pageColor,

@@ -18,7 +18,9 @@ import type { DiaryBook, MemoryAlbum } from "@/lib/types";
 import { ShelfEngine, type ShelfMode } from "@/three/ShelfEngine";
 import { siteConfig } from "@/three/site-config";
 import { StorageSettingsModal } from "./StorageSettingsModal";
+import { ThemeToggle } from "./ThemeToggle";
 import { VolumeEditorModal } from "./VolumeEditorModal";
+import { readDomTheme, useThemeMode } from "@/lib/theme";
 
 function ArrowIcon({ direction }: { direction: "left" | "right" }) {
   return (
@@ -48,6 +50,7 @@ function ShelfExperienceInner() {
     [requestedBookId],
   );
 
+  const theme = useThemeMode();
   const [books, setBooks] = useState<DiaryBook[]>(defaultBooks);
   const [activeIndex, setActiveIndex] = useState(initialIndex);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -161,6 +164,7 @@ function ShelfExperienceInner() {
           },
         },
         startIndex,
+        readDomTheme(),
       );
       engineRef.current = engine;
       engine.syncBooks(booksRef.current);
@@ -173,6 +177,10 @@ function ShelfExperienceInner() {
       engineRef.current = null;
     };
   }, [router]);
+
+  useEffect(() => {
+    engineRef.current?.setTheme(theme);
+  }, [theme]);
 
   async function handleSaveVolume(patch: BookPatchInput) {
     if (!editorState) return;
@@ -209,9 +217,9 @@ function ShelfExperienceInner() {
     quote: "",
     quoteBy: "",
     format: "Soft Linen Hardcover",
-    cover: "#7d9489",
-    accent: "#dfd2bd",
-    ink: "#f9f6ef",
+    cover: "#246b5b",
+    accent: "#e9d5b0",
+    ink: "#f9f6ee",
     motif: "lattice",
     coverTemplate: "clean-minimal",
     spineStyle: "minimal",
@@ -248,6 +256,8 @@ function ShelfExperienceInner() {
         </div>
 
         <div className="header-actions">
+          <ThemeToggle />
+
           <button
             type="button"
             onClick={() => setEditorState({ mode: "create" })}

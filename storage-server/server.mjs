@@ -25,7 +25,7 @@ function loadDefaultBooks() {
   return JSON.parse(fs.readFileSync(DEFAULT_BOOKS_PATH, "utf8"));
 }
 
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 
 function isLegacyDefaultShelf(books) {
   if (!Array.isArray(books)) return false;
@@ -408,9 +408,9 @@ app.post("/api/books", requireAuth, async (req, res) => {
       quote: "",
       quoteBy: "",
       format: "Soft Linen Hardcover",
-      cover: "#7d9489",
-      accent: "#dfd2bd",
-      ink: "#f9f6ef",
+      cover: "#246b5b",
+      accent: "#e9d5b0",
+      ink: "#f9f6ee",
       motif: "lattice",
       coverTemplate: "clean-minimal",
       spineStyle: "minimal",

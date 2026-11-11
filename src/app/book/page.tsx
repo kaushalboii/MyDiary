@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { FlipBookReader, type BookSpread } from "@/components/FlipBookReader";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { VolumeEditorModal } from "@/components/VolumeEditorModal";
 import { defaultBooks } from "@/lib/default-books";
 import {
@@ -163,18 +164,35 @@ function BookMemoriesContent() {
       id: "opening-welcome",
       label: "Opening Pages",
       left: (
-        <div className="flex min-h-[120px] md:min-h-[500px] flex-col justify-between">
-          <div />
-          <div className="text-[11px] italic opacity-35">p. 01</div>
+        <div className="flex flex-1 flex-col justify-between">
+          <div className="text-[10px] font-semibold tracking-[0.2em] uppercase text-[var(--ink-soft)]">
+            {book.coverImprint || "Personal Archive"}
+          </div>
+          <div className="my-auto flex flex-col items-center py-8 text-center">
+            <div
+              className="h-2.5 w-2.5 rotate-45"
+              style={{ backgroundColor: book.accent }}
+              aria-hidden="true"
+            />
+            {book.spineMark && (
+              <div className="mt-5 font-serif text-3xl italic text-[var(--page-ink)]">
+                {book.spineMark}
+              </div>
+            )}
+            <div className="mt-2 text-xs tracking-[0.18em] uppercase text-[var(--ink-soft)]">
+              {book.yearLabel}
+            </div>
+          </div>
+          <div className="text-[11px] italic opacity-45">p. 01</div>
         </div>
       ),
       right: (
-        <div className="flex min-h-[260px] md:min-h-[500px] flex-col justify-between">
+        <div className="flex flex-1 flex-col justify-between">
           <div className="my-auto py-6 sm:px-4">
-            <h1 className="m-0 text-3xl sm:text-4xl font-normal tracking-tight leading-tight">
+            <h1 className="m-0 text-3xl sm:text-4xl font-normal tracking-tight leading-tight text-[var(--page-ink)]">
               {book.title}
             </h1>
-            <p className="mt-5 max-w-md text-base sm:text-lg leading-relaxed text-[#4b443b]">
+            <p className="mt-5 max-w-md text-base sm:text-lg leading-relaxed text-[var(--page-ink-muted)]">
               {welcomeText}
             </p>
 
@@ -226,18 +244,18 @@ function BookMemoriesContent() {
         id: "blank-1",
         label: "Blank Pages · 03–04",
         left: (
-          <div className="flex min-h-[120px] md:min-h-[500px] flex-col justify-between">
+          <div className="flex flex-1 flex-col justify-between">
             <div />
-            <div className="text-[11px] italic opacity-35">p. 03</div>
+            <div className="text-[11px] italic opacity-40">p. 03</div>
           </div>
         ),
         right: (
-          <div className="flex min-h-[120px] md:min-h-[500px] flex-col justify-between">
+          <div className="flex flex-1 flex-col justify-between">
             <div />
-            <div className="flex items-center justify-between text-[11px] italic opacity-35">
+            <div className="flex items-center justify-between text-[11px] italic opacity-50">
               <Link
                 href={`/compose?bookId=${encodeURIComponent(book.id)}`}
-                className="not-italic text-[10px] font-semibold tracking-wider uppercase opacity-75 no-underline hover:underline"
+                className="not-italic text-[10px] font-semibold tracking-wider uppercase opacity-80 no-underline hover:underline"
               >
                 + Add entry on this page
               </Link>
@@ -251,15 +269,15 @@ function BookMemoriesContent() {
         id: "blank-2",
         label: "Blank Pages · 05–06",
         left: (
-          <div className="flex min-h-[120px] md:min-h-[500px] flex-col justify-between">
+          <div className="flex flex-1 flex-col justify-between">
             <div />
-            <div className="text-[11px] italic opacity-35">p. 05</div>
+            <div className="text-[11px] italic opacity-40">p. 05</div>
           </div>
         ),
         right: (
-          <div className="flex min-h-[120px] md:min-h-[500px] flex-col justify-between">
+          <div className="flex flex-1 flex-col justify-between">
             <div />
-            <div className="text-right text-[11px] italic opacity-35">p. 06</div>
+            <div className="text-right text-[11px] italic opacity-40">p. 06</div>
           </div>
         ),
       };
@@ -275,7 +293,7 @@ function BookMemoriesContent() {
         id: mem.id,
         label: `${mem.title} · pp. ${pageLeftNum}–${pageRightNum}`,
         left: (
-          <div className="flex min-h-[260px] md:min-h-[500px] flex-col justify-between">
+          <div className="flex flex-1 flex-col justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-3 text-[10px] font-semibold tracking-[0.15em] uppercase text-[var(--ink-soft)]">
                 <span className="inline-flex items-center gap-1">
@@ -293,7 +311,7 @@ function BookMemoriesContent() {
                 </span>
               </div>
 
-              <h2 className="mt-5 mb-0 text-3xl sm:text-4xl font-normal tracking-tight leading-[1.05]">
+              <h2 className="mt-5 mb-0 text-3xl sm:text-4xl font-normal tracking-tight leading-[1.05] text-[var(--page-ink)]">
                 {mem.title}
               </h2>
 
@@ -303,13 +321,13 @@ function BookMemoriesContent() {
                     <StickyNote className="h-3 w-3" />
                     <span>Keepsake Note</span>
                   </div>
-                  <p className="m-0 text-base italic leading-relaxed text-[#38312a]">
+                  <p className="m-0 text-base italic leading-relaxed text-[var(--page-ink)]">
                     “{mem.note}”
                   </p>
                 </div>
               )}
 
-              <div className="mt-6 space-y-4 text-[16px] leading-[1.7] text-[#3a332b]">
+              <div className="mt-6 space-y-4 text-[16px] leading-[1.7] text-[var(--page-ink-muted)]">
                 {mem.paragraphs.length > 0 ? (
                   mem.paragraphs.map((paragraph, pIdx) => (
                     <p key={pIdx} className="m-0">
@@ -348,7 +366,7 @@ function BookMemoriesContent() {
           </div>
         ),
         right: (
-          <div className="flex min-h-[260px] md:min-h-[500px] flex-col justify-between">
+          <div className="flex flex-1 flex-col justify-between">
             <div>
               <div className="mb-5 flex items-center justify-between border-b border-[var(--hairline)] pb-2.5 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)]">
                 <span className="inline-flex items-center gap-1.5">
@@ -420,7 +438,7 @@ function BookMemoriesContent() {
                         />
                       </button>
                       {photo.caption && (
-                        <figcaption className="mt-1.5 px-1 text-xs italic text-[#3a342c]">
+                        <figcaption className="mt-1.5 px-1 text-xs italic text-[var(--page-ink-muted)]">
                           {photo.caption}
                         </figcaption>
                       )}
@@ -449,7 +467,7 @@ function BookMemoriesContent() {
                           className="aspect-square w-full object-cover"
                         />
                       </button>
-                      <figcaption className="mt-2.5 px-1 text-center text-xs italic text-[#342e27]">
+                      <figcaption className="mt-2.5 px-1 text-center text-xs italic text-[var(--page-ink-muted)]">
                         {photo.caption || `${mem.date} · Frame ${pIdx + 1}`}
                       </figcaption>
                     </figure>
@@ -470,15 +488,15 @@ function BookMemoriesContent() {
       id: "trailing-blank",
       label: "New Blank Page",
       left: (
-        <div className="flex min-h-[120px] md:min-h-[500px] flex-col justify-between">
+        <div className="flex flex-1 flex-col justify-between">
           <div />
-          <div className="text-[11px] italic opacity-35">
+          <div className="text-[11px] italic opacity-40">
             p. {String((memories.length + 1) * 2 + 1).padStart(2, "0")}
           </div>
         </div>
       ),
       right: (
-        <div className="flex min-h-[180px] md:min-h-[500px] flex-col items-center justify-center text-center">
+        <div className="flex flex-1 flex-col items-center justify-center text-center">
           <Link
             href={`/compose?bookId=${encodeURIComponent(book.id)}`}
             className="inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase no-underline hover:bg-[var(--walnut-deep)]"
@@ -525,6 +543,8 @@ function BookMemoriesContent() {
         </div>
 
         <div className="flex items-center gap-2">
+          <ThemeToggle />
+
           <button
             type="button"
             onClick={() => setEditingVolume(true)}

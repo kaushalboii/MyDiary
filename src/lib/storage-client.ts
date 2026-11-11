@@ -179,7 +179,7 @@ async function deleteFromStore(storeName: "books" | "memories", id: string): Pro
   });
 }
 
-const OFFLINE_BOOK_ORDER_KEY = "mydiary_offline_book_order_v3";
+const OFFLINE_BOOK_ORDER_KEY = "mydiary_offline_book_order_v4";
 
 function isDefaultSeedSnapshot(books: DiaryBook[]): boolean {
   if (books.length === 4 && books[0]?.id === "memories-2022" && books[1]?.id === "pocket-notes") {
@@ -400,9 +400,9 @@ export async function createBook(
       quote: input.quote?.trim() || "",
       quoteBy: input.quoteBy?.trim() || "",
       format: input.format || "Soft Linen Hardcover",
-      cover: input.cover || "#7d9489",
-      accent: input.accent || "#dfd2bd",
-      ink: input.ink || "#f9f6ef",
+      cover: input.cover || "#246b5b",
+      accent: input.accent || "#e9d5b0",
+      ink: input.ink || "#f9f6ee",
       motif: input.motif || "lattice",
       coverTemplate: input.coverTemplate || "clean-minimal",
       spineStyle: input.spineStyle || "minimal",

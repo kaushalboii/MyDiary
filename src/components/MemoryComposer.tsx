@@ -17,6 +17,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { BookMotifPreview } from "@/components/BookMotifPreview";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { defaultBooks } from "@/lib/default-books";
 import {
   createMemory,
@@ -279,6 +280,8 @@ export function MemoryComposer({
             <span>3D Shelf</span>
           </Link>
         </div>
+
+        <ThemeToggle />
       </header>
 
       <main className="diary-container max-w-5xl">
@@ -468,7 +471,7 @@ export function MemoryComposer({
                 value={paragraphsText}
                 onChange={(e) => setParagraphsText(e.target.value)}
                 placeholder="Tell the full story here in your own words. Leave a blank line between paragraphs to format them cleanly inside your diary spread..."
-                className="w-full resize-y border border-[var(--hairline)] bg-[var(--paper)] p-5 font-serif text-lg leading-[1.7] text-[#2a2722]"
+                className="w-full resize-y border border-[var(--hairline)] bg-[var(--paper)] p-5 font-serif text-lg leading-[1.7] text-[var(--ink)]"
               />
               <p className="mt-2 mb-0 text-xs text-[var(--ink-soft)]">
                 Tip: Separate paragraphs with a blank line (`Enter` twice) for editorial book typesetting.
@@ -509,7 +512,7 @@ export function MemoryComposer({
                 }}
                 className={`flex flex-col items-center justify-center border-2 border-dashed p-8 text-center cursor-pointer transition ${
                   dragOver
-                    ? "border-[var(--accent)] bg-[#f9f4eb]"
+                    ? "border-[var(--accent)] bg-[var(--accent-soft)]"
                     : "border-[var(--hairline)] bg-[var(--paper)] hover:border-[var(--ink)]"
                 }`}
               >
@@ -658,7 +661,7 @@ export function MemoryComposer({
             </section>
 
             {error && (
-              <div className="border border-[var(--accent)] bg-[#fdf3f0] px-4 py-3 text-sm text-[var(--accent)]">
+              <div className="border border-[var(--accent)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-[var(--danger-ink)]">
                 {error}
               </div>
             )}
