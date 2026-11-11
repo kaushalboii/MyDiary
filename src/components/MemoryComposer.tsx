@@ -17,7 +17,6 @@ import {
   Trash2,
 } from "lucide-react";
 import { BookMotifPreview } from "@/components/BookMotifPreview";
-import { StorageStatusPill } from "@/components/StorageStatusPill";
 import { defaultBooks } from "@/lib/default-books";
 import {
   createMemory,
@@ -32,7 +31,6 @@ import type {
   AlbumStyle,
   DiaryBook,
   MemoryMood,
-  StorageMode,
 } from "@/lib/types";
 
 const MOODS: MemoryMood[] = [
@@ -77,8 +75,6 @@ export function MemoryComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [books, setBooks] = useState<DiaryBook[]>(defaultBooks);
-  const [storageMode, setStorageMode] = useState<StorageMode>("server");
-  const [hostname, setHostname] = useState<string | undefined>();
 
   const [bookId, setBookId] = useState(initialBookId || "memories-2022");
   const [title, setTitle] = useState("");
@@ -100,8 +96,6 @@ export function MemoryComposer({
   const loadBooks = useCallback(async () => {
     const res = await fetchBooks();
     setBooks(res.books);
-    setStorageMode(res.mode);
-    setHostname(res.hostname);
   }, []);
 
   useEffect(() => {
@@ -176,7 +170,6 @@ export function MemoryComposer({
     setUploading(true);
     try {
       const res = await uploadPhotos(imageFiles);
-      setStorageMode(res.mode);
       setPhotos((prev) => {
         const next = [...prev, ...res.files];
         if (!coverPhotoId && next[0]) setCoverPhotoId(next[0].id);
@@ -242,9 +235,8 @@ export function MemoryComposer({
         ? await updateMemory(editMemoryId, payload)
         : await createMemory(payload);
 
-      setStorageMode(saved.mode);
       router.push(
-        `/memory?bookId=${encodeURIComponent(bookId)}&id=${encodeURIComponent(saved.memory.id)}`,
+        `/book?id=${encodeURIComponent(bookId)}&memory=${encodeURIComponent(saved.memory.id)}`,
       );
     } catch (err) {
       setError(
@@ -272,14 +264,6 @@ export function MemoryComposer({
           >
             <span>3D Shelf</span>
           </Link>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <StorageStatusPill
-            mode={storageMode}
-            hostname={hostname}
-            onConfigUpdated={() => void loadBooks()}
-          />
         </div>
       </header>
 
@@ -512,7 +496,7 @@ export function MemoryComposer({
                   <>
                     <Loader2 className="h-7 w-7 animate-spin text-[var(--accent)]" />
                     <p className="mt-3 mb-0 font-serif text-lg">
-                      Uploading photographs to storage...
+                      Adding photographs...
                     </p>
                   </>
                 ) : (
@@ -522,11 +506,7 @@ export function MemoryComposer({
                       Drop photographs here, or click to browse
                     </p>
                     <p className="m-0 text-xs text-[var(--ink-soft)]">
-                      Upload multiple photos at once — stored on{" "}
-                      {storageMode === "server"
-                        ? hostname || "your storage server"
-                        : "offline browser storage"}
-                      .
+                      Upload multiple photos at once to include in your memory album.
                     </p>
                   </>
                 )}

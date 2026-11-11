@@ -554,18 +554,25 @@ function drawCoverTypography(
   height: number,
   decalOnly = false,
 ) {
+  const imprint =
+    book.coverImprint !== undefined ? book.coverImprint : siteConfig.coverImprint;
+  const customFooter =
+    book.coverFooter !== undefined ? book.coverFooter.trim() : "";
+
   ctx.save();
   ctx.fillStyle = book.ink;
   ctx.textBaseline = "top";
-  ctx.letterSpacing = "7px";
-  ctx.font = `600 25px ${sans}`;
-  ctx.fillText(siteConfig.coverImprint, 82, 74);
+  if (imprint) {
+    ctx.letterSpacing = "7px";
+    ctx.font = `600 25px ${sans}`;
+    ctx.fillText(imprint, 82, 74);
+  }
 
   ctx.letterSpacing = "0px";
   const titleSize =
     book.title.length > 34 ? 74 : book.title.length > 20 ? 88 : 108;
   ctx.font = `520 ${titleSize}px ${serif}`;
-  const titleY = 142;
+  const titleY = imprint ? 142 : 96;
   const titleLines = wrapText(
     ctx,
     book.title,
@@ -588,8 +595,9 @@ function drawCoverTypography(
     ctx.globalAlpha = 0.75;
     ctx.font = `500 20px ${sans}`;
     ctx.letterSpacing = "3px";
-    const footerLabel =
-      book.memoryCount && book.memoryCount > 0
+    const footerLabel = customFooter
+      ? customFooter
+      : book.memoryCount && book.memoryCount > 0
         ? `${book.memoryCount} ${book.memoryCount === 1 ? "MEMORY" : "MEMORIES"} · ${book.photoCount || 0} PHOTOS`
         : siteConfig.coverTagline;
     ctx.fillText(footerLabel, 82, height - 90);
@@ -668,7 +676,11 @@ export function createSpineCover(book: DiaryBook) {
   ctx.fillStyle = book.ink;
   ctx.font = `700 26px ${sans}`;
   ctx.textAlign = "center";
-  ctx.fillText(siteConfig.spineMark, logicalWidth / 2 + 10, logicalHeight - 42);
+  const spineMark =
+    book.spineMark !== undefined ? book.spineMark : siteConfig.spineMark;
+  if (spineMark) {
+    ctx.fillText(spineMark, logicalWidth / 2 + 10, logicalHeight - 42);
+  }
   ctx.restore();
   return canvas;
 }
@@ -690,36 +702,49 @@ export function createBackCover(book: DiaryBook) {
   ctx.fillStyle = book.ink;
   ctx.font = `500 45px ${serif}`;
   ctx.textBaseline = "top";
-  const lines = wrapText(ctx, book.description, 108, 180, 808, 58, 12);
+  const lines = book.description.trim()
+    ? wrapText(ctx, book.description, 108, 180, 808, 58, 12)
+    : 0;
 
-  ctx.save();
-  ctx.globalAlpha = 0.9;
-  ctx.fillStyle = book.accent;
-  ctx.fillRect(108, 180 + lines * 58 + 78, 108, 9);
-  ctx.restore();
+  if (book.quote.trim() || book.quoteBy.trim()) {
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = book.accent;
+    ctx.fillRect(108, 180 + lines * 58 + 78, 108, 9);
+    ctx.restore();
 
-  ctx.font = `italic 500 54px ${serif}`;
-  wrapText(
-    ctx,
-    `“${book.quote}”`,
-    108,
-    180 + lines * 58 + 132,
-    808,
-    63,
-    6,
-  );
-  ctx.font = `600 24px ${sans}`;
-  ctx.letterSpacing = "2px";
-  ctx.fillText(book.quoteBy.toUpperCase(), 110, 1160);
+    if (book.quote.trim()) {
+      ctx.font = `italic 500 54px ${serif}`;
+      wrapText(
+        ctx,
+        `“${book.quote}”`,
+        108,
+        180 + lines * 58 + 132,
+        808,
+        63,
+        6,
+      );
+    }
+    if (book.quoteBy.trim()) {
+      ctx.font = `600 24px ${sans}`;
+      ctx.letterSpacing = "2px";
+      ctx.fillText(book.quoteBy.toUpperCase(), 110, 1160);
+    }
+  }
 
-  ctx.globalAlpha = 0.78;
-  ctx.font = `500 20px ${sans}`;
-  ctx.letterSpacing = "3px";
-  ctx.fillText(
-    `${siteConfig.coverImprint} · ${siteConfig.coverTagline}`,
-    110,
-    1380,
-  );
+  const imprint =
+    book.coverImprint !== undefined ? book.coverImprint : siteConfig.coverImprint;
+  const backFooter =
+    book.coverFooter !== undefined && book.coverFooter.trim()
+      ? book.coverFooter.trim()
+      : [imprint, siteConfig.coverTagline].filter(Boolean).join(" · ");
+
+  if (backFooter) {
+    ctx.globalAlpha = 0.78;
+    ctx.font = `500 20px ${sans}`;
+    ctx.letterSpacing = "3px";
+    ctx.fillText(backFooter, 110, 1380);
+  }
   ctx.restore();
   return canvas;
 }

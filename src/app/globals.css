@@ -199,9 +199,9 @@ select:focus-visible {
 .browse-caption {
   position: absolute;
   z-index: 16;
-  bottom: clamp(168px, 21vh, 218px);
-  left: clamp(24px, 5.4vw, 92px);
-  width: min(460px, 40vw);
+  bottom: clamp(156px, 20vh, 206px);
+  left: clamp(24px, 5vw, 84px);
+  width: min(390px, 35vw);
   isolation: isolate;
   pointer-events: none;
   transition:
@@ -212,22 +212,24 @@ select:focus-visible {
 .browse-caption::before {
   position: absolute;
   z-index: -1;
-  top: -42px;
-  right: -72px;
-  bottom: -38px;
-  left: -92px;
+  top: -36px;
+  right: -64px;
+  bottom: -34px;
+  left: -84px;
   content: "";
   background: linear-gradient(
     90deg,
-    rgba(238, 232, 219, 0.96) 0%,
-    rgba(238, 232, 219, 0.84) 60%,
+    rgba(238, 232, 219, 0.92) 0%,
+    rgba(238, 232, 219, 0.72) 62%,
     rgba(238, 232, 219, 0) 100%
   );
   pointer-events: none;
 }
 
-.is-focused .browse-caption {
+.is-focused .browse-caption,
+.is-focused .browse-caption * {
   opacity: 0;
+  pointer-events: none;
   transform: translate3d(-22px, 0, 0);
 }
 

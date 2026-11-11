@@ -17,7 +17,6 @@ import {
   X,
 } from "lucide-react";
 import { BookMotifPreview } from "@/components/BookMotifPreview";
-import { StorageStatusPill } from "@/components/StorageStatusPill";
 import { defaultBooks } from "@/lib/default-books";
 import {
   deleteMemory,
@@ -25,7 +24,7 @@ import {
   fetchMemory,
   resolveMediaUrl,
 } from "@/lib/storage-client";
-import type { DiaryBook, MemoryAlbum, StorageMode } from "@/lib/types";
+import type { DiaryBook, MemoryAlbum } from "@/lib/types";
 
 const POLAROID_TILTS = ["-1.4deg", "1.1deg", "-0.8deg", "1.6deg", "-1.1deg", "0.7deg"];
 
@@ -37,8 +36,6 @@ function MemoryAlbumContent() {
 
   const [books, setBooks] = useState<DiaryBook[]>(defaultBooks);
   const [memory, setMemory] = useState<MemoryAlbum | null>(null);
-  const [storageMode, setStorageMode] = useState<StorageMode>("server");
-  const [hostname, setHostname] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -56,8 +53,6 @@ function MemoryAlbumContent() {
         fetchMemory(memoryId),
       ]);
       setBooks(booksRes.books);
-      setStorageMode(booksRes.mode);
-      setHostname(booksRes.hostname);
       setMemory(memRes.memory);
     } finally {
       setLoading(false);
@@ -124,11 +119,6 @@ function MemoryAlbumContent() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <StorageStatusPill
-            mode={storageMode}
-            hostname={hostname}
-            onConfigUpdated={() => void loadData()}
-          />
           {memory && (
             <>
               <Link

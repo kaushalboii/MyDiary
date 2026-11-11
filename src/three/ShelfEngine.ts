@@ -106,6 +106,9 @@ function bookVisualSignature(book: DiaryBook) {
     book.shortTitle,
     book.subtitle,
     book.yearLabel,
+    book.coverImprint ?? "",
+    book.coverFooter ?? "",
+    book.spineMark ?? "",
     book.description,
     book.quote,
     book.quoteBy,
@@ -187,7 +190,7 @@ export class ShelfEngine {
   private mode: ShelfMode = "browse";
   private selectedIndex: number | null = null;
   private activeIndex = 0;
-  private presentedIndex: number | null = 0;
+  private presentedIndex: number | null = null;
   private pendingFocusIndex: number | null = null;
   private browseMotionPhase: BrowseMotionPhase | "idle" = "idle";
   private browseMotionProgress = 0;
@@ -204,6 +207,10 @@ export class ShelfEngine {
   private pointerStartX = 0;
   private pointerLastX = 0;
   private pointerTravel = 0;
+  private inspectPointerStartX = 0;
+  private inspectPointerStartY = 0;
+  private inspectPointerStartTime = 0;
+  private inspectPointerHit: number | null = null;
   private reducedMotion = false;
   private assetCount = 0;
   private assetFailures = 0;
@@ -236,7 +243,7 @@ export class ShelfEngine {
 
     const clampedInitial = clamp(initialIndex, 0, Math.max(0, books.length - 1));
     this.activeIndex = clampedInitial;
-    this.presentedIndex = clampedInitial;
+    this.presentedIndex = null;
     this.scrollIndex = clampedInitial;
     this.targetScrollIndex = clampedInitial;
 
@@ -410,12 +417,10 @@ export class ShelfEngine {
         thickness: book.data.thickness,
       })),
     );
-    this.runtimeBooks.forEach((book, index) => {
+    this.runtimeBooks.forEach((book) => {
       this.commitBookPose(
         book,
-        index === initialIndex
-          ? presentedBookPose(this.motionLayout)
-          : shelvedBookPose(this.motionLayout),
+        shelvedBookPose(this.motionLayout),
         false,
       );
     });
@@ -713,6 +718,14 @@ export class ShelfEngine {
   };
 
   private handlePointerDown = (event: PointerEvent) => {
+    if (this.mode === "inspect" && event.button === 0) {
+      this.updatePointer(event);
+      this.inspectPointerStartX = event.clientX;
+      this.inspectPointerStartY = event.clientY;
+      this.inspectPointerStartTime = performance.now();
+      this.inspectPointerHit = this.raycastBook();
+      return;
+    }
     if (this.mode !== "browse") return;
     this.pointerDown = true;
     this.pointerId = event.pointerId;
@@ -724,6 +737,11 @@ export class ShelfEngine {
 
   private handlePointerMove = (event: PointerEvent) => {
     this.updatePointer(event);
+    if (this.mode === "inspect") {
+      const hit = this.raycastBook();
+      this.canvas.style.cursor = hit === this.selectedIndex ? "pointer" : "grab";
+      return;
+    }
     if (this.mode !== "browse") return;
 
     if (this.pointerDown && event.pointerId === this.pointerId) {
@@ -746,6 +764,29 @@ export class ShelfEngine {
   };
 
   private handlePointerUp = (event: PointerEvent) => {
+    if (this.mode === "inspect") {
+      if (
+        event.button === 0 &&
+        this.selectedIndex !== null &&
+        this.inspectPointerHit === this.selectedIndex
+      ) {
+        const travel = Math.hypot(
+          event.clientX - this.inspectPointerStartX,
+          event.clientY - this.inspectPointerStartY,
+        );
+        const elapsedMs = performance.now() - this.inspectPointerStartTime;
+        this.updatePointer(event);
+        if (
+          travel < 6 &&
+          elapsedMs < 450 &&
+          this.raycastBook() === this.selectedIndex
+        ) {
+          this.callbacks.onOpenBook?.(this.selectedIndex);
+        }
+      }
+      this.inspectPointerHit = null;
+      return;
+    }
     if (event.pointerId !== this.pointerId) return;
     const wasClick =
       this.pointerTravel < 7 && Math.abs(event.clientX - this.pointerStartX) < 7;
@@ -926,19 +967,20 @@ export class ShelfEngine {
 
   private updateBrowseMotion(delta: number) {
     if (this.browseMotionPhase === "idle") {
-      if (this.presentedIndex === this.activeIndex) {
-        if (this.pendingFocusIndex === this.activeIndex) {
-          this.beginFocus(this.activeIndex);
-        }
+      if (this.pendingFocusIndex === null) {
+        return;
+      }
+      if (this.presentedIndex === this.pendingFocusIndex) {
+        this.beginFocus(this.pendingFocusIndex);
         return;
       }
 
-      this.motionBookIndex = this.presentedIndex;
+      this.motionBookIndex =
+        this.presentedIndex !== null
+          ? this.presentedIndex
+          : this.pendingFocusIndex;
       this.browseMotionPhase =
-        this.motionBookIndex === null ? "extract-next" : "retreat-current";
-      if (this.motionBookIndex === null) {
-        this.motionBookIndex = this.activeIndex;
-      }
+        this.presentedIndex !== null ? "retreat-current" : "extract-next";
       this.browseMotionProgress = 0;
     }
 
@@ -974,8 +1016,13 @@ export class ShelfEngine {
         break;
       case "shelve-current":
         this.presentedIndex = null;
-        this.motionBookIndex = this.activeIndex;
-        this.browseMotionPhase = "extract-next";
+        if (this.pendingFocusIndex !== null) {
+          this.motionBookIndex = this.pendingFocusIndex;
+          this.browseMotionPhase = "extract-next";
+        } else {
+          this.motionBookIndex = null;
+          this.browseMotionPhase = "idle";
+        }
         break;
       case "extract-next":
         this.browseMotionPhase = "turn-next";
@@ -985,10 +1032,12 @@ export class ShelfEngine {
         break;
       case "settle-next":
         this.presentedIndex = motionIndex;
-        this.motionBookIndex = null;
-        this.browseMotionPhase = "idle";
-        if (this.pendingFocusIndex === this.presentedIndex) {
-          this.beginFocus(this.presentedIndex);
+        if (this.pendingFocusIndex === motionIndex) {
+          this.motionBookIndex = null;
+          this.browseMotionPhase = "idle";
+          this.beginFocus(motionIndex);
+        } else {
+          this.browseMotionPhase = "retreat-current";
         }
         break;
     }
@@ -1075,15 +1124,22 @@ export class ShelfEngine {
       );
       this.camera.lookAt(browseTarget);
       if (this.focusProgress <= 0) {
-        if (this.selectedIndex !== null) {
-          this.commitBookPose(
-            this.runtimeBooks[this.selectedIndex],
-            presentedBookPose(this.motionLayout),
-          );
-          this.presentedIndex = this.selectedIndex;
-        }
+        const returnedIndex = this.selectedIndex;
         this.selectedIndex = null;
         this.mode = "browse";
+        if (returnedIndex !== null) {
+          this.commitBookPose(
+            this.runtimeBooks[returnedIndex],
+            presentedBookPose(this.motionLayout),
+            false,
+          );
+          this.presentedIndex = returnedIndex;
+          this.motionBookIndex = returnedIndex;
+          this.browseMotionPhase = "retreat-current";
+          this.browseMotionProgress = 0;
+        } else {
+          this.presentedIndex = null;
+        }
         this.callbacks.onMode(this.mode, null);
         this.callbacks.onStatus(`${this.booksData.length} memory volumes ready`);
         this.canvas.focus({ preventScroll: true });
@@ -1137,6 +1193,16 @@ export class ShelfEngine {
       const isSelected = book.index === this.selectedIndex;
       book.content.visible = !isolated || isSelected;
       book.content.position.y = isSelected ? motionFocus * 0.04 : 0;
+
+      const isIdleShelved =
+        this.mode === "browse" &&
+        this.pendingFocusIndex !== book.index &&
+        book.index !== this.motionBookIndex &&
+        book.index !== this.presentedIndex;
+      const spinePullZ = isIdleShelved
+        ? (book.index === this.activeIndex ? 0.1 : 0) + book.hover * 0.07
+        : 0;
+      book.slot.position.z = damp(book.slot.position.z, 0.04 + spinePullZ, 10, delta);
 
       const idleTarget =
         isSelected && this.mode === "inspect" && !this.reducedMotion ? 1 : 0;
@@ -1418,6 +1484,17 @@ export class ShelfEngine {
     this.pendingFocusIndex = null;
     this.targetScrollIndex = next;
     this.lastInputTime = performance.now() - 1000;
+  }
+
+  browseToImmediate(index: number) {
+    if (this.mode !== "browse") return;
+    const next = clamp(Math.round(index), 0, this.runtimeBooks.length - 1);
+    this.pendingFocusIndex = null;
+    this.targetScrollIndex = next;
+    this.scrollIndex = next;
+    this.activeIndex = next;
+    this.shelfGroup.position.x = -this.xAtIndex(next);
+    this.callbacks.onActiveIndex(next);
   }
 
   focusBook(index = this.activeIndex) {

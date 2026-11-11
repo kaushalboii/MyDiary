@@ -11,10 +11,10 @@ import {
   resolveMediaUrl,
   updateBook,
 } from "@/lib/storage-client";
-import type { DiaryBook, MemoryAlbum, StorageMode } from "@/lib/types";
+import type { DiaryBook, MemoryAlbum } from "@/lib/types";
 import { ShelfEngine, type ShelfMode } from "@/three/ShelfEngine";
 import { siteConfig } from "@/three/site-config";
-import { StorageStatusPill } from "./StorageStatusPill";
+import { StorageSettingsModal } from "./StorageSettingsModal";
 import { VolumeEditorModal } from "./VolumeEditorModal";
 
 function ArrowIcon({ direction }: { direction: "left" | "right" }) {
@@ -25,31 +25,35 @@ function ArrowIcon({ direction }: { direction: "left" | "right" }) {
   );
 }
 
+function resolveBookIndex(list: DiaryBook[], bookId: string | null): number {
+  if (!bookId) return 0;
+  const idx = list.findIndex((b) => b.id === bookId);
+  return idx >= 0 ? idx : 0;
+}
+
 function ShelfExperienceInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedBookId = searchParams.get("book");
+  const openStorageParam = searchParams.get("storage") === "1";
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<ShelfEngine | null>(null);
 
-  const initialIndex = useMemo(() => {
-    if (!requestedBookId) return 0;
-    const idx = defaultBooks.findIndex((b) => b.id === requestedBookId);
-    return idx >= 0 ? idx : 0;
-  }, [requestedBookId]);
+  const initialIndex = useMemo(
+    () => resolveBookIndex(defaultBooks, requestedBookId),
+    [requestedBookId],
+  );
 
   const [books, setBooks] = useState<DiaryBook[]>(defaultBooks);
   const [activeIndex, setActiveIndex] = useState(initialIndex);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [mode, setMode] = useState<ShelfMode>("browse");
   const [ready, setReady] = useState(false);
-  const [status, setStatus] = useState("Preparing your memory library");
-  const [storageMode, setStorageMode] = useState<StorageMode>("server");
-  const [storageHostname, setStorageHostname] = useState<string | undefined>();
   const [selectedMemories, setSelectedMemories] = useState<MemoryAlbum[]>([]);
   const [loadingMemories, setLoadingMemories] = useState(false);
   const [editingVolume, setEditingVolume] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
 
   const booksRef = useRef(books);
   booksRef.current = books;
@@ -57,8 +61,6 @@ function ShelfExperienceInner() {
   const refreshBooks = useCallback(async () => {
     const res = await fetchBooks();
     setBooks(res.books);
-    setStorageMode(res.mode);
-    setStorageHostname(res.hostname);
     engineRef.current?.syncBooks(res.books);
   }, []);
 
@@ -72,6 +74,27 @@ function ShelfExperienceInner() {
       window.removeEventListener("mydiary:storage-config-changed", handler);
     };
   }, [refreshBooks]);
+
+  // Allow hidden settings trigger only via ?storage=1 or Ctrl/Cmd+Shift+S
+  useEffect(() => {
+    if (openStorageParam) setStorageOpen(true);
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        setStorageOpen((v) => !v);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openStorageParam]);
+
+  // Keep shelf scrolled to ?book=... when searchParams hydrates on static export
+  useEffect(() => {
+    if (!requestedBookId) return;
+    const idx = resolveBookIndex(booksRef.current, requestedBookId);
+    setActiveIndex(idx);
+    engineRef.current?.browseToImmediate(idx);
+  }, [requestedBookId]);
 
   const activeBook = books[activeIndex] ?? books[0];
   const selectedBook = useMemo(
@@ -109,6 +132,13 @@ function ShelfExperienceInner() {
       await document.fonts.ready;
       if (cancelled || !canvasRef.current) return;
 
+      const urlBook =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("book")
+          : null;
+      const startIndex = resolveBookIndex(booksRef.current, urlBook);
+      setActiveIndex(startIndex);
+
       engine = new ShelfEngine(
         canvasRef.current,
         booksRef.current,
@@ -118,14 +148,14 @@ function ShelfExperienceInner() {
             setMode(nextMode);
             setSelectedIndex(index);
           },
-          onStatus: setStatus,
+          onStatus: () => undefined,
           onReady: () => setReady(true),
           onOpenBook: (index) => {
             const target = booksRef.current[index];
             if (target) router.push(`/book?id=${encodeURIComponent(target.id)}`);
           },
         },
-        initialIndex,
+        startIndex,
       );
       engineRef.current = engine;
       engine.syncBooks(booksRef.current);
@@ -137,12 +167,11 @@ function ShelfExperienceInner() {
       engine?.dispose();
       engineRef.current = null;
     };
-  }, [initialIndex, router]);
+  }, [router]);
 
   async function handleSaveVolumeDetails(patch: Partial<DiaryBook>) {
     if (!selectedBook) return;
-    const { book: updated, mode: nextMode } = await updateBook(selectedBook.id, patch);
-    setStorageMode(nextMode);
+    const { book: updated } = await updateBook(selectedBook.id, patch);
     const nextList = books.map((b) => (b.id === updated.id ? updated : b));
     setBooks(nextList);
     engineRef.current?.syncBooks(nextList);
@@ -160,7 +189,7 @@ function ShelfExperienceInner() {
         data-testid="shelf-canvas"
         role="application"
         tabIndex={0}
-        aria-label={`Interactive three-dimensional memory shelf of ${books.length} clothbound notebooks. Drag or use arrow keys to browse. Press Enter to inspect the selected volume.`}
+        aria-label={`Interactive three-dimensional memory shelf of ${books.length} clothbound notebooks. Drag or use arrow keys to browse. Click any spine to inspect, or click again to open your memories.`}
       />
 
       <header className="site-header">
@@ -170,15 +199,10 @@ function ShelfExperienceInner() {
         >
           <span>{siteConfig.wordmark}</span>
           <span className="wordmark__divider" />
-          <span>{siteConfig.collectionName}</span>
+          <span>{books.length} VOLUMES</span>
         </div>
 
         <div className="header-actions">
-          <StorageStatusPill
-            mode={storageMode}
-            hostname={storageHostname}
-            onConfigUpdated={() => void refreshBooks()}
-          />
           <Link
             href={`/compose?bookId=${encodeURIComponent(activeBook.id)}`}
             className="header-pill-btn header-pill-btn--primary"
@@ -186,10 +210,6 @@ function ShelfExperienceInner() {
             <PenLine className="h-3 w-3" />
             <span>Write Memory</span>
           </Link>
-          <div className="edition-mark hidden md:grid">
-            <span>{books.length} VOLUMES</span>
-            <span>01 CONTINUOUS SHELF</span>
-          </div>
         </div>
       </header>
 
@@ -202,13 +222,12 @@ function ShelfExperienceInner() {
           <span>{String(activeIndex + 1).padStart(2, "0")}</span>
           <span className="eyebrow__line" />
           <span>{String(books.length).padStart(2, "0")}</span>
-          <span className="ml-2 text-[var(--accent)]">
-            {(activeBook.memoryCount ?? 0) > 0
-              ? `${activeBook.memoryCount} ${
-                  activeBook.memoryCount === 1 ? "MEMORY" : "MEMORIES"
-                }`
-              : "READY FOR MEMORIES"}
-          </span>
+          {(activeBook.memoryCount ?? 0) > 0 && (
+            <span className="ml-2 text-[var(--accent)]">
+              {activeBook.memoryCount}{" "}
+              {activeBook.memoryCount === 1 ? "MEMORY" : "MEMORIES"}
+            </span>
+          )}
         </p>
         <h1>{activeBook.shortTitle}</h1>
         <p className="browse-caption__author">
@@ -226,14 +245,14 @@ function ShelfExperienceInner() {
             onClick={() => engineRef.current?.focusBook(activeIndex)}
             aria-label={`Inspect ${activeBook.title}`}
           >
-            <span>Inspect volume</span>
+            <span>Inspect book</span>
             <span aria-hidden="true">↗</span>
           </button>
           <Link
             href={`/book?id=${encodeURIComponent(activeBook.id)}`}
             className="inspect-button inspect-button--accent"
           >
-            <span>Open memories</span>
+            <span>Open book</span>
             <span aria-hidden="true">→</span>
           </Link>
         </div>
@@ -288,7 +307,7 @@ function ShelfExperienceInner() {
           <i />
           <span>ARROW KEYS</span>
           <i />
-          <span>CLICK TO INSPECT</span>
+          <span>CLICK SPINE TO INSPECT</span>
         </div>
       </nav>
 
@@ -319,63 +338,40 @@ function ShelfExperienceInner() {
 
             <div className="book-details__copy">
               <div className="flex items-center justify-between gap-2">
-                <p className="eyebrow m-0">{siteConfig.editionEyebrow}</p>
+                <p className="eyebrow m-0">
+                  {selectedBook.coverImprint || siteConfig.editionEyebrow}
+                </p>
                 <button
                   type="button"
                   onClick={() => setEditingVolume(true)}
                   className="inline-flex items-center gap-1.5 border border-[var(--hairline)] px-2.5 py-1 text-[9px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
                 >
                   <SlidersHorizontal className="h-3 w-3" />
-                  <span>Customize Cover</span>
+                  <span>Customize Wordings</span>
                 </button>
               </div>
 
               <h2 className="mt-3">{selectedBook.title}</h2>
               <p className="book-details__author">{selectedBook.subtitle}</p>
-              <p className="book-details__description">
-                {selectedBook.description}
-              </p>
+              {selectedBook.description && (
+                <p className="book-details__description">
+                  {selectedBook.description}
+                </p>
+              )}
 
-              <blockquote>
-                <p>“{selectedBook.quote}”</p>
-                <cite>{selectedBook.quoteBy}</cite>
-              </blockquote>
-
-              <dl>
-                <div>
-                  <dt>Saved Memories</dt>
-                  <dd>
-                    {selectedBook.memoryCount ?? 0}{" "}
-                    {(selectedBook.memoryCount ?? 0) === 1
-                      ? "memory album"
-                      : "memory albums"}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Album Photos</dt>
-                  <dd>
-                    {selectedBook.photoCount ?? 0}{" "}
-                    {(selectedBook.photoCount ?? 0) === 1
-                      ? "photograph"
-                      : "photographs"}
-                  </dd>
-                </div>
-              </dl>
+              {selectedBook.quote && (
+                <blockquote>
+                  <p>“{selectedBook.quote}”</p>
+                  {selectedBook.quoteBy && <cite>{selectedBook.quoteBy}</cite>}
+                </blockquote>
+              )}
 
               {/* Preview of memories inside this book */}
               <div className="mt-5 max-w-[500px] border-t border-[var(--hairline)] pt-4">
                 <div className="mb-2.5 flex items-center justify-between">
                   <span className="text-[9px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)]">
-                    Inside This Volume
+                    Inside This Book ({selectedMemories.length})
                   </span>
-                  {selectedMemories.length > 0 && (
-                    <Link
-                      href={`/book?id=${encodeURIComponent(selectedBook.id)}`}
-                      className="text-[10px] font-semibold tracking-wider uppercase text-[var(--accent)] no-underline hover:underline"
-                    >
-                      View all ({selectedMemories.length}) →
-                    </Link>
-                  )}
                 </div>
 
                 {loadingMemories ? (
@@ -384,7 +380,7 @@ function ShelfExperienceInner() {
                   </p>
                 ) : selectedMemories.length === 0 ? (
                   <p className="font-serif text-sm italic text-[var(--ink-soft)]">
-                    No memories bound into {selectedBook.shortTitle} yet. Write your first note, paragraph, and photo album inside.
+                    No memories bound into {selectedBook.shortTitle} yet.
                   </p>
                 ) : (
                   <div className="space-y-2">
@@ -395,7 +391,7 @@ function ShelfExperienceInner() {
                       return (
                         <Link
                           key={mem.id}
-                          href={`/memory?bookId=${encodeURIComponent(selectedBook.id)}&id=${encodeURIComponent(mem.id)}`}
+                          href={`/book?id=${encodeURIComponent(selectedBook.id)}&memory=${encodeURIComponent(mem.id)}`}
                           className="flex items-center gap-3 border border-[var(--hairline)] bg-[var(--paper-light)] p-2.5 no-underline transition hover:border-[var(--ink)]"
                         >
                           {coverPhoto ? (
@@ -438,7 +434,7 @@ function ShelfExperienceInner() {
               >
                 <span className="inline-flex items-center gap-2">
                   <BookOpen className="h-3.5 w-3.5" />
-                  <span>Open Memory Book</span>
+                  <span>Open Book & Memories</span>
                 </span>
                 <span aria-hidden="true">→</span>
               </Link>
@@ -450,13 +446,14 @@ function ShelfExperienceInner() {
               >
                 <span className="inline-flex items-center gap-2">
                   <PenLine className="h-3.5 w-3.5" />
-                  <span>Write New Memory in {selectedBook.shortTitle}</span>
+                  <span>Write New Memory</span>
                 </span>
                 <span aria-hidden="true">+</span>
               </Link>
             </div>
 
             <div className="focus-controls" aria-label="Inspection controls">
+              <span>Click book to open</span>
               <span>Drag to orbit</span>
               <span>Scroll to zoom</span>
               <button
@@ -471,16 +468,6 @@ function ShelfExperienceInner() {
         ) : null}
       </aside>
 
-      <div
-        className="experience-status"
-        role="status"
-        aria-live="polite"
-        data-testid="experience-status"
-      >
-        <span className="experience-status__dot" />
-        <span>{status}</span>
-      </div>
-
       <div className="loading-screen" aria-hidden={ready}>
         <div className="loading-screen__mark">
           <span />
@@ -489,8 +476,6 @@ function ShelfExperienceInner() {
         </div>
         <p>Assembling {books.length} memory volumes</p>
       </div>
-
-      <p className="independent-note">{siteConfig.independentNote}</p>
 
       {selectedBook && (
         <VolumeEditorModal
@@ -501,6 +486,12 @@ function ShelfExperienceInner() {
           onSave={handleSaveVolumeDetails}
         />
       )}
+
+      <StorageSettingsModal
+        open={storageOpen}
+        onClose={() => setStorageOpen(false)}
+        onConnected={() => void refreshBooks()}
+      />
     </main>
   );
 }

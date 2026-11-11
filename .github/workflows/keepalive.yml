@@ -1,0 +1,17 @@
+name: Keep Storage Server Awake
+
+on:
+  schedule:
+    # Tick every 15 minutes (keeps intervals safely under 20-30 min despite cron queue jitter)
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Instabox storage server health endpoint
+        run: |
+          curl -fsS --max-time 20 "https://4321-agq2i7yzuidu26jymgrfnit3ea.instabox.tech/api/health" >/dev/null
+          echo "Keep-alive ping succeeded at $(date -u +%FT%TZ)"
+

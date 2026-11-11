@@ -25,6 +25,9 @@ export type DiaryBook = {
   shortTitle: string;
   subtitle: string;
   yearLabel: string;
+  coverImprint?: string;
+  coverFooter?: string;
+  spineMark?: string;
   description: string;
   quote: string;
   quoteBy: string;

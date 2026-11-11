@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/newsreader";
 import "@fontsource-variable/inter";
 import "./globals.css";
+import { KeepAliveBeacon } from "@/components/KeepAliveBeacon";
 import { siteConfig } from "@/three/site-config";
 
 export const metadata: Metadata = {
@@ -25,7 +26,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <KeepAliveBeacon />
+        {children}
+      </body>
     </html>
   );
 }

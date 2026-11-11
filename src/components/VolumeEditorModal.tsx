@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import type { BookMotif, DiaryBook } from "@/lib/types";
+import { siteConfig } from "@/three/site-config";
 import { BookMotifPreview } from "./BookMotifPreview";
 
 const MOTIFS: BookMotif[] = [
@@ -52,26 +53,42 @@ export function VolumeEditorModal({
   onSave: (patch: Partial<DiaryBook>) => Promise<void>;
 }) {
   const [title, setTitle] = useState(book.title);
+  const [shortTitle, setShortTitle] = useState(book.shortTitle);
   const [subtitle, setSubtitle] = useState(book.subtitle);
   const [yearLabel, setYearLabel] = useState(book.yearLabel);
+  const [coverImprint, setCoverImprint] = useState(
+    book.coverImprint ?? siteConfig.coverImprint,
+  );
+  const [coverFooter, setCoverFooter] = useState(book.coverFooter ?? "");
+  const [spineMark, setSpineMark] = useState(
+    book.spineMark ?? siteConfig.spineMark,
+  );
   const [description, setDescription] = useState(book.description);
   const [quote, setQuote] = useState(book.quote);
+  const [quoteBy, setQuoteBy] = useState(book.quoteBy);
   const [cover, setCover] = useState(book.cover);
   const [accent, setAccent] = useState(book.accent);
   const [ink, setInk] = useState(book.ink);
   const [motif, setMotif] = useState<BookMotif>(book.motif);
   const [saving, setSaving] = useState(false);
+  const [syncSpineTitle, setSyncSpineTitle] = useState(
+    book.shortTitle === book.title,
+  );
 
   if (!open) return null;
 
   const previewBook: DiaryBook = {
     ...book,
     title: title || book.title,
-    shortTitle: title || book.title,
+    shortTitle: (syncSpineTitle ? title : shortTitle) || book.shortTitle,
     subtitle,
     yearLabel,
+    coverImprint,
+    coverFooter,
+    spineMark,
     description,
     quote,
+    quoteBy,
     cover,
     accent,
     ink,
@@ -82,13 +99,21 @@ export function VolumeEditorModal({
     e.preventDefault();
     setSaving(true);
     try {
+      const cleanTitle = title.trim() || book.title;
+      const cleanSpine = syncSpineTitle
+        ? cleanTitle
+        : shortTitle.trim() || cleanTitle;
       await onSave({
-        title: title.trim() || book.title,
-        shortTitle: title.trim() || book.title,
+        title: cleanTitle,
+        shortTitle: cleanSpine,
         subtitle: subtitle.trim(),
         yearLabel: yearLabel.trim(),
+        coverImprint: coverImprint.trim(),
+        coverFooter: coverFooter.trim(),
+        spineMark: spineMark.trim(),
         description: description.trim(),
         quote: quote.trim(),
+        quoteBy: quoteBy.trim(),
         cover,
         accent,
         ink,
@@ -123,7 +148,7 @@ export function VolumeEditorModal({
         <div className="mb-6 flex items-center gap-5">
           <BookMotifPreview book={previewBook} size="md" />
           <div>
-            <p className="eyebrow">Customize Clothbound Volume</p>
+            <p className="eyebrow">Customize Book Wordings & Cloth</p>
             <h2
               className="m-0 text-3xl font-normal tracking-tight"
               style={{ fontFamily: "var(--serif)" }}
@@ -133,72 +158,162 @@ export function VolumeEditorModal({
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                Notebook Title
-              </label>
-              <input
-                type="text"
-                required
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
-              />
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Front Cover & Spine Wordings */}
+          <div className="space-y-3 border-b border-[var(--hairline)] pb-5">
+            <div className="text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--accent)]">
+              Front Cover & Spine Wordings
             </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                  Cover Title
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={title}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    if (syncSpineTitle) setShortTitle(e.target.value);
+                  }}
+                  className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                  Spine Title
+                </label>
+                <input
+                  type="text"
+                  value={syncSpineTitle ? title : shortTitle}
+                  onChange={(e) => {
+                    setSyncSpineTitle(false);
+                    setShortTitle(e.target.value);
+                  }}
+                  placeholder="Title shown on the spine"
+                  className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                  Top Cover Header
+                </label>
+                <input
+                  type="text"
+                  value={coverImprint}
+                  onChange={(e) => setCoverImprint(e.target.value)}
+                  placeholder="PERSONAL ARCHIVE"
+                  className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                  Cover Subtitle
+                </label>
+                <input
+                  type="text"
+                  value={subtitle}
+                  onChange={(e) => setSubtitle(e.target.value)}
+                  placeholder="Year Archive · 2022"
+                  className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                    Spine Year
+                  </label>
+                  <input
+                    type="text"
+                    value={yearLabel}
+                    onChange={(e) => setYearLabel(e.target.value)}
+                    placeholder="2022"
+                    className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-2.5 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                    Spine Mark
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={spineMark}
+                    onChange={(e) => setSpineMark(e.target.value)}
+                    placeholder="MD"
+                    className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-2.5 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+
             <div>
               <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                Spine Badge / Year
+                Bottom Cover Footer (optional)
               </label>
               <input
                 type="text"
-                value={yearLabel}
-                onChange={(e) => setYearLabel(e.target.value)}
+                value={coverFooter}
+                onChange={(e) => setCoverFooter(e.target.value)}
+                placeholder="Leave blank to show memory count or default tagline"
                 className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
               />
             </div>
           </div>
 
-          <div>
-            <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-              Subtitle
-            </label>
-            <input
-              type="text"
-              value={subtitle}
-              onChange={(e) => setSubtitle(e.target.value)}
-              className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
-            />
-          </div>
+          {/* Back Cover Wordings */}
+          <div className="space-y-3 border-b border-[var(--hairline)] pb-5">
+            <div className="text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--accent)]">
+              Back Cover Wordings
+            </div>
 
-          <div>
-            <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-              Back Cover Summary
-            </label>
-            <textarea
-              rows={2}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
-            />
-          </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                Back Cover Summary
+              </label>
+              <textarea
+                rows={2}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+              />
+            </div>
 
-          <div>
-            <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-              Back Cover Epigraph Quote
-            </label>
-            <input
-              type="text"
-              value={quote}
-              onChange={(e) => setQuote(e.target.value)}
-              className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
-            />
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                  Back Cover Quote
+                </label>
+                <input
+                  type="text"
+                  value={quote}
+                  onChange={(e) => setQuote(e.target.value)}
+                  className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                  Quote Attribution
+                </label>
+                <input
+                  type="text"
+                  value={quoteBy}
+                  onChange={(e) => setQuoteBy(e.target.value)}
+                  placeholder="Personal Archive"
+                  className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
           </div>
 
           <div>
             <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-              Clothbound Cover Palette
+              Cloth Binding Palette
             </label>
             <div className="flex flex-wrap gap-2">
               {CLOTH_PRESETS.map((preset) => (
@@ -210,14 +325,11 @@ export function VolumeEditorModal({
                     setAccent(preset.accent);
                     setInk(preset.ink);
                   }}
-                  className={`inline-flex items-center gap-2 border px-2.5 py-1.5 text-xs cursor-pointer ${
-                    cover === preset.cover
-                      ? "border-[var(--ink)] bg-[var(--paper-deep)] font-semibold"
-                      : "border-[var(--hairline)] bg-[var(--paper)]"
-                  }`}
+                  title={preset.name}
+                  className="flex items-center gap-1.5 border border-[var(--hairline)] bg-[var(--paper)] px-2.5 py-1.5 text-xs cursor-pointer hover:border-[var(--ink)]"
                 >
                   <span
-                    className="h-3.5 w-3.5 rounded-full border border-black/15"
+                    className="inline-block h-3.5 w-3.5 rounded-full border border-black/15"
                     style={{ backgroundColor: preset.cover }}
                   />
                   <span>{preset.name}</span>
@@ -226,18 +338,54 @@ export function VolumeEditorModal({
             </div>
           </div>
 
+          <div className="grid grid-cols-3 gap-3">
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                Cloth Color
+              </span>
+              <input
+                type="color"
+                value={cover}
+                onChange={(e) => setCover(e.target.value)}
+                className="h-9 w-full cursor-pointer border border-[var(--hairline)] bg-transparent p-1"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                Foil Motif
+              </span>
+              <input
+                type="color"
+                value={accent}
+                onChange={(e) => setAccent(e.target.value)}
+                className="h-9 w-full cursor-pointer border border-[var(--hairline)] bg-transparent p-1"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                Lettering Ink
+              </span>
+              <input
+                type="color"
+                value={ink}
+                onChange={(e) => setInk(e.target.value)}
+                className="h-9 w-full cursor-pointer border border-[var(--hairline)] bg-transparent p-1"
+              />
+            </label>
+          </div>
+
           <div>
-            <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-              Foil Motif Pattern
+            <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+              Abstract Foil Motif
             </label>
             <select
               value={motif}
               onChange={(e) => setMotif(e.target.value as BookMotif)}
               className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm capitalize"
             >
-              {MOTIFS.map((item) => (
-                <option key={item} value={item}>
-                  {item}
+              {MOTIFS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
                 </option>
               ))}
             </select>
@@ -247,16 +395,16 @@ export function VolumeEditorModal({
             <button
               type="button"
               onClick={onClose}
-              className="border border-[var(--hairline)] bg-[var(--paper)] px-4 py-2 text-xs font-semibold tracking-wider uppercase cursor-pointer"
+              className="border border-[var(--hairline)] px-4 py-2 text-xs font-semibold tracking-wider uppercase cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)]"
+              className="bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)] disabled:opacity-50"
             >
-              {saving ? "Updating Cover..." : "Update 3D Volume"}
+              {saving ? "Saving..." : "Save Volume"}
             </button>
           </div>
         </form>
