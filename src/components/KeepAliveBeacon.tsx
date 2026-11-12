@@ -18,7 +18,8 @@ export function KeepAliveBeacon() {
       });
     }
 
-    ping();
+    // Defer initial health ping so boot traffic prioritizes /api/books and fonts
+    const initialTimer = window.setTimeout(ping, 10_000);
 
     const timer = window.setInterval(ping, PING_INTERVAL_MS);
 
@@ -33,6 +34,7 @@ export function KeepAliveBeacon() {
 
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
+      window.clearTimeout(initialTimer);
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };

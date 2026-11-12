@@ -1,8 +1,27 @@
 import type { DiaryBook } from "@/lib/types";
 import { siteConfig } from "./site-config";
 
-const serif = '"Newsreader Variable", "Iowan Old Style", Georgia, serif';
-const sans = '"Inter Variable", Inter, Arial, sans-serif';
+const FALLBACK_SERIF = '"Newsreader Variable", "Iowan Old Style", Georgia, serif';
+const FALLBACK_SANS = '"Inter Variable", Inter, Arial, sans-serif';
+
+let cachedFonts: { serif: string; sans: string } | null = null;
+function getFontStacks() {
+  if (cachedFonts) return cachedFonts;
+  if (typeof document === "undefined") {
+    return { serif: FALLBACK_SERIF, sans: FALLBACK_SANS };
+  }
+  const styles = getComputedStyle(document.documentElement);
+  const resolvedSerif = styles.getPropertyValue("--font-newsreader").trim();
+  const resolvedSans = styles.getPropertyValue("--font-inter").trim();
+  const next = {
+    serif: resolvedSerif ? `${resolvedSerif}, ${FALLBACK_SERIF}` : FALLBACK_SERIF,
+    sans: resolvedSans ? `${resolvedSans}, ${FALLBACK_SANS}` : FALLBACK_SANS,
+  };
+  if (resolvedSerif && resolvedSans) {
+    cachedFonts = next;
+  }
+  return next;
+}
 
 function seeded(seed: string) {
   let state = 2166136261;
@@ -527,23 +546,42 @@ function drawMotif(
   ctx.restore();
 }
 
+let paperGrainTile: HTMLCanvasElement | null = null;
+
+function getPaperGrainTile(): HTMLCanvasElement | null {
+  if (paperGrainTile || typeof document === "undefined") return paperGrainTile;
+  const tile = document.createElement("canvas");
+  tile.width = 128;
+  tile.height = 128;
+  const tileCtx = tile.getContext("2d");
+  if (!tileCtx) return null;
+  const random = seeded("paper-grain-tile-v1");
+  for (let i = 0; i < 160; i += 1) {
+    const alpha = 0.014 + random() * 0.022;
+    tileCtx.fillStyle =
+      random() > 0.5
+        ? `rgba(255,255,255,${alpha.toFixed(3)})`
+        : `rgba(40,32,24,${alpha.toFixed(3)})`;
+    const size = random() * 1.8 + 0.5;
+    tileCtx.fillRect(random() * 128, random() * 128, size, size);
+  }
+  paperGrainTile = tile;
+  return paperGrainTile;
+}
+
 function addPaperGrain(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  seed: string,
+  _seed: string,
 ) {
-  const random = seeded(`${seed}-grain`);
+  const tile = getPaperGrainTile();
+  if (!tile) return;
+  const pattern = ctx.createPattern(tile, "repeat");
+  if (!pattern) return;
   ctx.save();
-  for (let i = 0; i < 1200; i += 1) {
-    const alpha = 0.012 + random() * 0.02;
-    ctx.fillStyle =
-      random() > 0.5
-        ? `rgba(255,255,255,${alpha})`
-        : `rgba(40,32,24,${alpha})`;
-    const size = random() * 2 + 0.35;
-    ctx.fillRect(random() * width, random() * height, size, size);
-  }
+  ctx.fillStyle = pattern;
+  ctx.fillRect(0, 0, width, height);
   ctx.restore();
 }
 
@@ -593,6 +631,7 @@ function drawCoverTypography(
   centered = false,
   footerColor?: string,
 ) {
+  const { serif, sans } = getFontStacks();
   const imprint =
     book.coverImprint !== undefined ? book.coverImprint : siteConfig.coverImprint;
   const customFooter =
@@ -798,6 +837,7 @@ export function createFrontCover(
   }
 
   if (template === "bordered-plaque") {
+    const { serif, sans } = getFontStacks();
     const plaqueBg = book.secondary || "#faf7f0";
     const plaqueInk = contrastInkForHex(plaqueBg);
     addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
@@ -896,6 +936,7 @@ export function createFrontCover(
   }
 
   // "split-band": two-tone lower horizontal cloth/secondary band + crisp vibrant seam
+  const { serif, sans } = getFontStacks();
   addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
   const bandTop = Math.round(logicalHeight * 0.58);
   const bandColor = book.secondary || book.accent;
@@ -949,6 +990,7 @@ export function createTitleDecal(book: DiaryBook) {
 }
 
 export function createSpineCover(book: DiaryBook) {
+  const { serif, sans } = getFontStacks();
   const isThin = (book.thickness ?? 0.24) <= 0.165;
   const logicalWidth = 256;
   const logicalHeight = 2048;
@@ -1046,6 +1088,7 @@ export function createSpineCover(book: DiaryBook) {
 }
 
 export function createBackCover(book: DiaryBook) {
+  const { serif, sans } = getFontStacks();
   const logicalWidth = 1024;
   const logicalHeight = 1536;
   const canvas = document.createElement("canvas");

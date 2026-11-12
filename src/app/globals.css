@@ -29,8 +29,8 @@
   --caption-grad-72: rgba(243, 239, 232, 0.72);
   --caption-grad-0: rgba(243, 239, 232, 0);
   --card-shadow: rgba(38, 34, 30, 0.2);
-  --serif: "Newsreader Variable", "Iowan Old Style", Georgia, serif;
-  --sans: "Inter Variable", Inter, Helvetica, Arial, sans-serif;
+  --serif: var(--font-newsreader), "Newsreader Variable", "Iowan Old Style", Georgia, serif;
+  --sans: var(--font-inter), "Inter Variable", Inter, Helvetica, Arial, sans-serif;
 }
 
 [data-theme="dark"] {
@@ -154,7 +154,7 @@
   cursor: grab;
   touch-action: none;
   opacity: 0;
-  transition: opacity 900ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 420ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .shelf-canvas.is-dragging {
@@ -218,7 +218,10 @@
 .header-pill-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  min-width: 30px;
+  min-height: 30px;
   padding: 8px 14px;
   border: 1px solid var(--hairline);
   border-radius: 999px;
@@ -340,7 +343,8 @@
   display: inline-flex;
   gap: 16px;
   align-items: center;
-  padding: 0 0 7px;
+  min-height: 28px;
+  padding: 4px 0 6px;
   border-bottom: 1px solid currentColor;
   background: transparent;
   cursor: pointer;
@@ -485,15 +489,22 @@
 .shelf-index__ticks {
   display: flex;
   align-items: flex-end;
-  height: 24px;
+  height: 28px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.shelf-index__ticks::-webkit-scrollbar {
+  display: none;
 }
 
 .shelf-index__ticks button {
   position: relative;
   display: block;
-  flex: 1 1 0;
-  min-width: 6px;
-  height: 24px;
+  flex: 1 0 26px;
+  min-width: 26px;
+  height: 28px;
   padding: 0;
   background: transparent;
   cursor: pointer;
@@ -600,7 +611,8 @@
   gap: 13px;
   align-items: center;
   justify-self: start;
-  padding: 0;
+  min-height: 28px;
+  padding: 6px 0;
   background: transparent;
   cursor: pointer;
   font-size: 9px;
@@ -780,6 +792,7 @@
 }
 
 .focus-controls button {
+  min-height: 28px;
   padding: 7px 12px;
   border: 1px solid var(--hairline);
   background: transparent;
@@ -822,20 +835,22 @@
 
 .loading-screen {
   position: absolute;
-  z-index: 40;
+  z-index: 10;
   inset: 0;
   display: grid;
   place-content: center;
   justify-items: center;
   background: var(--paper);
-  transition:
-    opacity 720ms ease 120ms,
-    visibility 720ms ease 120ms;
+  transition: opacity 420ms ease;
 }
 
 .is-ready .loading-screen {
-  visibility: hidden;
   opacity: 0;
+  pointer-events: none;
+}
+
+.is-ready .loading-screen__mark span {
+  animation: none;
 }
 
 .loading-screen__mark {

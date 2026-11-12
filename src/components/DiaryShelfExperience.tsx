@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -16,12 +17,19 @@ import {
   type BookPatchInput,
 } from "@/lib/storage-client";
 import type { DiaryBook, MemoryAlbum } from "@/lib/types";
-import { ShelfEngine, type ShelfMode } from "@/three/ShelfEngine";
+import type { ShelfEngine as ShelfEngineType, ShelfMode } from "@/three/ShelfEngine";
 import { siteConfig } from "@/three/site-config";
-import { StorageSettingsModal } from "./StorageSettingsModal";
 import { ThemeToggle } from "./ThemeToggle";
-import { VolumeEditorModal } from "./VolumeEditorModal";
 import { readDomTheme, useThemeMode } from "@/lib/theme";
+
+const VolumeEditorModal = dynamic(
+  () => import("./VolumeEditorModal").then((m) => m.VolumeEditorModal),
+  { ssr: false },
+);
+const StorageSettingsModal = dynamic(
+  () => import("./StorageSettingsModal").then((m) => m.StorageSettingsModal),
+  { ssr: false },
+);
 
 function ArrowIcon({ direction }: { direction: "left" | "right" }) {
   return (
@@ -37,23 +45,38 @@ function resolveBookIndex(list: DiaryBook[], bookId: string | null): number {
   return idx >= 0 ? idx : 0;
 }
 
-function ShelfExperienceInner() {
-  const router = useRouter();
+function UrlParamsSync({
+  onBookParam,
+  onStorageParam,
+}: {
+  onBookParam: (bookId: string) => void;
+  onStorageParam: () => void;
+}) {
   const searchParams = useSearchParams();
   const requestedBookId = searchParams.get("book");
   const openStorageParam = searchParams.get("storage") === "1";
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const engineRef = useRef<ShelfEngine | null>(null);
+  useEffect(() => {
+    if (requestedBookId) onBookParam(requestedBookId);
+  }, [requestedBookId, onBookParam]);
 
-  const initialIndex = useMemo(
-    () => resolveBookIndex(defaultBooks, requestedBookId),
-    [requestedBookId],
-  );
+  useEffect(() => {
+    if (openStorageParam) onStorageParam();
+  }, [openStorageParam, onStorageParam]);
+
+  return null;
+}
+
+function ShelfExperienceInner() {
+  const router = useRouter();
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const ticksRef = useRef<HTMLDivElement>(null);
+  const engineRef = useRef<ShelfEngineType | null>(null);
 
   const theme = useThemeMode();
   const [books, setBooks] = useState<DiaryBook[]>(defaultBooks);
-  const [activeIndex, setActiveIndex] = useState(initialIndex);
+  const [activeIndex, setActiveIndex] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [mode, setMode] = useState<ShelfMode>("browse");
   const [ready, setReady] = useState(false);
@@ -63,6 +86,11 @@ function ShelfExperienceInner() {
     { mode: "edit"; book: DiaryBook } | { mode: "create" } | null
   >(null);
   const [storageOpen, setStorageOpen] = useState(false);
+  const [hasOpenedStorage, setHasOpenedStorage] = useState(false);
+
+  useEffect(() => {
+    if (storageOpen) setHasOpenedStorage(true);
+  }, [storageOpen]);
 
   const booksRef = useRef(books);
   booksRef.current = books;
@@ -93,7 +121,6 @@ function ShelfExperienceInner() {
 
   // Allow hidden settings trigger only via ?storage=1 or Ctrl/Cmd+Shift+S
   useEffect(() => {
-    if (openStorageParam) setStorageOpen(true);
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "s") {
         e.preventDefault();
@@ -102,15 +129,17 @@ function ShelfExperienceInner() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openStorageParam]);
+  }, []);
 
-  // Keep shelf scrolled to ?book=... when searchParams hydrates on static export
-  useEffect(() => {
-    if (!requestedBookId) return;
-    const idx = resolveBookIndex(booksRef.current, requestedBookId);
+  const handleBookParam = useCallback((bookId: string) => {
+    const idx = resolveBookIndex(booksRef.current, bookId);
     setActiveIndex(idx);
     engineRef.current?.browseToImmediate(idx);
-  }, [requestedBookId]);
+  }, []);
+
+  const handleOpenStorageParam = useCallback(() => {
+    setStorageOpen(true);
+  }, []);
 
   const activeBook = books[activeIndex] ?? books[0];
   const selectedBook = useMemo(
@@ -140,30 +169,55 @@ function ShelfExperienceInner() {
   }, [selectedBook?.id]);
 
   useEffect(() => {
+    const container = ticksRef.current;
+    if (!container || container.scrollWidth <= container.clientWidth + 2) return;
+    const activeButton = container.children[activeIndex] as HTMLElement | undefined;
+    if (!activeButton) return;
+    const targetLeft =
+      activeButton.offsetLeft - container.clientWidth * 0.5 + activeButton.offsetWidth * 0.5;
+    container.scrollTo({
+      left: Math.max(0, targetLeft),
+      behavior: "smooth",
+    });
+  }, [activeIndex, books.length]);
+
+  useEffect(() => {
     let cancelled = false;
-    let engine: ShelfEngine | null = null;
+    let engine: ShelfEngineType | null = null;
 
     async function start() {
       if (!canvasRef.current) return;
-      const hasCached = Boolean(loadCachedServerBooks()?.length);
-      const waitBudgetMs = hasCached ? 250 : 900;
-      await Promise.all([
-        document.fonts.ready,
-        Promise.race([
-          initialFetchRef.current ?? Promise.resolve(),
-          new Promise<void>((resolve) => {
-            window.setTimeout(resolve, waitBudgetMs);
-          }),
-        ]),
-      ]);
-      if (cancelled || !canvasRef.current) return;
-
       const urlBook =
         typeof window !== "undefined"
           ? new URLSearchParams(window.location.search).get("book")
           : null;
+      const initialStartIndex = resolveBookIndex(booksRef.current, urlBook);
+      setActiveIndex(initialStartIndex);
+
+      // Yield once so static HTML / hero heading paints before WebGL initializes
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => {
+          window.setTimeout(resolve, 0);
+        });
+      });
+      if (cancelled || !canvasRef.current) return;
+
+      const hasCached = Boolean(loadCachedServerBooks()?.length);
+      const [{ ShelfEngine }] = await Promise.all([
+        import("@/three/ShelfEngine"),
+        !hasCached && initialFetchRef.current
+          ? Promise.race([
+              initialFetchRef.current,
+              new Promise<void>((resolve) => {
+                window.setTimeout(resolve, 120);
+              }),
+            ])
+          : Promise.resolve(),
+      ]);
+      if (cancelled || !canvasRef.current) return;
+
       const startIndex = resolveBookIndex(booksRef.current, urlBook);
-      setActiveIndex(startIndex);
+      if (startIndex !== initialStartIndex) setActiveIndex(startIndex);
 
       engine = new ShelfEngine(
         canvasRef.current,
@@ -186,6 +240,14 @@ function ShelfExperienceInner() {
       );
       engineRef.current = engine;
       engine.syncBooks(booksRef.current);
+      engine.setTheme(readDomTheme());
+      if (typeof document !== "undefined" && document.fonts?.status !== "loaded") {
+        void document.fonts.ready.then(() => {
+          if (!cancelled) {
+            engineRef.current?.refreshTypographyTextures();
+          }
+        });
+      }
     }
 
     void start();
@@ -373,7 +435,7 @@ function ShelfExperienceInner() {
       </button>
 
       <nav className="shelf-index" aria-label="Diary shelf position">
-        <div className="shelf-index__ticks">
+        <div className="shelf-index__ticks" ref={ticksRef}>
           {books.map((book, index) => (
             <button
               key={book.id}
@@ -590,19 +652,24 @@ function ShelfExperienceInner() {
         />
       )}
 
-      <StorageSettingsModal
-        open={storageOpen}
-        onClose={() => setStorageOpen(false)}
-        onConnected={() => void refreshBooks()}
-      />
+      {(storageOpen || hasOpenedStorage) && (
+        <StorageSettingsModal
+          open={storageOpen}
+          onClose={() => setStorageOpen(false)}
+          onConnected={() => void refreshBooks()}
+        />
+      )}
+
+      <Suspense fallback={null}>
+        <UrlParamsSync
+          onBookParam={handleBookParam}
+          onStorageParam={handleOpenStorageParam}
+        />
+      </Suspense>
     </main>
   );
 }
 
 export function DiaryShelfExperience() {
-  return (
-    <Suspense fallback={<div className="min-h-dvh bg-[var(--paper)]" />}>
-      <ShelfExperienceInner />
-    </Suspense>
-  );
+  return <ShelfExperienceInner />;
 }

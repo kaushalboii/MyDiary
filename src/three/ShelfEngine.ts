@@ -21,7 +21,6 @@ import {
   createBackCover,
   createFrontCover,
   createSpineCover,
-  createTitleDecal,
 } from "./cover-art";
 import {
   STRIPE_ASSET_ROOT,
@@ -86,12 +85,16 @@ type RuntimeBook = {
   inspectionIdle: THREE.Group;
   physical: THREE.Group;
   assetHolder: THREE.Group;
-  boardMaterial: THREE.MeshPhysicalMaterial;
-  headbandMaterial: THREE.MeshPhysicalMaterial;
-  frontSurface: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshPhysicalMaterial>;
+  boardMaterial: THREE.MeshStandardMaterial;
+  headbandMaterial: THREE.MeshStandardMaterial;
+  frontSurface: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
   backSurface: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
-  spineSurface: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshPhysicalMaterial>;
-  titleDecal: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  spineSurface: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
+  spineTexture: THREE.Texture | null;
+  frontTexture: THREE.Texture | null;
+  backTexture: THREE.Texture | null;
+  hasSpineTexture: boolean;
+  hasCoverTextures: boolean;
   pickProxy: THREE.Mesh;
   livingMesh?: THREE.Mesh;
   livingMaterial?: THREE.ShaderMaterial;
@@ -180,12 +183,15 @@ function bookStructureSignature(books: DiaryBook[]) {
 function toTexture(
   canvas: HTMLCanvasElement,
   renderer: THREE.WebGLRenderer,
-  anisotropy = 8,
+  anisotropy = 6,
 ) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  const mobileCap =
+    typeof window !== "undefined" && window.innerWidth < 760 ? 2 : 6;
   texture.anisotropy = Math.min(
     anisotropy,
+    mobileCap,
     renderer.capabilities.getMaxAnisotropy(),
   );
   texture.generateMipmaps = true;
@@ -240,7 +246,17 @@ export class ShelfEngine {
   private wallMaterial: THREE.MeshStandardMaterial | null = null;
   private groundMaterial: THREE.MeshStandardMaterial | null = null;
   private shelfMaterial: THREE.MeshStandardMaterial | null = null;
-  private shelfEdgeMaterial: THREE.MeshPhysicalMaterial | null = null;
+  private shelfEdgeMaterial: THREE.MeshStandardMaterial | null = null;
+  private sharedPaperMaterial = new THREE.MeshStandardMaterial({
+    color: pageColor,
+    roughness: 0.88,
+    metalness: 0,
+  });
+  private sharedPickMaterial = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  });
   private currentTheme: ShelfTheme = "light";
   private camera: THREE.PerspectiveCamera;
   private controls: OrbitControls;
@@ -291,6 +307,8 @@ export class ShelfEngine {
   private responsiveBrowseCamera = browseCamera.clone();
   private lastTimestamp = 0;
   private lastDiagnosticsAt = 0;
+  private backgroundQueueTimer = 0;
+  private backgroundTaskQueue: Array<() => void> = [];
   private isDisposed = false;
 
   constructor(
@@ -319,6 +337,8 @@ export class ShelfEngine {
       antialias: true,
       powerPreference: "high-performance",
     });
+    this.renderer.debug.checkShaderErrors =
+      process.env.NODE_ENV !== "production";
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1.0;
@@ -347,15 +367,174 @@ export class ShelfEngine {
     this.bindEvents();
     this.resizeObserver.observe(canvas);
     this.handleResize();
-    this.callbacks.onReady();
-    this.callbacks.onStatus(`${this.booksData.length} memory volumes ready`);
-    this.animate();
+    void this.boot();
     if (siteConfig.enableOptionalStripeArchive) {
       void this.loadStripeAssets();
     }
   }
 
+  private async boot() {
+    if (this.isDisposed) return;
+    const gl = this.renderer.getContext();
+    const hasParallelCompile = Boolean(
+      gl.getExtension("KHR_parallel_shader_compile"),
+    );
+    if (hasParallelCompile && typeof this.renderer.compileAsync === "function") {
+      try {
+        await this.renderer.compileAsync(this.scene, this.camera);
+      } catch {
+        // Fallback to standard first-frame compile
+      }
+    }
+    if (this.isDisposed) return;
+    this.callbacks.onReady();
+    this.callbacks.onStatus(`${this.booksData.length} memory volumes ready`);
+    this.animationFrame = requestAnimationFrame(this.animate);
+  }
+
+  private clearBackgroundQueue() {
+    if (this.backgroundQueueTimer) {
+      window.clearTimeout(this.backgroundQueueTimer);
+      this.backgroundQueueTimer = 0;
+    }
+    this.backgroundTaskQueue = [];
+  }
+
+  private pumpBackgroundQueue = () => {
+    this.backgroundQueueTimer = 0;
+    if (this.isDisposed || this.backgroundTaskQueue.length === 0) return;
+    if (this.pointerDown) {
+      this.backgroundQueueTimer = window.setTimeout(this.pumpBackgroundQueue, 48);
+      return;
+    }
+
+    const start = performance.now();
+    while (this.backgroundTaskQueue.length > 0 && performance.now() - start < 7) {
+      const task = this.backgroundTaskQueue.shift();
+      task?.();
+    }
+
+    if (this.backgroundTaskQueue.length > 0) {
+      this.backgroundQueueTimer = window.setTimeout(this.pumpBackgroundQueue, 16);
+    }
+  };
+
+  private scheduleCoverHydration(focusIndex: number) {
+    this.clearBackgroundQueue();
+    const ordered = [...this.runtimeBooks].sort(
+      (a, b) => Math.abs(a.index - focusIndex) - Math.abs(b.index - focusIndex),
+    );
+    for (const runtime of ordered) {
+      if (!runtime.hasSpineTexture) {
+        this.backgroundTaskQueue.push(() => {
+          if (!this.isDisposed && this.runtimeBooks.includes(runtime)) {
+            this.applySpineTexture(runtime);
+          }
+        });
+      }
+    }
+    for (const runtime of ordered) {
+      if (!runtime.hasCoverTextures) {
+        this.backgroundTaskQueue.push(() => {
+          if (!this.isDisposed && this.runtimeBooks.includes(runtime)) {
+            this.applyCoverTextures(runtime);
+          }
+        });
+      }
+    }
+    if (this.backgroundTaskQueue.length > 0) {
+      this.backgroundQueueTimer = window.setTimeout(this.pumpBackgroundQueue, 32);
+    }
+  }
+
+  private replaceBookTexture(
+    runtime: RuntimeBook,
+    face: "front" | "back" | "spine",
+    canvas: HTMLCanvasElement,
+    anisotropy = 6,
+  ) {
+    const nextTexture = toTexture(canvas, this.renderer, anisotropy);
+    const prevKey =
+      face === "front"
+        ? runtime.frontTexture
+        : face === "back"
+          ? runtime.backTexture
+          : runtime.spineTexture;
+
+    if (face === "front") {
+      runtime.frontSurface.material.map = nextTexture;
+      runtime.frontSurface.material.needsUpdate = true;
+      runtime.frontSurface.visible = true;
+      runtime.frontTexture = nextTexture;
+    } else if (face === "back") {
+      runtime.backSurface.material.map = nextTexture;
+      runtime.backSurface.material.needsUpdate = true;
+      runtime.backSurface.visible = true;
+      runtime.backTexture = nextTexture;
+    } else {
+      runtime.spineSurface.material.map = nextTexture;
+      runtime.spineSurface.material.needsUpdate = true;
+      runtime.spineSurface.visible = true;
+      runtime.spineTexture = nextTexture;
+    }
+
+    if (prevKey) {
+      const idx = runtime.textures.indexOf(prevKey);
+      if (idx >= 0) runtime.textures.splice(idx, 1);
+      prevKey.dispose();
+    }
+    runtime.textures.push(nextTexture);
+    return nextTexture;
+  }
+
+  private applySpineTexture(runtime: RuntimeBook) {
+    if (runtime.hasSpineTexture) return;
+    this.replaceBookTexture(runtime, "spine", createSpineCover(runtime.data), 4);
+    runtime.hasSpineTexture = true;
+  }
+
+  private applyCoverTextures(runtime: RuntimeBook) {
+    if (runtime.hasCoverTextures) return;
+    this.replaceBookTexture(runtime, "front", createFrontCover(runtime.data));
+    this.replaceBookTexture(runtime, "back", createBackCover(runtime.data));
+    runtime.hasCoverTextures = true;
+    if (runtime.data.coverImage) {
+      void this.loadCustomCover(runtime, runtime.data);
+    }
+  }
+
+  public ensureBookTextures(index: number, includeCovers = true) {
+    const runtime = this.runtimeBooks[index];
+    if (!runtime || this.isDisposed) return;
+    this.applySpineTexture(runtime);
+    if (includeCovers) {
+      this.applyCoverTextures(runtime);
+    }
+  }
+
+  public refreshTypographyTextures() {
+    if (this.isDisposed || this.runtimeBooks.length === 0) return;
+    this.clearBackgroundQueue();
+    const priorityIndex = this.selectedIndex ?? this.activeIndex;
+    const ordered = [...this.runtimeBooks].sort(
+      (a, b) =>
+        Math.abs(a.index - priorityIndex) - Math.abs(b.index - priorityIndex),
+    );
+    for (const runtime of ordered) {
+      runtime.hasSpineTexture = false;
+      runtime.hasCoverTextures = false;
+      if (Math.abs(runtime.index - priorityIndex) <= 3) {
+        this.applySpineTexture(runtime);
+        if (runtime.index === priorityIndex) {
+          this.applyCoverTextures(runtime);
+        }
+      }
+    }
+    this.scheduleCoverHydration(priorityIndex);
+  }
+
   private clearBooksAndShelf() {
+    this.clearBackgroundQueue();
     this.runtimeBooks.forEach((runtime) => {
       runtime.slot.traverse((object) => {
         if (!(object instanceof THREE.Mesh)) return;
@@ -363,7 +542,15 @@ export class ShelfEngine {
         const materials = Array.isArray(object.material)
           ? object.material
           : [object.material];
-        materials.forEach((material) => material?.dispose());
+        materials.forEach((material) => {
+          if (
+            material &&
+            material !== this.sharedPaperMaterial &&
+            material !== this.sharedPickMaterial
+          ) {
+            material.dispose();
+          }
+        });
       });
       runtime.textures.forEach((tex) => tex.dispose());
       this.shelfGroup.remove(runtime.slot);
@@ -490,13 +677,8 @@ export class ShelfEngine {
       runtime.signature = nextSig;
 
       runtime.boardMaterial.color.set(nextBook.cover);
-      runtime.boardMaterial.sheenColor.set(nextBook.cover);
-      runtime.boardMaterial.sheen = 0.14;
-      runtime.boardMaterial.clearcoat = 0.02;
-      runtime.boardMaterial.needsUpdate = true;
 
       runtime.headbandMaterial.color.set(nextBook.accent);
-      runtime.headbandMaterial.needsUpdate = true;
 
       if (runtime.livingMaterial && runtime.livingMesh) {
         runtime.livingMaterial.uniforms.uColor.value.set(nextBook.accent);
@@ -516,30 +698,10 @@ export class ShelfEngine {
         runtime.livingMaterial = livingMat;
       }
 
-      const oldTextures = [...runtime.textures];
-      const frontTexture = toTexture(createFrontCover(nextBook), this.renderer);
-      const titleTexture = toTexture(createTitleDecal(nextBook), this.renderer);
-      const spineTexture = toTexture(createSpineCover(nextBook), this.renderer, 4);
-      const backTexture = toTexture(createBackCover(nextBook), this.renderer);
-
-      runtime.frontSurface.material.map = frontTexture;
-      runtime.frontSurface.material.needsUpdate = true;
-
-      runtime.titleDecal.material.map = titleTexture;
-      runtime.titleDecal.material.needsUpdate = true;
-
-      runtime.spineSurface.material.map = spineTexture;
-      runtime.spineSurface.material.needsUpdate = true;
-
-      runtime.backSurface.material.map = backTexture;
-      runtime.backSurface.material.needsUpdate = true;
-
-      runtime.textures = [frontTexture, titleTexture, spineTexture, backTexture];
-      oldTextures.forEach((tex) => tex.dispose());
-
-      if (nextBook.coverImage) {
-        void this.loadCustomCover(runtime, nextBook);
-      }
+      runtime.hasSpineTexture = false;
+      runtime.hasCoverTextures = false;
+      this.applySpineTexture(runtime);
+      this.applyCoverTextures(runtime);
     });
 
     if (focusBookId) {
@@ -564,10 +726,8 @@ export class ShelfEngine {
     const key = new THREE.DirectionalLight(palette.keyColor, palette.keyIntensity);
     key.position.set(-4.2, 7.4, 5.5);
     key.castShadow = true;
-    key.shadow.mapSize.set(
-      window.innerWidth < 700 ? 1024 : 2048,
-      window.innerWidth < 700 ? 1024 : 2048,
-    );
+    const shadowSize = window.innerWidth < 760 ? 512 : 1024;
+    key.shadow.mapSize.set(shadowSize, shadowSize);
     key.shadow.camera.left = -8;
     key.shadow.camera.right = 8;
     key.shadow.camera.top = 6;
@@ -675,11 +835,15 @@ export class ShelfEngine {
       const runtime = this.createBook(book, index, cursor);
       this.runtimeBooks.push(runtime);
       this.shelfGroup.add(runtime.slot);
-      if (book.coverImage) {
-        void this.loadCustomCover(runtime, book);
+      if (Math.abs(index - initialIndex) <= 3) {
+        this.applySpineTexture(runtime);
+      }
+      if (index === initialIndex) {
+        this.applyCoverTextures(runtime);
       }
       cursor += depth * 0.5 + gap;
     });
+    this.scheduleCoverHydration(initialIndex);
 
     this.motionLayout = createMotionLayout(
       this.runtimeBooks.map((book) => ({
@@ -698,7 +862,7 @@ export class ShelfEngine {
 
     const palette = THEME_PALETTES[this.currentTheme];
     const shelfWidth = Math.max(18, cursor + 12);
-    const shelfGeometry = new RoundedBoxGeometry(shelfWidth, 0.22, 1.72, 4, 0.045);
+    const shelfGeometry = new RoundedBoxGeometry(shelfWidth, 0.22, 1.72, 2, 0.045);
     const shelfMaterial = new THREE.MeshStandardMaterial({
       color: palette.shelf,
       roughness: 0.62,
@@ -712,15 +876,14 @@ export class ShelfEngine {
     shelf.receiveShadow = true;
     this.shelfFurniture.add(shelf);
 
-    const shelfEdgeMat = new THREE.MeshPhysicalMaterial({
+    const shelfEdgeMat = new THREE.MeshStandardMaterial({
       color: palette.shelfEdge,
-      roughness: 0.58,
-      clearcoat: 0.06,
-      clearcoatRoughness: 0.65,
+      roughness: 0.6,
+      metalness: 0.04,
     });
     this.shelfEdgeMaterial = shelfEdgeMat;
     const shelfEdge = new THREE.Mesh(
-      new RoundedBoxGeometry(shelfWidth, 0.12, 0.16, 3, 0.025),
+      new RoundedBoxGeometry(shelfWidth, 0.12, 0.16, 2, 0.025),
       shelfEdgeMat,
     );
     shelfEdge.position.set(cursor * 0.5, shelfTop - 0.08, 0.85);
@@ -763,43 +926,25 @@ export class ShelfEngine {
     assetHolder.name = `stripePressBook:${book.id}`;
     inspectionIdle.add(assetHolder);
 
-    const boardMaterial = new THREE.MeshPhysicalMaterial({
+    const boardMaterial = new THREE.MeshStandardMaterial({
       color: book.cover,
       roughness: 0.72,
-      metalness: 0,
-      sheen: 0.14,
-      sheenColor: new THREE.Color(book.cover),
-      sheenRoughness: 0.78,
-      clearcoat: 0.02,
-      clearcoatRoughness: 0.74,
-    });
-    const paperMaterial = new THREE.MeshStandardMaterial({
-      color: pageColor,
-      roughness: 0.88,
-      metalness: 0,
+      metalness: 0.03,
     });
 
     const pageDepth = Math.max(0.045, depth - boardThickness * 1.4);
     const pageBlock = new THREE.Mesh(
-      new RoundedBoxGeometry(
-        width - 0.075,
-        height - 0.105,
-        pageDepth,
-        3,
-        Math.min(0.016, pageDepth * 0.25),
-      ),
-      paperMaterial,
+      new THREE.BoxGeometry(width - 0.075, height - 0.105, pageDepth),
+      this.sharedPaperMaterial,
     );
     pageBlock.name = "pageBlock";
-    pageBlock.castShadow = true;
-    pageBlock.receiveShadow = true;
     physical.add(pageBlock);
 
     const boardGeometry = new RoundedBoxGeometry(
       width,
       height,
       boardThickness,
-      4,
+      1,
       Math.min(0.022, boardThickness * 0.45),
     );
     const frontBoard = new THREE.Mesh(boardGeometry, boardMaterial);
@@ -812,12 +957,11 @@ export class ShelfEngine {
     const backBoard = new THREE.Mesh(boardGeometry, boardMaterial);
     backBoard.name = "backBoard";
     backBoard.position.z = -depth * 0.5;
-    backBoard.castShadow = true;
     backBoard.receiveShadow = true;
     physical.add(backBoard);
 
     const spine = new THREE.Mesh(
-      new RoundedBoxGeometry(0.055, height - 0.01, depth + 0.012, 3, spineBevel),
+      new RoundedBoxGeometry(0.055, height - 0.01, depth + 0.012, 1, spineBevel),
       boardMaterial,
     );
     spine.name = "spine";
@@ -825,7 +969,7 @@ export class ShelfEngine {
     spine.castShadow = true;
     physical.add(spine);
 
-    const headbandMaterial = new THREE.MeshPhysicalMaterial({
+    const headbandMaterial = new THREE.MeshStandardMaterial({
       color: book.accent,
       roughness: 0.62,
       metalness: 0.2,
@@ -835,7 +979,7 @@ export class ShelfEngine {
       headbandRadius,
       headbandRadius,
       width - 0.1,
-      10,
+      6,
     );
     headbandGeometry.rotateZ(Math.PI / 2);
     const headbandTop = new THREE.Mesh(headbandGeometry, headbandMaterial);
@@ -845,49 +989,27 @@ export class ShelfEngine {
     headbandBottom.position.y = -height * 0.5 + 0.045;
     physical.add(headbandBottom);
 
-    const frontTexture = toTexture(createFrontCover(book), this.renderer);
-    const titleTexture = toTexture(createTitleDecal(book), this.renderer);
-    const spineTexture = toTexture(createSpineCover(book), this.renderer, 4);
-    const backTexture = toTexture(createBackCover(book), this.renderer);
-    const textures = [frontTexture, titleTexture, spineTexture, backTexture];
+    const textures: THREE.Texture[] = [];
 
     const frontZ = depth * 0.5 + boardThickness * 0.5 + 0.002;
     const frontSurface = new THREE.Mesh<
       THREE.PlaneGeometry,
-      THREE.MeshPhysicalMaterial
+      THREE.MeshStandardMaterial
     >(
       new THREE.PlaneGeometry(width - 0.065, height - 0.065),
-      new THREE.MeshPhysicalMaterial({
-        map: frontTexture,
+      new THREE.MeshStandardMaterial({
         roughness: 0.84,
         metalness: 0,
-        clearcoat: 0,
       }),
     );
     frontSurface.name = "frontArtwork";
     frontSurface.position.z = frontZ;
+    frontSurface.visible = false;
     physical.add(frontSurface);
-
-    const titleDecal = new THREE.Mesh(
-      new THREE.PlaneGeometry(width - 0.065, height - 0.065),
-      new THREE.MeshBasicMaterial({
-        map: titleTexture,
-        transparent: true,
-        alphaTest: 0.02,
-        depthWrite: false,
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-      }),
-    );
-    titleDecal.name = "accurateTitleDecal";
-    titleDecal.position.z = frontZ + 0.007;
-    titleDecal.visible = false;
-    inspectionIdle.add(titleDecal);
 
     const backSurface = new THREE.Mesh(
       new THREE.PlaneGeometry(width - 0.065, height - 0.065),
       new THREE.MeshStandardMaterial({
-        map: backTexture,
         roughness: 0.84,
         metalness: 0,
       }),
@@ -895,12 +1017,12 @@ export class ShelfEngine {
     backSurface.name = "backArtwork";
     backSurface.position.z = -(depth * 0.5 + boardThickness * 0.5 + 0.002);
     backSurface.rotation.y = Math.PI;
+    backSurface.visible = false;
     physical.add(backSurface);
 
     const spineSurface = new THREE.Mesh(
       new THREE.PlaneGeometry(Math.max(0.06, depth - 0.015), height - 0.04),
-      new THREE.MeshPhysicalMaterial({
-        map: spineTexture,
+      new THREE.MeshStandardMaterial({
         roughness: 0.8,
         metalness: 0,
       }),
@@ -908,6 +1030,7 @@ export class ShelfEngine {
     spineSurface.name = "spineArtwork";
     spineSurface.rotation.y = -Math.PI / 2;
     spineSurface.position.x = -width * 0.5 - 0.011;
+    spineSurface.visible = false;
     physical.add(spineSurface);
 
     let livingMaterial: THREE.ShaderMaterial | undefined;
@@ -926,11 +1049,7 @@ export class ShelfEngine {
 
     const pickProxy = new THREE.Mesh(
       new THREE.BoxGeometry(width, height, depth + 0.07),
-      new THREE.MeshBasicMaterial({
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-      }),
+      this.sharedPickMaterial,
     );
     pickProxy.name = `pick:${book.id}`;
     pickProxy.userData.bookIndex = index;
@@ -951,7 +1070,11 @@ export class ShelfEngine {
       frontSurface,
       backSurface,
       spineSurface,
-      titleDecal,
+      spineTexture: null,
+      frontTexture: null,
+      backTexture: null,
+      hasSpineTexture: false,
+      hasCoverTextures: false,
       pickProxy,
       livingMesh,
       livingMaterial,
@@ -1444,6 +1567,13 @@ export class ShelfEngine {
     );
     if (nextActive !== this.activeIndex) {
       this.activeIndex = nextActive;
+      for (
+        let offset = -3;
+        offset <= 3;
+        offset += 1
+      ) {
+        this.ensureBookTextures(nextActive + offset, offset === 0);
+      }
       this.callbacks.onActiveIndex(this.activeIndex);
     }
     this.shelfGroup.position.x = -this.xAtIndex(this.scrollIndex);
@@ -1591,7 +1721,7 @@ export class ShelfEngine {
   private handleResize = () => {
     const width = Math.max(1, this.canvas.clientWidth);
     const height = Math.max(1, this.canvas.clientHeight);
-    const dprCap = width < 760 ? 1.5 : 1.75;
+    const dprCap = width < 760 ? 1.25 : 1.75;
     this.responsiveBrowseCamera.set(
       0,
       width < 760 ? 1.5 : browseCamera.y,
@@ -1689,20 +1819,12 @@ export class ShelfEngine {
         return;
       }
 
-      const texture = toTexture(createFrontCover(runtime.data, img), this.renderer);
+      const texture = this.replaceBookTexture(
+        runtime,
+        "front",
+        createFrontCover(runtime.data, img),
+      );
       texture.name = `customCover:${runtime.data.id}`;
-
-      const material = runtime.frontSurface.material;
-      const previousMap = material.map;
-      material.map = texture;
-      material.needsUpdate = true;
-      runtime.textures.push(texture);
-
-      if (previousMap) {
-        const index = runtime.textures.indexOf(previousMap);
-        if (index >= 0) runtime.textures.splice(index, 1);
-        previousMap.dispose();
-      }
     } catch {
       // Fallback to generated cover
     }
@@ -1761,7 +1883,6 @@ export class ShelfEngine {
 
       runtime.assetHolder.add(root);
       runtime.physical.visible = false;
-      runtime.titleDecal.visible = false;
       this.assetCount += 1;
     } catch {
       this.assetFailures += 1;
@@ -1779,6 +1900,9 @@ export class ShelfEngine {
     this.pendingFocusIndex = null;
     this.targetScrollIndex = next;
     this.lastInputTime = performance.now() - 1000;
+    for (let o = -3; o <= 3; o += 1) {
+      this.ensureBookTextures(next + o, false);
+    }
   }
 
   browseToImmediate(index: number) {
@@ -1788,6 +1912,9 @@ export class ShelfEngine {
     this.targetScrollIndex = next;
     this.scrollIndex = next;
     this.activeIndex = next;
+    for (let o = -6; o <= 6; o += 1) {
+      this.ensureBookTextures(next + o, o === 0);
+    }
     this.shelfGroup.position.x = -this.xAtIndex(next);
     this.callbacks.onActiveIndex(next);
   }
@@ -1795,6 +1922,7 @@ export class ShelfEngine {
   focusBook(index = this.activeIndex) {
     if (this.mode !== "browse") return;
     const next = clamp(Math.round(index), 0, this.runtimeBooks.length - 1);
+    this.ensureBookTextures(next, true);
     this.targetScrollIndex = next;
     this.scrollIndex = next;
     this.activeIndex = next;
@@ -1878,6 +2006,7 @@ export class ShelfEngine {
 
   dispose() {
     this.isDisposed = true;
+    this.clearBackgroundQueue();
     cancelAnimationFrame(this.animationFrame);
     this.resizeObserver.disconnect();
     this.controls.dispose();
@@ -1899,6 +2028,8 @@ export class ShelfEngine {
         : [object.material];
       materials.forEach((material) => material?.dispose());
     });
+    this.sharedPaperMaterial.dispose();
+    this.sharedPickMaterial.dispose();
     this.runtimeBooks.forEach((book) => {
       book.textures.forEach((texture) => texture.dispose());
     });
