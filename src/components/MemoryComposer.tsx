@@ -10,7 +10,9 @@ import {
   BookOpen,
   Check,
   ImagePlus,
+  LayoutGrid,
   Loader2,
+  RotateCcw,
   Sparkles,
   Star,
   StickyNote,
@@ -18,8 +20,17 @@ import {
 } from "lucide-react";
 import { BookMotifPreview } from "@/components/BookMotifPreview";
 import { ExpandableDock } from "@/components/ExpandableDock";
+import { FreeformPageSurface } from "@/components/FreeformPageBlocks";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { defaultBooks } from "@/lib/default-books";
+import {
+  buildDefaultLayoutBlocks,
+  getBookFontCss,
+  getBookPageStyleVars,
+  getBookPaperCss,
+  hasMemoryContent,
+  syncLayoutBlocksWithMemory,
+} from "@/lib/memory-layout";
 import {
   createMemory,
   fetchBooks,
@@ -33,6 +44,7 @@ import type {
   AlbumPhoto,
   AlbumStyle,
   DiaryBook,
+  MemoryLayoutBlock,
   MemoryMood,
 } from "@/lib/types";
 
@@ -91,6 +103,9 @@ export function MemoryComposer({
   const [photos, setPhotos] = useState<AlbumPhoto[]>([]);
   const [coverPhotoId, setCoverPhotoId] = useState<string | null>(null);
   const [albumStyle, setAlbumStyle] = useState<AlbumStyle>("polaroid");
+  const [layoutBlocks, setLayoutBlocks] = useState<MemoryLayoutBlock[] | undefined>(undefined);
+  const [showPlacer, setShowPlacer] = useState(false);
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
 
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -148,6 +163,10 @@ export function MemoryComposer({
         setPhotos(m.photos);
         setCoverPhotoId(m.coverPhotoId);
         setAlbumStyle(m.albumStyle);
+        if (m.layoutBlocks?.length) {
+          setLayoutBlocks(m.layoutBlocks);
+          setShowPlacer(true);
+        }
       })
       .catch((err) => {
         if (!isStorageAuthError(err) && !cancelled) {
@@ -237,10 +256,29 @@ export function MemoryComposer({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim()) {
-      setError("Give this memory a title before binding it into your album.");
+    if (
+      !hasMemoryContent({
+        title,
+        note,
+        paragraphs: parsedParagraphs,
+        photos,
+      })
+    ) {
+      setError(
+        "Add at least one detail before binding — photographs, a few words, a keepsake note, or a title.",
+      );
       return;
     }
+
+    const finalLayoutBlocks = layoutBlocks?.length
+      ? syncLayoutBlocksWithMemory({
+          title: title.trim(),
+          note: note.trim(),
+          paragraphs: parsedParagraphs,
+          photos,
+          layoutBlocks,
+        })
+      : undefined;
 
     setError(null);
     setSaving(true);
@@ -256,6 +294,7 @@ export function MemoryComposer({
         photos,
         coverPhotoId: coverPhotoId || photos[0]?.id || null,
         albumStyle,
+        layoutBlocks: finalLayoutBlocks,
       };
 
       const saved = editMemoryId
@@ -277,9 +316,14 @@ export function MemoryComposer({
   return (
     <div className="diary-page">
       <header className="diary-topbar">
-        <div className="wordmark hidden sm:flex">
+        <Link
+          href="/"
+          className="wordmark"
+          aria-label="My Diary — Return to Home Shelf"
+          title="Go to Home Shelf"
+        >
           <span>MY DIARY</span>
-        </div>
+        </Link>
 
         <div className="header-controls-cluster">
           <ExpandableDock
@@ -324,7 +368,7 @@ export function MemoryComposer({
               {editMemoryId ? "Revise Your Memory" : "Compose a Memory Album"}
             </h1>
             <p className="mt-2 text-sm text-[var(--ink-soft)]">
-              Write a keepsake note, craft your story in paragraphs, upload photographs, and bind everything into{" "}
+              Every field is optional — save photographs on their own, words alone, a keepsake note, or mix and arrange them freely inside{" "}
               <strong className="font-semibold text-[var(--ink)]">
                 {activeBook.title}
               </strong>
@@ -405,14 +449,13 @@ export function MemoryComposer({
 
                 <div className="sm:col-span-2">
                   <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                    Memory Title *
+                    Memory Title (optional)
                   </label>
                   <input
                     type="text"
-                    required
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder="e.g., Monsoon Evening Walk by Marine Drive"
+                    placeholder="e.g., Monsoon Evening Walk by Marine Drive (optional)"
                     className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-4 py-3 font-serif text-xl"
                   />
                 </div>
@@ -682,6 +725,137 @@ export function MemoryComposer({
                   ))}
                 </div>
               </div>
+            </section>
+
+            {/* Section 5: Optional Freeform Page Arrangement */}
+            <section className="stationery-card p-6 sm:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <span className="text-[10px] font-semibold tracking-[0.18em] uppercase text-[var(--ink-soft)]">
+                    05 · Open Book Page Placement (optional)
+                  </span>
+                  <p className="mt-1 mb-0 text-xs text-[var(--ink-soft)]">
+                    Drag your photos, note, or words anywhere across the left or right notebook page — we won&apos;t lock them into a fixed slot.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {layoutBlocks && layoutBlocks.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLayoutBlocks(undefined);
+                        setSelectedBlockId(null);
+                      }}
+                      className="inline-flex items-center gap-1.5 border border-[var(--hairline)] bg-[var(--paper)] px-3 py-1.5 text-[10px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      <span>Reset Auto</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    data-testid="toggle-composer-placer"
+                    onClick={() => {
+                      if (!showPlacer) {
+                        setLayoutBlocks((prev) =>
+                          prev?.length
+                            ? syncLayoutBlocksWithMemory({
+                                title: title.trim(),
+                                note: note.trim(),
+                                paragraphs: parsedParagraphs,
+                                photos,
+                                layoutBlocks: prev,
+                              })
+                            : buildDefaultLayoutBlocks({
+                                title: title.trim(),
+                                note: note.trim(),
+                                paragraphs: parsedParagraphs,
+                                photos,
+                              }),
+                        );
+                      }
+                      setShowPlacer((v) => !v);
+                    }}
+                    className={`inline-flex items-center gap-1.5 border px-3.5 py-1.5 text-[10px] font-semibold tracking-wider uppercase cursor-pointer ${
+                      showPlacer
+                        ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--paper-light)]"
+                        : "border-[var(--hairline)] bg-[var(--paper)] text-[var(--ink)] hover:border-[var(--ink)]"
+                    }`}
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                    <span>{showPlacer ? "Hide Spread Placer" : "Arrange on Spread"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {showPlacer && (() => {
+                const draftMemory = {
+                  id: editMemoryId || "draft-preview",
+                  title: title.trim(),
+                  date,
+                  location: location.trim(),
+                  mood,
+                  note: note.trim(),
+                  paragraphs: parsedParagraphs,
+                  photos,
+                  albumStyle,
+                  layoutBlocks,
+                };
+                const activeBlocks = syncLayoutBlocksWithMemory(draftMemory);
+                const paperCss = getBookPaperCss(activeBook);
+                const pageVars = getBookPageStyleVars(activeBook);
+                const fontCss = getBookFontCss(activeBook.fontStyle);
+                return (
+                  <div
+                    className="mt-5 rounded-xl p-2.5 sm:p-3 shadow-inner"
+                    style={{
+                      backgroundColor: activeBook.cover,
+                      fontFamily: fontCss,
+                      ...pageVars,
+                    }}
+                  >
+                    {activeBlocks.length === 0 ? (
+                      <div
+                        className="rounded-lg p-6 text-center text-xs italic text-[var(--ink-soft)]"
+                        style={paperCss}
+                      >
+                        Add a photo, keepsake note, title, or words above to preview and drag them onto the open spread.
+                      </div>
+                    ) : (
+                      <div className="grid gap-1 sm:grid-cols-2 rounded-lg overflow-hidden">
+                        <div className="p-3 sm:p-4" style={paperCss}>
+                          <FreeformPageSurface
+                            memory={draftMemory}
+                            book={activeBook}
+                            side="left"
+                            blocks={activeBlocks}
+                            editing
+                            selectedBlockId={selectedBlockId}
+                            onSelectBlock={setSelectedBlockId}
+                            onChangeBlocks={(next) => setLayoutBlocks(next)}
+                            surfaceIdPrefix="composer-draft"
+                            compact
+                          />
+                        </div>
+                        <div className="p-3 sm:p-4 border-t sm:border-t-0 sm:border-l border-black/10" style={paperCss}>
+                          <FreeformPageSurface
+                            memory={draftMemory}
+                            book={activeBook}
+                            side="right"
+                            blocks={activeBlocks}
+                            editing
+                            selectedBlockId={selectedBlockId}
+                            onSelectBlock={setSelectedBlockId}
+                            onChangeBlocks={(next) => setLayoutBlocks(next)}
+                            surfaceIdPrefix="composer-draft"
+                            compact
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </section>
 
             {error && (

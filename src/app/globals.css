@@ -181,7 +181,7 @@
 }
 
 .wordmark {
-  display: flex;
+  display: inline-flex;
   gap: 11px;
   align-items: center;
   font-size: 10px;
@@ -190,6 +190,16 @@
   line-height: 1;
   white-space: nowrap;
   pointer-events: auto;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  background: transparent;
+  padding: 6px 2px;
+  transition: opacity 150ms ease;
+}
+
+.wordmark:hover {
+  opacity: 0.72;
 }
 
 .wordmark__divider {
@@ -1864,5 +1874,36 @@ html[data-vault="locked"] .vault-protected-shell {
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
     transition-delay: 0ms !important;
+  }
+}
+
+/* ---------------- FREEFORM MEMORY PAGE CANVAS ---------------- */
+
+.freeform-canvas-page {
+  position: relative;
+  width: 100%;
+  flex: 1 1 auto;
+}
+
+.freeform-canvas-page--editing {
+  background-image: radial-gradient(color-mix(in srgb, var(--ink-soft) 20%, transparent) 1px, transparent 1px);
+  background-size: 18px 18px;
+  border-radius: 6px;
+}
+
+.freeform-block {
+  position: absolute;
+  margin-bottom: 0;
+  touch-action: none;
+}
+
+@media (max-width: 639px) {
+  .freeform-block {
+    position: relative;
+    width: 100% !important;
+    left: auto !important;
+    top: auto !important;
+    margin-bottom: 14px;
+    touch-action: auto;
   }
 }

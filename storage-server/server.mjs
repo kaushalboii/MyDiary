@@ -611,7 +611,11 @@ function enrichBooks(db, scopeId = LEGACY_SCOPE_ID) {
     const candidateDate = memory.date || memory.createdAt;
     if (!prev.latestMemoryDate || candidateDate > prev.latestMemoryDate) {
       prev.latestMemoryDate = candidateDate;
-      prev.latestMemoryTitle = memory.title;
+      prev.latestMemoryTitle =
+        (typeof memory.title === "string" && memory.title.trim()) ||
+        (typeof memory.note === "string" && memory.note.trim()) ||
+        (Array.isArray(memory.paragraphs) && memory.paragraphs[0]) ||
+        (Array.isArray(memory.photos) && memory.photos.length > 0 ? "Photo Keepsake" : "Untitled Page");
     }
     statsByBook.set(memory.bookId, prev);
   }
@@ -702,8 +706,19 @@ const SPINE_STYLES = new Set([
   "center-pill",
   "twin-rings",
 ]);
-const PAPER_STYLES = new Set(["cream", "lined", "dotgrid", "framed"]);
+const PAPER_STYLES = new Set(["cream", "lined", "margin-lined", "dotgrid", "grid", "framed"]);
 const FONT_STYLES = new Set(["serif", "sans", "mono"]);
+const PAGE_NUMBER_STYLES = new Set(["classic", "roman", "minimal", "hidden"]);
+const PAGE_HEADER_STYLES = new Set(["minimal", "centered", "ruled", "botanical"]);
+const LAYOUT_BLOCK_KINDS = new Set(["header", "note", "text", "photo"]);
+
+function sanitizeOptionalHex(val) {
+  if (val === "") return undefined;
+  if (typeof val !== "string") return null;
+  const trimmed = val.trim();
+  if (!trimmed) return undefined;
+  return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed.toUpperCase() : null;
+}
 
 function clampNumber(value, min, max, fallback) {
   const num = Number(value);
@@ -774,6 +789,26 @@ function applyBookPatch(current, patch, scopeId = LEGACY_SCOPE_ID) {
       typeof patch.fontStyle === "string" && FONT_STYLES.has(patch.fontStyle)
         ? patch.fontStyle
         : current.fontStyle,
+    pageTint:
+      patch.pageTint === ""
+        ? undefined
+        : sanitizeOptionalHex(patch.pageTint) ?? current.pageTint,
+    pageInk:
+      patch.pageInk === ""
+        ? undefined
+        : sanitizeOptionalHex(patch.pageInk) ?? current.pageInk,
+    pageAccent:
+      patch.pageAccent === ""
+        ? undefined
+        : sanitizeOptionalHex(patch.pageAccent) ?? current.pageAccent,
+    pageNumberStyle:
+      typeof patch.pageNumberStyle === "string" && PAGE_NUMBER_STYLES.has(patch.pageNumberStyle)
+        ? patch.pageNumberStyle
+        : current.pageNumberStyle,
+    pageHeaderStyle:
+      typeof patch.pageHeaderStyle === "string" && PAGE_HEADER_STYLES.has(patch.pageHeaderStyle)
+        ? patch.pageHeaderStyle
+        : current.pageHeaderStyle,
     coverImage:
       patch.coverImage === "" || patch.coverImage === null
         ? undefined
@@ -1722,14 +1757,58 @@ function saveVerifiedBase64Raster(dataUrl, scopeId = LEGACY_SCOPE_ID, prefix = "
   return { filename, url: `${uploadPrefix}/${filename}` };
 }
 
+function sanitizeLayoutBlocks(rawBlocks) {
+  if (rawBlocks === undefined) return undefined;
+  if (!Array.isArray(rawBlocks)) return [];
+  const cleaned = [];
+  const seen = new Set();
+  for (const item of rawBlocks) {
+    if (!item || typeof item !== "object") continue;
+    const kind = typeof item.kind === "string" && LAYOUT_BLOCK_KINDS.has(item.kind) ? item.kind : null;
+    if (!kind) continue;
+    const photoId =
+      kind === "photo" && typeof item.photoId === "string" && SAFE_ID_RE.test(item.photoId)
+        ? item.photoId
+        : undefined;
+    if (kind === "photo" && !photoId) continue;
+    const id = kind === "photo" ? `photo-${photoId}` : kind;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const w = clampNumber(item.w, 20, 94, 44);
+    const maxX = Math.max(2, 97 - w);
+    const x = clampNumber(item.x, 2, maxX, 5);
+    const y = clampNumber(item.y, 2, 82, 6);
+    const z = Math.round(clampNumber(item.z, 1, 99, 1));
+    const side = item.side === "right" ? "right" : "left";
+    const rotation =
+      item.rotation !== undefined && Number.isFinite(Number(item.rotation))
+        ? clampNumber(item.rotation, -12, 12, 0)
+        : undefined;
+    cleaned.push({
+      id,
+      kind,
+      ...(photoId ? { photoId } : {}),
+      side,
+      x,
+      y,
+      w,
+      z,
+      ...(rotation !== undefined ? { rotation } : {}),
+    });
+  }
+  return cleaned;
+}
+
 app.post("/api/memories", requireAuth, async (req, res) => {
   const body = req.body || {};
   const bookId = typeof body.bookId === "string" ? body.bookId.trim() : "";
   const requestedId = typeof body.id === "string" ? body.id.trim() : "";
   const title = typeof body.title === "string" ? body.title.trim() : "";
+  const note = typeof body.note === "string" ? body.note.trim() : "";
+  const paragraphs = normalizeParagraphs(body.paragraphs);
 
-  if (!bookId || !title) {
-    res.status(400).json({ error: "bookId and title are required." });
+  if (!bookId) {
+    res.status(400).json({ error: "bookId is required." });
     return;
   }
   if (!SAFE_ID_RE.test(bookId) || (requestedId && !SAFE_ID_RE.test(requestedId))) {
@@ -1742,6 +1821,13 @@ app.post("/api/memories", requireAuth, async (req, res) => {
     res.status(400).json({ error: photoCheck.error });
     return;
   }
+
+  if (!title && !note && paragraphs.length === 0 && photoCheck.photos.length === 0) {
+    res.status(400).json({ error: "Add a photo, a keepsake note, a title, or words to save this memory." });
+    return;
+  }
+
+  const layoutBlocks = sanitizeLayoutBlocks(body.layoutBlocks);
 
   const created = await mutateDb((db) => {
     if (!db.books.some((b) => b.id === bookId)) {
@@ -1760,8 +1846,8 @@ app.post("/api/memories", requireAuth, async (req, res) => {
           : now.slice(0, 10),
       location: typeof body.location === "string" ? body.location.trim() : "",
       mood: typeof body.mood === "string" && body.mood.trim() ? body.mood.trim() : "Nostalgic",
-      note: typeof body.note === "string" ? body.note.trim() : "",
-      paragraphs: normalizeParagraphs(body.paragraphs),
+      note,
+      paragraphs,
       photos,
       coverPhotoId:
         typeof body.coverPhotoId === "string" && body.coverPhotoId
@@ -1771,6 +1857,7 @@ app.post("/api/memories", requireAuth, async (req, res) => {
         body.albumStyle === "grid" || body.albumStyle === "filmstrip"
           ? body.albumStyle
           : "polaroid",
+      ...(layoutBlocks && layoutBlocks.length > 0 ? { layoutBlocks } : {}),
       createdAt: now,
       updatedAt: now,
     };
@@ -1809,22 +1896,32 @@ app.put("/api/memories/:id", requireAuth, async (req, res) => {
     sanitizedPhotos = check.photos;
   }
 
+  const nextLayoutBlocks =
+    body.layoutBlocks !== undefined ? sanitizeLayoutBlocks(body.layoutBlocks) : undefined;
+
   const result = await mutateDb((db) => {
     const idx = db.memories.findIndex((m) => m.id === memoryId);
     if (idx === -1) return null;
     const current = db.memories[idx];
     const photos = sanitizedPhotos ?? current.photos;
+    const nextTitle = typeof body.title === "string" ? body.title.trim() : current.title;
+    const nextNote = typeof body.note === "string" ? body.note.trim() : current.note;
+    const nextParagraphs =
+      body.paragraphs !== undefined ? normalizeParagraphs(body.paragraphs) : current.paragraphs;
+
+    if (!nextTitle && !nextNote && nextParagraphs.length === 0 && photos.length === 0) {
+      return { error: "Keep at least a photo, title, note, or paragraph in this memory." };
+    }
 
     const updated = {
       ...current,
       bookId: nextBookId || current.bookId,
-      title: typeof body.title === "string" && body.title.trim() ? body.title.trim() : current.title,
+      title: nextTitle,
       date: typeof body.date === "string" && body.date.trim() ? body.date.trim() : current.date,
       location: typeof body.location === "string" ? body.location.trim() : current.location,
       mood: typeof body.mood === "string" && body.mood.trim() ? body.mood.trim() : current.mood,
-      note: typeof body.note === "string" ? body.note.trim() : current.note,
-      paragraphs:
-        body.paragraphs !== undefined ? normalizeParagraphs(body.paragraphs) : current.paragraphs,
+      note: nextNote,
+      paragraphs: nextParagraphs,
       photos,
       coverPhotoId:
         typeof body.coverPhotoId === "string"
@@ -1838,19 +1935,29 @@ app.put("/api/memories/:id", requireAuth, async (req, res) => {
         body.albumStyle === "filmstrip"
           ? body.albumStyle
           : current.albumStyle,
+      layoutBlocks:
+        nextLayoutBlocks !== undefined
+          ? nextLayoutBlocks.length > 0
+            ? nextLayoutBlocks
+            : undefined
+          : current.layoutBlocks,
       updatedAt: new Date().toISOString(),
     };
 
     db.memories[idx] = updated;
     cleanupOrphanedUploads(db, req.storageScope);
-    return updated;
+    return { memory: updated };
   }, req.storageScope);
 
   if (!result) {
     res.status(404).json({ error: "Memory not found." });
     return;
   }
-  res.json({ memory: signMemoryMedia(result, req.storageScope) });
+  if (result.error) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json({ memory: signMemoryMedia(result.memory, req.storageScope) });
 });
 
 app.delete("/api/memories/:id", requireAuth, async (req, res) => {
@@ -1947,7 +2054,14 @@ app.post("/api/sync", requireAuth, async (req, res) => {
         }
       }
 
-      db.memories.push({ ...incomingMemory, id: memId, bookId, photos });
+      const syncedBlocks = sanitizeLayoutBlocks(incomingMemory.layoutBlocks);
+      db.memories.push({
+        ...incomingMemory,
+        id: memId,
+        bookId,
+        photos,
+        ...(syncedBlocks && syncedBlocks.length > 0 ? { layoutBlocks: syncedBlocks } : { layoutBlocks: undefined }),
+      });
       existingIds.add(memId);
       addedMemories += 1;
     }

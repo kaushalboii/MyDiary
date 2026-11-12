@@ -916,6 +916,7 @@ export type SaveMemoryInput = {
   photos: AlbumPhoto[];
   coverPhotoId: string | null;
   albumStyle: AlbumStyle;
+  layoutBlocks?: import("./types").MemoryLayoutBlock[];
 };
 
 export async function createMemory(

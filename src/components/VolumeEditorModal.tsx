@@ -6,13 +6,22 @@ import {
   ArrowLeft,
   ArrowLeftRight,
   ArrowRight,
+  BookOpen,
   Check,
   ImagePlus,
   Loader2,
   Shuffle,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
+import {
+  formatBookPageNumber,
+  getBookFontCss,
+  getBookPageStyleVars,
+  getBookPaperCss,
+  getPageAccentColor,
+} from "@/lib/memory-layout";
 import {
   resolveMediaUrl,
   uploadPhotos,
@@ -23,6 +32,8 @@ import type {
   BookMotif,
   CoverTemplate,
   DiaryBook,
+  PageHeaderStyle,
+  PageNumberStyle,
   PaperStyle,
   SpineStyle,
 } from "@/lib/types";
@@ -129,10 +140,47 @@ const SPINE_STYLES: Array<{ id: SpineStyle; label: string }> = [
 ];
 
 const PAPER_STYLES: Array<{ id: PaperStyle; label: string; hint: string }> = [
-  { id: "cream", label: "Blank Cream", hint: "Pure smooth archival paper" },
+  { id: "cream", label: "Smooth Archival", hint: "Clean unruled linen leaf" },
   { id: "lined", label: "Ruled Lines", hint: "Soft stationery lines" },
+  { id: "margin-lined", label: "Margin Notebook", hint: "Left margin + ruled" },
   { id: "dotgrid", label: "Dot Grid", hint: "Discreet 5mm dots" },
+  { id: "grid", label: "Fine Graph", hint: "Delicate square grid" },
   { id: "framed", label: "Framed Border", hint: "Classic journal margin" },
+];
+
+const PAGE_TINT_PRESETS = [
+  { label: "Auto", hex: "" },
+  { label: "Warm Linen", hex: "#F8F3E8" },
+  { label: "Ivory Silk", hex: "#FCFBF7" },
+  { label: "Parchment", hex: "#F1E8D6" },
+  { label: "Mist Blue", hex: "#EDF3F7" },
+  { label: "Sage Paper", hex: "#ECF3ED" },
+  { label: "Blossom", hex: "#F8EEF0" },
+  { label: "Night Slate", hex: "#23211E" },
+];
+
+const PAGE_INK_PRESETS = [
+  { label: "Auto", hex: "" },
+  { label: "Charcoal", hex: "#24211C" },
+  { label: "Espresso", hex: "#3B2B22" },
+  { label: "Navy Ink", hex: "#1E2E42" },
+  { label: "Forest Ink", hex: "#22392E" },
+  { label: "Plum Ink", hex: "#3D2235" },
+  { label: "Warm Ivory", hex: "#EFE8DA" },
+];
+
+const PAGE_NUMBER_STYLES: Array<{ id: PageNumberStyle; label: string; sample: string }> = [
+  { id: "classic", label: "Classic", sample: "p. 01" },
+  { id: "roman", label: "Roman", sample: "i · ii" },
+  { id: "minimal", label: "Minimal", sample: "01" },
+  { id: "hidden", label: "Hidden", sample: "Off" },
+];
+
+const PAGE_HEADER_STYLES: Array<{ id: PageHeaderStyle; label: string }> = [
+  { id: "minimal", label: "Minimal" },
+  { id: "centered", label: "Centered" },
+  { id: "ruled", label: "Double Ruled" },
+  { id: "botanical", label: "Botanical" },
 ];
 
 const FONT_STYLES: Array<{ id: BookFontStyle; label: string }> = [
@@ -227,6 +275,16 @@ export function VolumeEditorModal({
   const [fontStyle, setFontStyle] = useState<BookFontStyle>(
     book.fontStyle || "serif",
   );
+  const [pageTint, setPageTint] = useState<string>(book.pageTint || "");
+  const [pageInk, setPageInk] = useState<string>(book.pageInk || "");
+  const [pageAccent, setPageAccent] = useState<string>(book.pageAccent || "");
+  const [pageNumberStyle, setPageNumberStyle] = useState<PageNumberStyle>(
+    book.pageNumberStyle || "classic",
+  );
+  const [pageHeaderStyle, setPageHeaderStyle] = useState<PageHeaderStyle>(
+    book.pageHeaderStyle || "minimal",
+  );
+  const [previewView, setPreviewView] = useState<"cover" | "inside" | "back">("cover");
   const [height, setHeight] = useState<number>(book.height || 2.12);
   const [thickness, setThickness] = useState<number>(book.thickness || 0.24);
   const [width, setWidth] = useState<number>(book.width || 1.3);
@@ -281,6 +339,11 @@ export function VolumeEditorModal({
     living,
     paperStyle,
     fontStyle,
+    pageTint: pageTint || undefined,
+    pageInk: pageInk || undefined,
+    pageAccent: pageAccent || undefined,
+    pageNumberStyle,
+    pageHeaderStyle,
     height,
     thickness,
     width,
@@ -340,6 +403,11 @@ export function VolumeEditorModal({
         living,
         paperStyle,
         fontStyle,
+        pageTint,
+        pageInk,
+        pageAccent,
+        pageNumberStyle,
+        pageHeaderStyle,
         height,
         thickness,
         width,
@@ -425,61 +493,273 @@ export function VolumeEditorModal({
           <X className="h-4 w-4" />
         </button>
 
-        {/* Live Header & Physical Proportion Preview */}
-        <div className="mb-5 flex items-center gap-4 pr-10">
-          <div className="flex items-end gap-2">
-            {/* Live Spine Preview */}
-            <div
-              className="flex flex-col items-center justify-between overflow-hidden rounded-[2px] border border-black/15 py-2 text-center shadow-xs transition-all duration-200"
-              style={{
-                width: Math.max(14, Math.round(thickness * 82)),
-                height: Math.round(Math.min(1.18, Math.max(0.8, height / 2.12)) * 118),
-                backgroundColor: cover,
-                color: ink,
-              }}
-              title={`Spine thickness: ${thickness.toFixed(2)}`}
-            >
-              <span
-                className="h-1 w-full"
-                style={{
-                  backgroundColor: accent,
-                  opacity: spineStyle === "minimal" ? 0 : 0.9,
-                }}
-              />
-              <span
-                className="px-0.5 text-[7px] font-medium tracking-wider uppercase"
-                style={{
-                  writingMode: "vertical-rl",
-                  transform: "rotate(180deg)",
-                  fontFamily: "var(--serif)",
-                }}
+        {/* Live Miniature Book Stage (Cover + Open Inside Pages + Back Cover) */}
+        <div
+          data-testid="studio-book-preview"
+          className="mb-5 rounded-xl border border-[var(--hairline)] bg-[var(--paper)] p-3.5 sm:p-4"
+        >
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 pr-9">
+            <div className="min-w-0">
+              <p className="eyebrow m-0">
+                {mode === "create" ? "Add Volume to Shelf" : "Book Studio"}
+              </p>
+              <h2
+                className="m-0 truncate text-xl sm:text-2xl font-normal tracking-tight"
+                style={{ fontFamily: "var(--serif)" }}
               >
-                {previewBook.shortTitle.slice(0, 18)}
-              </span>
-              <span className="text-[7px] font-bold opacity-85">
-                {spineMark.slice(0, 3)}
-              </span>
+                {previewBook.title}
+              </h2>
             </div>
 
-            <BookMotifPreview book={previewBook} size="md" />
+            <div className="inline-flex rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] p-0.5 text-[10px] font-semibold tracking-wider uppercase">
+              {(
+                [
+                  { id: "cover", label: "Cover & Spine" },
+                  { id: "inside", label: "Open Book Pages" },
+                  { id: "back", label: "Back Cover" },
+                ] as const
+              ).map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  data-testid={`preview-mode-${v.id}`}
+                  onClick={() => setPreviewView(v.id)}
+                  className={`rounded-full px-2.5 py-1 cursor-pointer transition ${
+                    previewView === v.id
+                      ? "bg-[var(--ink)] text-[var(--paper-light)]"
+                      : "text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                  }`}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="min-w-0">
-            <p className="eyebrow">
-              {mode === "create" ? "Add Volume to Shelf" : "Book Studio"}
-            </p>
-            <h2
-              className="m-0 truncate text-2xl sm:text-3xl font-normal tracking-tight"
-              style={{ fontFamily: "var(--serif)" }}
+          {previewView === "cover" && (
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-end gap-2.5">
+                {/* Live Spine Preview */}
+                <div
+                  className="flex flex-col items-center justify-between overflow-hidden rounded-[2px] border border-black/15 py-2 text-center shadow-xs transition-all duration-200"
+                  style={{
+                    width: Math.max(14, Math.round(thickness * 82)),
+                    height: Math.round(Math.min(1.18, Math.max(0.8, height / 2.12)) * 118),
+                    backgroundColor: cover,
+                    color: ink,
+                  }}
+                  title={`Spine thickness: ${thickness.toFixed(2)}`}
+                >
+                  <span
+                    className="h-1 w-full"
+                    style={{
+                      backgroundColor: accent,
+                      opacity: spineStyle === "minimal" ? 0 : 0.9,
+                    }}
+                  />
+                  <span
+                    className="px-0.5 text-[7px] font-medium tracking-wider uppercase"
+                    style={{
+                      writingMode: "vertical-rl",
+                      transform: "rotate(180deg)",
+                      fontFamily: "var(--serif)",
+                    }}
+                  >
+                    {previewBook.shortTitle.slice(0, 18)}
+                  </span>
+                  <span className="text-[7px] font-bold opacity-85">
+                    {spineMark.slice(0, 3)}
+                  </span>
+                </div>
+
+                {/* Front Cover + Proportional Cream Page-Edge Depth */}
+                <div className="flex items-end">
+                  <BookMotifPreview book={previewBook} size="md" />
+                  <div
+                    aria-hidden="true"
+                    className="hidden sm:block rounded-r-[2px] border border-l-0 border-black/15"
+                    style={{
+                      width: Math.max(6, Math.round(thickness * 34)),
+                      height: 92,
+                      background:
+                        "repeating-linear-gradient(90deg, #F3EEE3 0px, #F3EEE3 1px, #E3DACB 1px, #E3DACB 2px)",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="text-right text-xs text-[var(--ink-soft)] space-y-1">
+                <div>
+                  Slot #{positionIndex + 1} of {totalSlots} ·{" "}
+                  {thickness <= 0.15 ? "Thin" : thickness >= 0.32 ? "Thick" : "Standard"}
+                </div>
+                <div>{COVER_TEMPLATES.find((t) => t.id === coverTemplate)?.label}</div>
+                <button
+                  type="button"
+                  onClick={() => setPreviewView("inside")}
+                  className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wider uppercase text-[var(--accent)] cursor-pointer hover:underline"
+                >
+                  <BookOpen className="h-3 w-3" />
+                  <span>Peek Inside Pages</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {previewView === "inside" && (() => {
+            const miniPaperCss = getBookPaperCss(previewBook);
+            const miniPageVars = getBookPageStyleVars(previewBook);
+            const miniFontCss = getBookFontCss(previewBook.fontStyle);
+            const miniAccent = getPageAccentColor(previewBook);
+            const framedMini = previewBook.paperStyle === "framed";
+            const p1 = formatBookPageNumber(1, previewBook.pageNumberStyle);
+            const p2 = formatBookPageNumber(2, previewBook.pageNumberStyle);
+            return (
+              <div
+                data-testid="studio-inside-preview"
+                className="relative mx-auto max-w-lg rounded-lg p-1.5 sm:p-2 shadow-md transition-colors"
+                style={{
+                  backgroundColor: cover,
+                  fontFamily: miniFontCss,
+                  ...miniPageVars,
+                }}
+              >
+                {/* Miniature Ribbon Bookmark */}
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-0 right-5 z-20 h-5 w-2"
+                  style={{
+                    backgroundColor: miniAccent,
+                    clipPath: "polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%)",
+                  }}
+                />
+
+                <div className="grid grid-cols-2 overflow-hidden rounded-[4px] border border-black/15">
+                  {/* Left Miniature Page */}
+                  <div
+                    className="relative flex min-h-[154px] flex-col justify-between p-2.5 sm:p-3.5"
+                    style={{
+                      ...miniPaperCss,
+                      boxShadow: "inset -10px 0 16px -12px rgba(0,0,0,0.22)",
+                    }}
+                  >
+                    <div
+                      className={
+                        framedMini
+                          ? "flex flex-1 flex-col justify-between rounded-xs border border-[var(--hairline)] p-2"
+                          : "flex flex-1 flex-col justify-between"
+                      }
+                    >
+                      <div
+                        className={`text-[7px] font-semibold tracking-[0.18em] uppercase text-[var(--ink-soft)] ${
+                          pageHeaderStyle === "centered" ? "text-center" : ""
+                        } ${pageHeaderStyle === "ruled" ? "border-b border-double border-[var(--hairline)] pb-1" : ""}`}
+                      >
+                        {coverImprint || "PERSONAL ARCHIVE"}
+                      </div>
+
+                      <div className="my-auto flex flex-col items-center py-2 text-center">
+                        {pageHeaderStyle === "botanical" ? (
+                          <div className="flex items-center gap-1 text-[9px]" style={{ color: miniAccent }}>
+                            <span className="h-px w-3 bg-current opacity-50" />
+                            <span>✦</span>
+                            <span className="h-px w-3 bg-current opacity-50" />
+                          </div>
+                        ) : (
+                          <div
+                            className="h-1.5 w-1.5 rotate-45"
+                            style={{ backgroundColor: miniAccent }}
+                          />
+                        )}
+                        <div className="mt-1.5 text-sm italic text-[var(--page-ink)]">
+                          {spineMark || "I"}
+                        </div>
+                        <div className="text-[8px] tracking-widest uppercase text-[var(--ink-soft)]">
+                          {yearLabel}
+                        </div>
+                      </div>
+
+                      <div className="text-[8px] italic text-[var(--ink-soft)]">{p1}</div>
+                    </div>
+                  </div>
+
+                  {/* Right Miniature Page */}
+                  <div
+                    className="relative flex min-h-[154px] flex-col justify-between border-l border-black/10 p-2.5 sm:p-3.5"
+                    style={{
+                      ...miniPaperCss,
+                      boxShadow: "inset 10px 0 16px -12px rgba(0,0,0,0.18)",
+                    }}
+                  >
+                    <div
+                      className={
+                        framedMini
+                          ? "flex flex-1 flex-col justify-between rounded-xs border border-[var(--hairline)] p-2"
+                          : "flex flex-1 flex-col justify-between"
+                      }
+                    >
+                      <div className={pageHeaderStyle === "centered" ? "text-center" : ""}>
+                        <div className="text-xs sm:text-sm font-normal leading-tight text-[var(--page-ink)]">
+                          {previewBook.title}
+                        </div>
+                        <p className="mt-1.5 mb-0 line-clamp-3 text-[9px] leading-relaxed text-[var(--page-ink-muted)]">
+                          {welcomeNote.trim() ||
+                            "Welcome to your quiet blank pages. Write whenever a day deserves keeping."}
+                        </p>
+                      </div>
+
+                      {/* Mini Polaroid + Note Sample Card */}
+                      <div className="my-2 flex items-center justify-between gap-2">
+                        <div
+                          className="flex-1 border-l-2 bg-black/5 px-1.5 py-1 text-[8px] italic text-[var(--page-ink)]"
+                          style={{ borderLeftColor: miniAccent }}
+                        >
+                          “A memory saved…”
+                        </div>
+                        <div className="h-8 w-8 shrink-0 rotate-2 rounded-xs bg-white p-0.5 pb-2 shadow-xs ring-1 ring-black/10">
+                          <div
+                            className="h-full w-full"
+                            style={{
+                              background: `linear-gradient(135deg, ${cover}88, ${miniAccent}66)`,
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[8px] italic text-[var(--ink-soft)]">
+                        <span>{yearLabel}</span>
+                        <span>{p2}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {previewView === "back" && (
+            <div className="mx-auto flex max-w-md items-center justify-between gap-4 rounded-lg border border-black/15 p-3.5 shadow-sm"
+              style={{ backgroundColor: cover, color: ink }}
             >
-              {previewBook.title}
-            </h2>
-            <p className="mt-1 text-xs text-[var(--ink-soft)]">
-              Slot #{positionIndex + 1} of {totalSlots} ·{" "}
-              {thickness <= 0.15 ? "Thin" : thickness >= 0.32 ? "Thick" : "Standard"} ·{" "}
-              {COVER_TEMPLATES.find((t) => t.id === coverTemplate)?.label}
-            </p>
-          </div>
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <div className="text-[9px] tracking-[0.2em] uppercase opacity-75">
+                  Back Cover Edition
+                </div>
+                <p className="m-0 text-xs leading-relaxed opacity-90 line-clamp-3">
+                  {description || "Private hardcover keepsake volume."}
+                </p>
+                {quote && (
+                  <p className="m-0 pt-1 font-serif text-xs italic opacity-85">
+                    “{quote}” {quoteBy ? `— ${quoteBy}` : ""}
+                  </p>
+                )}
+              </div>
+              <span
+                className="h-14 w-1 shrink-0 rounded-full opacity-80"
+                style={{ backgroundColor: accent }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Minimal Tabs */}
@@ -497,7 +777,10 @@ export function VolumeEditorModal({
               type="button"
               role="tab"
               aria-selected={tab === item.id}
-              onClick={() => setTab(item.id)}
+              onClick={() => {
+                setTab(item.id);
+                setPreviewView(item.id === "wordings" ? "inside" : "cover");
+              }}
               className={`py-2.5 text-[11px] font-semibold tracking-wider uppercase transition cursor-pointer ${
                 tab === item.id
                   ? "bg-[var(--ink)] text-[var(--paper-light)]"
@@ -914,49 +1197,220 @@ export function VolumeEditorModal({
                 />
               </div>
 
-              {/* Inside Paper & Typeface */}
-              <div className="grid gap-3 border-t border-[var(--hairline)] pt-4 sm:grid-cols-2">
+              {/* Enhanced Inside Paper, Colors & Typography */}
+              <div className="space-y-4 border-t border-[var(--hairline)] pt-4">
                 <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                    Inside Page Paper
+                  <label className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                    <Sparkles className="h-3 w-3 text-[var(--accent)]" />
+                    <span>Inside Page Paper Style</span>
                   </label>
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                     {PAPER_STYLES.map((p) => (
                       <button
                         key={p.id}
                         type="button"
                         onClick={() => setPaperStyle(p.id)}
-                        className={`border px-2.5 py-1.5 text-left text-xs cursor-pointer ${
+                        className={`border px-2.5 py-2 text-left text-xs cursor-pointer transition ${
                           paperStyle === p.id
                             ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--paper-light)]"
-                            : "border-[var(--hairline)] bg-[var(--paper)]"
+                            : "border-[var(--hairline)] bg-[var(--paper)] hover:border-[var(--ink)]"
                         }`}
                       >
-                        {p.label}
+                        <div className="font-medium">{p.label}</div>
+                        <div className="text-[10px] opacity-75">{p.hint}</div>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                    Inside Page Typography
-                  </label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {FONT_STYLES.map((f) => (
-                      <button
-                        key={f.id}
-                        type="button"
-                        onClick={() => setFontStyle(f.id)}
-                        className={`border px-2 py-2 text-center text-xs cursor-pointer ${
-                          fontStyle === f.id
-                            ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--paper-light)]"
-                            : "border-[var(--hairline)] bg-[var(--paper)]"
-                        }`}
-                      >
-                        {f.label.split(" ")[0]}
-                      </button>
-                    ))}
+                {/* Page Paper Color & Contrast Ink */}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="border border-[var(--hairline)] bg-[var(--paper)] p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                        Page Paper Color
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="color"
+                          aria-label="Custom page paper color"
+                          value={/^#[0-9a-fA-F]{6}$/.test(pageTint) ? pageTint : "#F8F3E8"}
+                          onChange={(e) => setPageTint(e.target.value.toUpperCase())}
+                          className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
+                        />
+                        {pageTint && (
+                          <button
+                            type="button"
+                            onClick={() => setPageTint("")}
+                            className="text-[10px] font-semibold uppercase text-[var(--accent)] cursor-pointer hover:underline"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {PAGE_TINT_PRESETS.map((preset) => {
+                        const active =
+                          (preset.hex === "" && !pageTint) ||
+                          preset.hex.toLowerCase() === pageTint.toLowerCase();
+                        return (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => setPageTint(preset.hex)}
+                            className={`inline-flex items-center gap-1.5 border px-2 py-1 text-[11px] cursor-pointer ${
+                              active
+                                ? "border-[var(--ink)] bg-[var(--paper-light)] ring-1 ring-[var(--ink)] font-medium"
+                                : "border-[var(--hairline)] bg-[var(--paper-light)]/70"
+                            }`}
+                          >
+                            <span
+                              className="h-3 w-3 rounded-full border border-black/20"
+                              style={{
+                                background: preset.hex
+                                  ? preset.hex
+                                  : "linear-gradient(135deg, #F8F3E8 50%, #24211E 50%)",
+                              }}
+                            />
+                            <span>{preset.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="border border-[var(--hairline)] bg-[var(--paper)] p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                        Page Ink & Accent Rule
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <label className="inline-flex items-center gap-1 text-[10px] text-[var(--ink-soft)] cursor-pointer">
+                          <span>Rule</span>
+                          <input
+                            type="color"
+                            aria-label="Inside rule accent color"
+                            value={
+                              /^#[0-9a-fA-F]{6}$/.test(pageAccent)
+                                ? pageAccent
+                                : /^#[0-9a-fA-F]{6}$/.test(accent)
+                                  ? accent
+                                  : "#A64B32"
+                            }
+                            onChange={(e) => setPageAccent(e.target.value.toUpperCase())}
+                            className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
+                          />
+                        </label>
+                        {pageAccent && (
+                          <button
+                            type="button"
+                            onClick={() => setPageAccent("")}
+                            className="text-[10px] font-semibold uppercase text-[var(--accent)] cursor-pointer hover:underline"
+                          >
+                            Auto
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {PAGE_INK_PRESETS.map((preset) => {
+                        const active =
+                          (preset.hex === "" && !pageInk) ||
+                          preset.hex.toLowerCase() === pageInk.toLowerCase();
+                        return (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => setPageInk(preset.hex)}
+                            className={`inline-flex items-center gap-1.5 border px-2 py-1 text-[11px] cursor-pointer ${
+                              active
+                                ? "border-[var(--ink)] bg-[var(--paper-light)] ring-1 ring-[var(--ink)] font-medium"
+                                : "border-[var(--hairline)] bg-[var(--paper-light)]/70"
+                            }`}
+                          >
+                            <span
+                              className="h-3 w-3 rounded-full border border-black/20"
+                              style={{
+                                background: preset.hex
+                                  ? preset.hex
+                                  : "linear-gradient(135deg, #25221E 50%, #F2ECE0 50%)",
+                              }}
+                            />
+                            <span>{preset.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Typography + Page Numbers + Header Ornament */}
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                      Inside Typography
+                    </label>
+                    <div className="grid grid-cols-3 gap-1">
+                      {FONT_STYLES.map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setFontStyle(f.id)}
+                          className={`border px-1.5 py-1.5 text-center text-[11px] cursor-pointer ${
+                            fontStyle === f.id
+                              ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--paper-light)]"
+                              : "border-[var(--hairline)] bg-[var(--paper)]"
+                          }`}
+                        >
+                          {f.label.split(" ")[0]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                      Page Numbering
+                    </label>
+                    <div className="grid grid-cols-2 gap-1">
+                      {PAGE_NUMBER_STYLES.map((n) => (
+                        <button
+                          key={n.id}
+                          type="button"
+                          onClick={() => setPageNumberStyle(n.id)}
+                          className={`border px-2 py-1.5 text-[11px] cursor-pointer ${
+                            pageNumberStyle === n.id
+                              ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--paper-light)]"
+                              : "border-[var(--hairline)] bg-[var(--paper)]"
+                          }`}
+                        >
+                          {n.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                      Header Ornament
+                    </label>
+                    <div className="grid grid-cols-2 gap-1">
+                      {PAGE_HEADER_STYLES.map((h) => (
+                        <button
+                          key={h.id}
+                          type="button"
+                          onClick={() => setPageHeaderStyle(h.id)}
+                          className={`border px-2 py-1.5 text-[11px] cursor-pointer ${
+                            pageHeaderStyle === h.id
+                              ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--paper-light)]"
+                              : "border-[var(--hairline)] bg-[var(--paper)]"
+                          }`}
+                        >
+                          {h.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>

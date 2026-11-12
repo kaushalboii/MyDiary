@@ -11,8 +11,10 @@ import {
   Download,
   Edit3,
   Images,
+  LayoutGrid,
   MapPin,
   PenLine,
+  RotateCcw,
   SlidersHorizontal,
   StickyNote,
   Trash2,
@@ -20,9 +22,18 @@ import {
 } from "lucide-react";
 import { ExpandableDock } from "@/components/ExpandableDock";
 import { FlipBookReader, type BookSpread } from "@/components/FlipBookReader";
+import { FreeformPageSurface } from "@/components/FreeformPageBlocks";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { VolumeEditorModal } from "@/components/VolumeEditorModal";
 import { defaultBooks } from "@/lib/default-books";
+import {
+  buildDefaultLayoutBlocks,
+  formatBookPageNumber,
+  getMemoryDisplayTitle,
+  getPageAccentColor,
+  isImagesOnlyMemory,
+  syncLayoutBlocksWithMemory,
+} from "@/lib/memory-layout";
 import {
   deleteBook,
   deleteMemory,
@@ -32,9 +43,10 @@ import {
   loadCachedServerBooks,
   resolveMediaUrl,
   updateBook,
+  updateMemory,
   type BookPatchInput,
 } from "@/lib/storage-client";
-import type { DiaryBook, MemoryAlbum } from "@/lib/types";
+import type { AlbumPhoto, DiaryBook, MemoryAlbum, MemoryLayoutBlock } from "@/lib/types";
 
 const POLAROID_TILTS = ["-1.4deg", "1.1deg", "-0.8deg", "1.5deg", "-1.1deg", "0.7deg"];
 
@@ -50,6 +62,12 @@ function BookMemoriesContent() {
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
   const [editingVolume, setEditingVolume] = useState(false);
   const [activeSpreadIndex, setActiveSpreadIndex] = useState(0);
+  const [arrangingMemoryId, setArrangingMemoryId] = useState<string | null>(null);
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const [draftBlocksByMemory, setDraftBlocksByMemory] = useState<
+    Record<string, MemoryLayoutBlock[]>
+  >({});
+  const [savingLayoutId, setSavingLayoutId] = useState<string | null>(null);
   const [lightboxState, setLightboxState] = useState<{
     memory: MemoryAlbum;
     index: number;
@@ -155,7 +173,8 @@ function BookMemoriesContent() {
   }
 
   async function handleDeleteMemory(mem: MemoryAlbum) {
-    if (!window.confirm(`Remove "${mem.title}" from ${book.title}?`)) {
+    const label = getMemoryDisplayTitle(mem);
+    if (!window.confirm(`Remove "${label}" from ${book.title}?`)) {
       return;
     }
     setDeletingMemoryId(mem.id);
@@ -167,25 +186,179 @@ function BookMemoriesContent() {
     }
   }
 
+  const handleBlocksChange = useCallback(
+    async (memId: string, nextBlocks: MemoryLayoutBlock[], commit: boolean) => {
+      setDraftBlocksByMemory((prev) => ({ ...prev, [memId]: nextBlocks }));
+      if (!commit) return;
+      setSavingLayoutId(memId);
+      try {
+        const res = await updateMemory(memId, { layoutBlocks: nextBlocks });
+        setMemories((prev) =>
+          prev.map((m) => (m.id === memId ? res.memory : m)),
+        );
+      } finally {
+        setSavingLayoutId(null);
+      }
+    },
+    [],
+  );
+
+  const handleResetLayout = useCallback(async (memId: string) => {
+    setDraftBlocksByMemory((prev) => {
+      const next = { ...prev };
+      delete next[memId];
+      return next;
+    });
+    setArrangingMemoryId(null);
+    setSelectedBlockId(null);
+    setSavingLayoutId(memId);
+    try {
+      const res = await updateMemory(memId, { layoutBlocks: [] });
+      setMemories((prev) =>
+        prev.map((m) => (m.id === memId ? res.memory : m)),
+      );
+    } finally {
+      setSavingLayoutId(null);
+    }
+  }, []);
+
+  const renderPhotoCollection = useCallback(
+    (mem: MemoryAlbum, photoItems: { photo: AlbumPhoto; idx: number }[]) => {
+      if (mem.albumStyle === "filmstrip") {
+        return (
+          <div className="space-y-3.5">
+            {photoItems.map(({ photo, idx }) => (
+              <div key={photo.id} className="filmstrip-frame">
+                <button
+                  type="button"
+                  data-no-flip="true"
+                  onClick={() => setLightboxState({ memory: mem, index: idx })}
+                  className="block w-full overflow-hidden bg-black cursor-pointer"
+                >
+                  <img
+                    src={resolveMediaUrl(photo.url)}
+                    alt={photo.caption || `Album frame ${idx + 1}`}
+                    className="max-h-60 w-full object-contain transition duration-300 hover:scale-[1.02]"
+                  />
+                </button>
+                <div className="mt-2 flex items-center justify-between gap-2 text-xs text-[#dfd7c7]">
+                  <span className="font-mono text-[10px] uppercase text-[#b5aa97]">
+                    #{String(idx + 1).padStart(2, "0")}
+                  </span>
+                  <span className="italic">{photo.caption || photo.originalName}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      }
+      if (mem.albumStyle === "grid") {
+        return (
+          <div className="grid gap-3.5 sm:grid-cols-2">
+            {photoItems.map(({ photo, idx }) => (
+              <figure
+                key={photo.id}
+                className={`m-0 border border-[var(--hairline)] bg-[var(--paper-light)] p-2 ${
+                  photoItems.length === 1 || (idx === 0 && photoItems.length % 2 === 1)
+                    ? "sm:col-span-2"
+                    : ""
+                }`}
+              >
+                <button
+                  type="button"
+                  data-no-flip="true"
+                  onClick={() => setLightboxState({ memory: mem, index: idx })}
+                  className="block w-full overflow-hidden bg-[var(--paper-deep)] cursor-pointer"
+                >
+                  <img
+                    src={resolveMediaUrl(photo.url)}
+                    alt={photo.caption || `Photo ${idx + 1}`}
+                    className="aspect-[4/3] w-full object-cover transition duration-300 hover:scale-[1.03]"
+                  />
+                </button>
+                {photo.caption && (
+                  <figcaption className="mt-1.5 px-1 text-xs italic text-[var(--page-ink-muted)]">
+                    {photo.caption}
+                  </figcaption>
+                )}
+              </figure>
+            ))}
+          </div>
+        );
+      }
+      return (
+        <div
+          className={`grid gap-5 ${
+            photoItems.length === 1 ? "max-w-xs mx-auto" : "sm:grid-cols-2"
+          }`}
+        >
+          {photoItems.map(({ photo, idx }) => (
+            <figure
+              key={photo.id}
+              className="polaroid-frame m-0"
+              style={{
+                transform: `rotate(${POLAROID_TILTS[idx % POLAROID_TILTS.length]})`,
+              }}
+            >
+              <button
+                type="button"
+                data-no-flip="true"
+                onClick={() => setLightboxState({ memory: mem, index: idx })}
+                className="block w-full overflow-hidden bg-[var(--paper-deep)] cursor-pointer"
+              >
+                <img
+                  src={resolveMediaUrl(photo.url)}
+                  alt={photo.caption || `Polaroid ${idx + 1}`}
+                  className="aspect-square w-full object-cover"
+                />
+              </button>
+              <figcaption className="mt-2.5 px-1 text-center text-xs italic text-[var(--page-ink-muted)]">
+                {photo.caption || `${mem.date} · Frame ${idx + 1}`}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      );
+    },
+    [],
+  );
+
   const spreads: BookSpread[] = useMemo(() => {
     const defaultWelcome =
       "Welcome to your quiet blank pages. Turn the leaf or write whenever you wish.";
     const welcomeText = book.welcomeNote?.trim() || defaultWelcome;
+    const pageAccent = getPageAccentColor(book);
+    const numStyle = book.pageNumberStyle;
+    const headerStyle = book.pageHeaderStyle || "minimal";
+
+    const pNum = (n: number) => formatBookPageNumber(n, numStyle);
 
     const welcomeSpread: BookSpread = {
       id: "opening-welcome",
       label: "Opening Pages",
       left: (
         <div className="flex flex-1 flex-col justify-between">
-          <div className="text-[10px] font-semibold tracking-[0.2em] uppercase text-[var(--ink-soft)]">
+          <div
+            className={`text-[10px] font-semibold tracking-[0.2em] uppercase text-[var(--ink-soft)] ${
+              headerStyle === "centered" ? "text-center" : ""
+            } ${headerStyle === "ruled" ? "border-b border-double border-[var(--hairline)] pb-2" : ""}`}
+          >
             {book.coverImprint || "Personal Archive"}
           </div>
           <div className="my-auto flex flex-col items-center py-8 text-center">
-            <div
-              className="h-2.5 w-2.5 rotate-45"
-              style={{ backgroundColor: book.accent }}
-              aria-hidden="true"
-            />
+            {headerStyle === "botanical" ? (
+              <div className="flex items-center gap-2 text-xs" style={{ color: pageAccent }} aria-hidden="true">
+                <span className="h-px w-6 bg-current opacity-50" />
+                <span>✦</span>
+                <span className="h-px w-6 bg-current opacity-50" />
+              </div>
+            ) : (
+              <div
+                className="h-2.5 w-2.5 rotate-45"
+                style={{ backgroundColor: pageAccent }}
+                aria-hidden="true"
+              />
+            )}
             {book.spineMark && (
               <div className="mt-5 font-serif text-3xl italic text-[var(--page-ink)]">
                 {book.spineMark}
@@ -195,21 +368,21 @@ function BookMemoriesContent() {
               {book.yearLabel}
             </div>
           </div>
-          <div className="text-[11px] italic opacity-45">p. 01</div>
+          <div className="text-[11px] italic opacity-45">{pNum(1)}</div>
         </div>
       ),
       right: (
         <div className="flex flex-1 flex-col justify-between">
-          <div className="my-auto py-6 sm:px-4">
+          <div className={`my-auto py-6 sm:px-4 ${headerStyle === "centered" ? "text-center" : ""}`}>
             <h1 className="m-0 text-3xl sm:text-4xl font-normal tracking-tight leading-tight text-[var(--page-ink)]">
               {book.title}
             </h1>
-            <p className="mt-5 max-w-md text-base sm:text-lg leading-relaxed text-[var(--page-ink-muted)]">
+            <p className={`mt-5 max-w-md text-base sm:text-lg leading-relaxed text-[var(--page-ink-muted)] ${headerStyle === "centered" ? "mx-auto" : ""}`}>
               {welcomeText}
             </p>
 
             {memories.length > 0 ? (
-              <div className="mt-8 border-t border-[var(--hairline)] pt-5">
+              <div className="mt-8 border-t border-[var(--hairline)] pt-5 text-left">
                 <div className="mb-2.5 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)]">
                   Chapters ({memories.length})
                 </div>
@@ -222,7 +395,7 @@ function BookMemoriesContent() {
                       className="flex w-full items-baseline justify-between gap-3 py-1 text-left text-sm hover:text-[var(--accent)] cursor-pointer"
                     >
                       <span className="truncate font-medium">
-                        {String(idx + 1).padStart(2, "0")}. {mem.title}
+                        {String(idx + 1).padStart(2, "0")}. {getMemoryDisplayTitle(mem)}
                       </span>
                       <span className="shrink-0 text-[11px] opacity-60">
                         {mem.date}
@@ -245,7 +418,7 @@ function BookMemoriesContent() {
           </div>
           <div className="flex items-center justify-between text-[11px] italic opacity-45">
             <span>{book.yearLabel}</span>
-            <span>p. 02</span>
+            <span>{pNum(2)}</span>
           </div>
         </div>
       ),
@@ -258,7 +431,7 @@ function BookMemoriesContent() {
         left: (
           <div className="flex flex-1 flex-col justify-between">
             <div />
-            <div className="text-[11px] italic opacity-40">p. 03</div>
+            <div className="text-[11px] italic opacity-40">{pNum(3)}</div>
           </div>
         ),
         right: (
@@ -271,7 +444,7 @@ function BookMemoriesContent() {
               >
                 + Add entry on this page
               </Link>
-              <span>p. 04</span>
+              <span>{pNum(4)}</span>
             </div>
           </div>
         ),
@@ -283,13 +456,13 @@ function BookMemoriesContent() {
         left: (
           <div className="flex flex-1 flex-col justify-between">
             <div />
-            <div className="text-[11px] italic opacity-40">p. 05</div>
+            <div className="text-[11px] italic opacity-40">{pNum(5)}</div>
           </div>
         ),
         right: (
           <div className="flex flex-1 flex-col justify-between">
             <div />
-            <div className="text-right text-[11px] italic opacity-40">p. 06</div>
+            <div className="text-right text-[11px] italic opacity-40">{pNum(6)}</div>
           </div>
         ),
       };
@@ -298,16 +471,212 @@ function BookMemoriesContent() {
     }
 
     const memorySpreads: BookSpread[] = memories.map((mem, idx) => {
-      const pageLeftNum = String((idx + 1) * 2 + 1).padStart(2, "0");
-      const pageRightNum = String((idx + 1) * 2 + 2).padStart(2, "0");
+      const leftN = (idx + 1) * 2 + 1;
+      const rightN = (idx + 1) * 2 + 2;
+      const pageLeftStr = pNum(leftN);
+      const pageRightStr = pNum(rightN);
+      const displayTitle = getMemoryDisplayTitle(mem);
+      const isArranging = arrangingMemoryId === mem.id;
+      const hasCustomLayout = Boolean(mem.layoutBlocks && mem.layoutBlocks.length > 0);
+      const activeBlocks =
+        draftBlocksByMemory[mem.id] ||
+        (hasCustomLayout || isArranging ? syncLayoutBlocksWithMemory(mem) : null);
+
+      const spreadToolbarFooterLeft = (
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3 text-xs text-[var(--ink-soft)]">
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href={`/compose?bookId=${encodeURIComponent(book.id)}&edit=${encodeURIComponent(mem.id)}`}
+              className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] no-underline hover:underline"
+            >
+              <Edit3 className="h-3.5 w-3.5" />
+              <span>Edit</span>
+            </Link>
+            <button
+              type="button"
+              data-no-flip="true"
+              data-testid={`arrange-memory-${mem.id}`}
+              onClick={() => {
+                if (isArranging) {
+                  setArrangingMemoryId(null);
+                  setSelectedBlockId(null);
+                } else {
+                  setDraftBlocksByMemory((prev) => ({
+                    ...prev,
+                    [mem.id]:
+                      prev[mem.id] ||
+                      (mem.layoutBlocks?.length
+                        ? syncLayoutBlocksWithMemory(mem)
+                        : buildDefaultLayoutBlocks(mem)),
+                  }));
+                  setArrangingMemoryId(mem.id);
+                }
+              }}
+              className={`inline-flex items-center gap-1 font-semibold tracking-wider uppercase cursor-pointer hover:underline ${
+                isArranging ? "text-[var(--accent)]" : "text-[var(--ink)]"
+              }`}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span>{isArranging ? "Done" : "Arrange"}</span>
+            </button>
+            {(isArranging || hasCustomLayout) && (
+              <button
+                type="button"
+                data-no-flip="true"
+                onClick={() => void handleResetLayout(mem.id)}
+                className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink-soft)] cursor-pointer hover:text-[var(--ink)]"
+                title="Restore automatic page placement"
+              >
+                <RotateCcw className="h-3 w-3" />
+                <span>Reset</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleDeleteMemory(mem)}
+              disabled={deletingMemoryId === mem.id}
+              className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--accent)] cursor-pointer hover:underline disabled:opacity-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              <span>{deletingMemoryId === mem.id ? "Removing..." : "Remove"}</span>
+            </button>
+          </div>
+          <span className="italic">
+            {savingLayoutId === mem.id ? "Saving…" : pageLeftStr}
+          </span>
+        </div>
+      );
+
+      if (activeBlocks) {
+        return {
+          id: mem.id,
+          label: `${displayTitle} · pp. ${String(leftN).padStart(2, "0")}–${String(rightN).padStart(2, "0")}`,
+          left: (
+            <div className="flex flex-1 flex-col justify-between gap-3">
+              {isArranging && (
+                <div
+                  data-no-flip="true"
+                  className="flex items-center justify-between rounded border border-[var(--hairline)] bg-[var(--paper)]/90 px-2.5 py-1 text-[10px] tracking-wider uppercase text-[var(--ink-soft)]"
+                >
+                  <span>Drag any item to place anywhere on Left or Right page</span>
+                </div>
+              )}
+              <FreeformPageSurface
+                memory={mem}
+                book={book}
+                side="left"
+                blocks={activeBlocks}
+                editing={isArranging}
+                selectedBlockId={selectedBlockId}
+                onSelectBlock={setSelectedBlockId}
+                onChangeBlocks={(next, commit) =>
+                  void handleBlocksChange(mem.id, next, commit)
+                }
+                onPhotoClick={(photoIdx) => setLightboxState({ memory: mem, index: photoIdx })}
+                surfaceIdPrefix={`book-${mem.id}`}
+              />
+              {spreadToolbarFooterLeft}
+            </div>
+          ),
+          right: (
+            <div className="flex flex-1 flex-col justify-between gap-3">
+              <FreeformPageSurface
+                memory={mem}
+                book={book}
+                side="right"
+                blocks={activeBlocks}
+                editing={isArranging}
+                selectedBlockId={selectedBlockId}
+                onSelectBlock={setSelectedBlockId}
+                onChangeBlocks={(next, commit) =>
+                  void handleBlocksChange(mem.id, next, commit)
+                }
+                onPhotoClick={(photoIdx) => setLightboxState({ memory: mem, index: photoIdx })}
+                surfaceIdPrefix={`book-${mem.id}`}
+              />
+              <div className="mt-auto border-t border-[var(--hairline)] pt-3 text-right text-xs italic text-[var(--ink-soft)]">
+                {pageRightStr}
+              </div>
+            </div>
+          ),
+        };
+      }
+
+      const imagesOnly = isImagesOnlyMemory(mem);
+      if (imagesOnly) {
+        const indexed = mem.photos.map((photo, pIdx) => ({ photo, idx: pIdx }));
+        const splitAt = Math.ceil(indexed.length / 2);
+        const leftPhotos = indexed.length > 1 ? indexed.slice(0, splitAt) : indexed;
+        const rightPhotos = indexed.length > 1 ? indexed.slice(splitAt) : [];
+
+        return {
+          id: mem.id,
+          label: `${displayTitle} · pp. ${String(leftN).padStart(2, "0")}–${String(rightN).padStart(2, "0")}`,
+          left: (
+            <div className="flex flex-1 flex-col justify-between">
+              <div>
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--hairline)] pb-2.5 text-[10px] font-semibold tracking-[0.15em] uppercase text-[var(--ink-soft)]">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Calendar className="h-3 w-3" />
+                    {mem.date}
+                    {mem.location ? ` · ${mem.location}` : ""}
+                  </span>
+                  <span style={{ color: pageAccent }}>{mem.mood}</span>
+                </div>
+                {renderPhotoCollection(mem, leftPhotos)}
+              </div>
+              {spreadToolbarFooterLeft}
+            </div>
+          ),
+          right: (
+            <div className="flex flex-1 flex-col justify-between">
+              <div>
+                <div className="mb-5 flex items-center justify-between border-b border-[var(--hairline)] pb-2.5 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)]">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Images className="h-3.5 w-3.5" style={{ color: pageAccent }} />
+                    {mem.photos.length} {mem.photos.length === 1 ? "Photograph" : "Photographs"}
+                  </span>
+                  <span>
+                    {mem.albumStyle === "filmstrip"
+                      ? "Contact Sheet"
+                      : mem.albumStyle === "grid"
+                        ? "Editorial Grid"
+                        : "Polaroids"}
+                  </span>
+                </div>
+                {rightPhotos.length > 0 ? (
+                  renderPhotoCollection(mem, rightPhotos)
+                ) : (
+                  <div className="flex min-h-[240px] flex-col items-center justify-center text-center opacity-55">
+                    <div
+                      className="h-2 w-2 rotate-45"
+                      style={{ backgroundColor: pageAccent }}
+                      aria-hidden="true"
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="mt-8 border-t border-[var(--hairline)] pt-3.5 text-right text-xs italic text-[var(--ink-soft)]">
+                {pageRightStr}
+              </div>
+            </div>
+          ),
+        };
+      }
+
+      const indexedRightPhotos = mem.photos.map((photo, pIdx) => ({ photo, idx: pIdx }));
 
       return {
         id: mem.id,
-        label: `${mem.title} · pp. ${pageLeftNum}–${pageRightNum}`,
+        label: `${displayTitle} · pp. ${String(leftN).padStart(2, "0")}–${String(rightN).padStart(2, "0")}`,
         left: (
           <div className="flex flex-1 flex-col justify-between">
             <div>
-              <div className="flex flex-wrap items-center gap-3 text-[10px] font-semibold tracking-[0.15em] uppercase text-[var(--ink-soft)]">
+              <div
+                className={`flex flex-wrap items-center gap-3 text-[10px] font-semibold tracking-[0.15em] uppercase text-[var(--ink-soft)] ${
+                  headerStyle === "ruled" ? "border-b border-double border-[var(--hairline)] pb-2" : ""
+                }`}
+              >
                 <span className="inline-flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
                   {mem.date}
@@ -318,18 +687,30 @@ function BookMemoriesContent() {
                     {mem.location}
                   </span>
                 )}
-                <span className="ml-auto rounded-full border border-[var(--hairline)] bg-[var(--paper)] px-2.5 py-0.5 text-[var(--accent)]">
+                <span
+                  className="ml-auto rounded-full border border-[var(--hairline)] bg-[var(--paper)] px-2.5 py-0.5"
+                  style={{ color: pageAccent }}
+                >
                   {mem.mood}
                 </span>
               </div>
 
-              <h2 className="mt-5 mb-0 text-3xl sm:text-4xl font-normal tracking-tight leading-[1.05] text-[var(--page-ink)]">
-                {mem.title}
-              </h2>
+              {mem.title?.trim() && (
+                <h2
+                  className={`mt-5 mb-0 text-3xl sm:text-4xl font-normal tracking-tight leading-[1.05] text-[var(--page-ink)] ${
+                    headerStyle === "centered" ? "text-center" : ""
+                  }`}
+                >
+                  {mem.title}
+                </h2>
+              )}
 
               {mem.note && (
-                <div className="note-slip mt-6">
-                  <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--accent)]">
+                <div className="note-slip mt-6" style={{ borderLeftColor: pageAccent }}>
+                  <div
+                    className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.16em] uppercase"
+                    style={{ color: pageAccent }}
+                  >
                     <StickyNote className="h-3 w-3" />
                     <span>Keepsake Note</span>
                   </div>
@@ -339,157 +720,57 @@ function BookMemoriesContent() {
                 </div>
               )}
 
-              <div className="mt-6 space-y-4 text-[16px] leading-[1.7] text-[var(--page-ink-muted)]">
-                {mem.paragraphs.length > 0 ? (
-                  mem.paragraphs.map((paragraph, pIdx) => (
+              {mem.paragraphs.length > 0 && (
+                <div className="mt-6 space-y-4 text-[16px] leading-[1.7] text-[var(--page-ink-muted)]">
+                  {mem.paragraphs.map((paragraph, pIdx) => (
                     <p key={pIdx} className="m-0">
                       {paragraph}
                     </p>
-                  ))
-                ) : (
-                  <p className="m-0 italic text-[var(--ink-soft)]">
-                    No paragraphs written on this page.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-8 flex items-center justify-between border-t border-[var(--hairline)] pt-3.5 text-xs text-[var(--ink-soft)]">
-              <div className="flex items-center gap-4">
-                <Link
-                  href={`/compose?bookId=${encodeURIComponent(book.id)}&edit=${encodeURIComponent(mem.id)}`}
-                  className="inline-flex items-center gap-1.5 font-semibold tracking-wider uppercase text-[var(--ink)] no-underline hover:underline"
-                >
-                  <Edit3 className="h-3.5 w-3.5" />
-                  <span>Edit</span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => void handleDeleteMemory(mem)}
-                  disabled={deletingMemoryId === mem.id}
-                  className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--accent)] cursor-pointer hover:underline disabled:opacity-50"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>{deletingMemoryId === mem.id ? "Removing..." : "Remove"}</span>
-                </button>
-              </div>
-              <span className="italic">p. {pageLeftNum}</span>
-            </div>
-          </div>
-        ),
-        right: (
-          <div className="flex flex-1 flex-col justify-between">
-            <div>
-              <div className="mb-5 flex items-center justify-between border-b border-[var(--hairline)] pb-2.5 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)]">
-                <span className="inline-flex items-center gap-1.5">
-                  <Images className="h-3.5 w-3.5 text-[var(--accent)]" />
-                  Photographs · {mem.photos.length}
-                </span>
-                <span>
-                  {mem.albumStyle === "filmstrip"
-                    ? "Contact Sheet"
-                    : mem.albumStyle === "grid"
-                      ? "Editorial Grid"
-                      : "Polaroids"}
-                </span>
-              </div>
-
-              {mem.photos.length === 0 ? (
-                <div className="grid min-h-[260px] place-items-center border border-dashed border-[var(--hairline)] p-6 text-center">
-                  <Link
-                    href={`/compose?bookId=${encodeURIComponent(book.id)}&edit=${encodeURIComponent(mem.id)}`}
-                    className="text-xs font-semibold tracking-wider uppercase text-[var(--ink-soft)] no-underline hover:text-[var(--ink)] hover:underline"
-                  >
-                    + Attach photographs to this page
-                  </Link>
-                </div>
-              ) : mem.albumStyle === "filmstrip" ? (
-                <div className="space-y-3.5">
-                  {mem.photos.map((photo, pIdx) => (
-                    <div key={photo.id} className="filmstrip-frame">
-                      <button
-                        type="button"
-                        data-no-flip="true"
-                        onClick={() => setLightboxState({ memory: mem, index: pIdx })}
-                        className="block w-full overflow-hidden bg-black cursor-pointer"
-                      >
-                        <img
-                          src={resolveMediaUrl(photo.url)}
-                          alt={photo.caption || `Album frame ${pIdx + 1}`}
-                          className="max-h-60 w-full object-contain transition duration-300 hover:scale-[1.02]"
-                        />
-                      </button>
-                      <div className="mt-2 flex items-center justify-between gap-2 text-xs text-[#dfd7c7]">
-                        <span className="font-mono text-[10px] uppercase text-[#b5aa97]">
-                          #{String(pIdx + 1).padStart(2, "0")}
-                        </span>
-                        <span className="italic">{photo.caption || photo.originalName}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : mem.albumStyle === "grid" ? (
-                <div className="grid gap-3.5 sm:grid-cols-2">
-                  {mem.photos.map((photo, pIdx) => (
-                    <figure
-                      key={photo.id}
-                      className={`m-0 border border-[var(--hairline)] bg-[var(--paper-light)] p-2 ${
-                        pIdx === 0 && mem.photos.length % 2 === 1 ? "sm:col-span-2" : ""
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        data-no-flip="true"
-                        onClick={() => setLightboxState({ memory: mem, index: pIdx })}
-                        className="block w-full overflow-hidden bg-[var(--paper-deep)] cursor-pointer"
-                      >
-                        <img
-                          src={resolveMediaUrl(photo.url)}
-                          alt={photo.caption || `Photo ${pIdx + 1}`}
-                          className="aspect-[4/3] w-full object-cover transition duration-300 hover:scale-[1.03]"
-                        />
-                      </button>
-                      {photo.caption && (
-                        <figcaption className="mt-1.5 px-1 text-xs italic text-[var(--page-ink-muted)]">
-                          {photo.caption}
-                        </figcaption>
-                      )}
-                    </figure>
-                  ))}
-                </div>
-              ) : (
-                <div className="grid gap-5 sm:grid-cols-2">
-                  {mem.photos.map((photo, pIdx) => (
-                    <figure
-                      key={photo.id}
-                      className="polaroid-frame m-0"
-                      style={{
-                        transform: `rotate(${POLAROID_TILTS[pIdx % POLAROID_TILTS.length]})`,
-                      }}
-                    >
-                      <button
-                        type="button"
-                        data-no-flip="true"
-                        onClick={() => setLightboxState({ memory: mem, index: pIdx })}
-                        className="block w-full overflow-hidden bg-[var(--paper-deep)] cursor-pointer"
-                      >
-                        <img
-                          src={resolveMediaUrl(photo.url)}
-                          alt={photo.caption || `Polaroid ${pIdx + 1}`}
-                          className="aspect-square w-full object-cover"
-                        />
-                      </button>
-                      <figcaption className="mt-2.5 px-1 text-center text-xs italic text-[var(--page-ink-muted)]">
-                        {photo.caption || `${mem.date} · Frame ${pIdx + 1}`}
-                      </figcaption>
-                    </figure>
                   ))}
                 </div>
               )}
             </div>
 
+            {spreadToolbarFooterLeft}
+          </div>
+        ),
+        right: (
+          <div className="flex flex-1 flex-col justify-between">
+            {indexedRightPhotos.length > 0 ? (
+              <div>
+                <div className="mb-5 flex items-center justify-between border-b border-[var(--hairline)] pb-2.5 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)]">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Images className="h-3.5 w-3.5" style={{ color: pageAccent }} />
+                    Photographs · {mem.photos.length}
+                  </span>
+                  <span>
+                    {mem.albumStyle === "filmstrip"
+                      ? "Contact Sheet"
+                      : mem.albumStyle === "grid"
+                        ? "Editorial Grid"
+                        : "Polaroids"}
+                  </span>
+                </div>
+                {renderPhotoCollection(mem, indexedRightPhotos)}
+              </div>
+            ) : (
+              <div className="my-auto flex flex-col items-center justify-center py-10 text-center opacity-55">
+                <div
+                  className="h-2 w-2 rotate-45"
+                  style={{ backgroundColor: pageAccent }}
+                  aria-hidden="true"
+                />
+                <Link
+                  href={`/compose?bookId=${encodeURIComponent(book.id)}&edit=${encodeURIComponent(mem.id)}`}
+                  className="mt-4 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)] no-underline hover:text-[var(--ink)] hover:underline"
+                >
+                  + Add photographs (optional)
+                </Link>
+              </div>
+            )}
+
             <div className="mt-8 border-t border-[var(--hairline)] pt-3.5 text-right text-xs italic text-[var(--ink-soft)]">
-              p. {pageRightNum}
+              {pageRightStr}
             </div>
           </div>
         ),
@@ -503,7 +784,7 @@ function BookMemoriesContent() {
         <div className="flex flex-1 flex-col justify-between">
           <div />
           <div className="text-[11px] italic opacity-40">
-            p. {String((memories.length + 1) * 2 + 1).padStart(2, "0")}
+            {pNum((memories.length + 1) * 2 + 1)}
           </div>
         </div>
       ),
@@ -521,19 +802,32 @@ function BookMemoriesContent() {
     };
 
     return [welcomeSpread, ...memorySpreads, trailingBlank];
-  }, [book, memories, deletingMemoryId]);
+  }, [
+    arrangingMemoryId,
+    book,
+    deletingMemoryId,
+    draftBlocksByMemory,
+    handleBlocksChange,
+    handleResetLayout,
+    memories,
+    renderPhotoCollection,
+    savingLayoutId,
+    selectedBlockId,
+  ]);
 
   const safeSpreadIndex = Math.max(0, Math.min(spreads.length - 1, activeSpreadIndex));
 
   return (
     <div className="diary-page">
       <header className="diary-topbar">
-        <div
-          className="wordmark hidden sm:flex"
-          aria-label={book.shortTitle}
+        <Link
+          href="/"
+          className="wordmark"
+          aria-label="My Diary — Return to Home Shelf"
+          title="Go to Home Shelf"
         >
           <span>MY DIARY</span>
-        </div>
+        </Link>
 
         <div className="header-controls-cluster">
           <ExpandableDock
@@ -614,7 +908,7 @@ function BookMemoriesContent() {
         >
           <div className="flex items-center justify-between gap-4">
             <div className="text-xs tracking-widest uppercase text-[#bfb6a6]">
-              {lightboxState.memory.title} ·{" "}
+              {getMemoryDisplayTitle(lightboxState.memory)} ·{" "}
               {String(lightboxState.index + 1).padStart(2, "0")} /{" "}
               {String(lightboxState.memory.photos.length).padStart(2, "0")}
             </div>
@@ -674,7 +968,7 @@ function BookMemoriesContent() {
               )}
               alt={
                 lightboxState.memory.photos[lightboxState.index].caption ||
-                lightboxState.memory.title
+                getMemoryDisplayTitle(lightboxState.memory)
               }
               className="max-h-[75dvh] max-w-full object-contain shadow-2xl"
             />

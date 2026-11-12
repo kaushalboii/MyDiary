@@ -330,14 +330,23 @@ function ShelfExperienceInner() {
       />
 
       <header className="site-header">
-        <div
+        <button
+          type="button"
           className="wordmark"
-          aria-label={`${siteConfig.wordmark}, ${siteConfig.collectionName}`}
+          onClick={() => {
+            if (isFocused) {
+              engineRef.current?.returnToShelf();
+            } else {
+              router.push("/");
+            }
+          }}
+          aria-label={`${siteConfig.wordmark} — Return to shelf overview`}
+          title="My Diary Home"
         >
           <span>{siteConfig.wordmark}</span>
           <span className="wordmark__divider hidden sm:block" />
           <span className="hidden sm:inline">{books.length} VOLUMES</span>
-        </div>
+        </button>
 
         <div className="header-controls-cluster">
           <ExpandableDock

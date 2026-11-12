@@ -20,6 +20,7 @@ import { BookMotifPreview } from "@/components/BookMotifPreview";
 import { ExpandableDock } from "@/components/ExpandableDock";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { defaultBooks } from "@/lib/default-books";
+import { getMemoryDisplayTitle } from "@/lib/memory-layout";
 import {
   deleteMemory,
   fetchBooks,
@@ -108,9 +109,14 @@ function MemoryAlbumContent() {
   return (
     <div className="diary-page">
       <header className="diary-topbar">
-        <div className="wordmark hidden sm:flex">
+        <Link
+          href="/"
+          className="wordmark"
+          aria-label="My Diary — Return to Home Shelf"
+          title="Go to Home Shelf"
+        >
           <span>MY DIARY</span>
-        </div>
+        </Link>
 
         <div className="header-controls-cluster">
           <ExpandableDock
@@ -207,102 +213,107 @@ function MemoryAlbumContent() {
               }}
             />
 
-            <div className="grid lg:grid-cols-12">
-              {/* Left Folio: Note & Diary Paragraphs */}
-              <div className="border-b border-[var(--hairline)] p-6 sm:p-10 lg:col-span-6 lg:border-r lg:border-b-0 lg:shadow-[inset_-18px_0_24px_-24px_rgba(37,35,31,0.35)]">
-                <div className="flex items-center gap-3.5">
-                  <BookMotifPreview book={book} size="sm" />
-                  <div>
-                    <div className="text-[10px] font-semibold tracking-[0.18em] uppercase text-[var(--ink-soft)]">
-                      {book.title}
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-[var(--ink-soft)]">
-                      <span className="inline-flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {memory.date}
-                      </span>
-                      {memory.location && (
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin className="h-3 w-3" />
-                          {memory.location}
-                        </span>
-                      )}
-                      <span className="rounded-full border border-[var(--hairline)] bg-[var(--paper)] px-2.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase text-[var(--accent)]">
-                        {memory.mood}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <h1
-                  className="mt-7 mb-0 text-4xl sm:text-5xl font-normal tracking-tight leading-[1.02]"
-                  style={{ fontFamily: "var(--serif)" }}
-                >
-                  {memory.title}
-                </h1>
-
-                {memory.note && (
-                  <div className="note-slip mt-8">
-                    <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.18em] uppercase text-[var(--accent)]">
-                      <StickyNote className="h-3 w-3" />
-                      <span>Keepsake Note</span>
-                    </div>
-                    <p
-                      className="m-0 text-base sm:text-lg italic leading-relaxed text-[var(--page-ink)]"
-                      style={{ fontFamily: "var(--serif)" }}
+            {(() => {
+              const hasWords = Boolean(
+                memory.title?.trim() ||
+                  memory.note?.trim() ||
+                  memory.paragraphs.length > 0,
+              );
+              const hasPhotos = memory.photos.length > 0;
+              const bothCols = hasWords && hasPhotos;
+              return (
+                <div className={bothCols ? "grid lg:grid-cols-12" : "grid grid-cols-1"}>
+                  {hasWords && (
+                    <div
+                      className={`p-6 sm:p-10 ${
+                        bothCols
+                          ? "border-b border-[var(--hairline)] lg:col-span-6 lg:border-r lg:border-b-0 lg:shadow-[inset_-18px_0_24px_-24px_rgba(37,35,31,0.35)]"
+                          : "mx-auto w-full max-w-2xl"
+                      }`}
                     >
-                      “{memory.note}”
-                    </p>
-                  </div>
-                )}
+                      <div className="flex items-center gap-3.5">
+                        <BookMotifPreview book={book} size="sm" />
+                        <div>
+                          <div className="text-[10px] font-semibold tracking-[0.18em] uppercase text-[var(--ink-soft)]">
+                            {book.title}
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-[var(--ink-soft)]">
+                            <span className="inline-flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              {memory.date}
+                            </span>
+                            {memory.location && (
+                              <span className="inline-flex items-center gap-1">
+                                <MapPin className="h-3 w-3" />
+                                {memory.location}
+                              </span>
+                            )}
+                            <span className="rounded-full border border-[var(--hairline)] bg-[var(--paper)] px-2.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase text-[var(--accent)]">
+                              {memory.mood}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
 
-                <div className="diary-prose mt-8">
-                  {memory.paragraphs.length > 0 ? (
-                    memory.paragraphs.map((paragraph, idx) => (
-                      <p key={idx}>{paragraph}</p>
-                    ))
-                  ) : (
-                    <p className="italic text-[var(--ink-soft)]">
-                      No long-form paragraphs were written for this memory.
-                    </p>
-                  )}
-                </div>
-              </div>
+                      {memory.title?.trim() && (
+                        <h1
+                          className="mt-7 mb-0 text-4xl sm:text-5xl font-normal tracking-tight leading-[1.02]"
+                          style={{ fontFamily: "var(--serif)" }}
+                        >
+                          {memory.title}
+                        </h1>
+                      )}
 
-              {/* Right Folio: Curated Photo Album */}
-              <div className="bg-[var(--page-bg)] p-6 sm:p-10 lg:col-span-6">
-                <div className="mb-6 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--hairline)] pb-3">
-                  <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.18em] uppercase text-[var(--ink-soft)]">
-                    <Images className="h-3.5 w-3.5 text-[var(--accent)]" />
-                    <span>
-                      Memory Photo Album · {memory.photos.length}{" "}
-                      {memory.photos.length === 1 ? "Frame" : "Frames"}
-                    </span>
-                  </div>
-                  <span className="text-[10px] font-semibold tracking-widest uppercase text-[var(--ink-soft)]">
-                    {memory.albumStyle === "filmstrip"
-                      ? "Contact Sheet"
-                      : memory.albumStyle === "grid"
-                        ? "Editorial Grid"
-                        : "Archival Polaroids"}
-                  </span>
-                </div>
+                      {memory.note && (
+                        <div className="note-slip mt-8">
+                          <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.18em] uppercase text-[var(--accent)]">
+                            <StickyNote className="h-3 w-3" />
+                            <span>Keepsake Note</span>
+                          </div>
+                          <p
+                            className="m-0 text-base sm:text-lg italic leading-relaxed text-[var(--page-ink)]"
+                            style={{ fontFamily: "var(--serif)" }}
+                          >
+                            “{memory.note}”
+                          </p>
+                        </div>
+                      )}
 
-                {memory.photos.length === 0 ? (
-                  <div className="grid min-h-[260px] place-items-center border border-dashed border-[var(--hairline)] bg-[var(--paper-light)] p-8 text-center">
-                    <div>
-                      <p className="font-serif text-lg italic text-[var(--ink-soft)]">
-                        No photographs attached to this entry yet.
-                      </p>
-                      <Link
-                        href={`/compose?bookId=${encodeURIComponent(book.id)}&edit=${encodeURIComponent(memory.id)}`}
-                        className="mt-3 inline-block border-b border-[var(--ink)] pb-0.5 text-[11px] font-semibold tracking-wider uppercase no-underline"
-                      >
-                        Upload photos to this album →
-                      </Link>
+                      {memory.paragraphs.length > 0 && (
+                        <div className="diary-prose mt-8">
+                          {memory.paragraphs.map((paragraph, idx) => (
+                            <p key={idx}>{paragraph}</p>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ) : memory.albumStyle === "filmstrip" ? (
+                  )}
+
+                  {hasPhotos && (
+                    <div
+                      className={`bg-[var(--page-bg)] p-6 sm:p-10 ${
+                        bothCols ? "lg:col-span-6" : ""
+                      }`}
+                    >
+                      <div className="mb-6 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--hairline)] pb-3">
+                        <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.18em] uppercase text-[var(--ink-soft)]">
+                          <Images className="h-3.5 w-3.5 text-[var(--accent)]" />
+                          <span>
+                            Memory Photo Album · {memory.photos.length}{" "}
+                            {memory.photos.length === 1 ? "Frame" : "Frames"}
+                            {!hasWords ? ` · ${memory.date}` : ""}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-semibold tracking-widest uppercase text-[var(--ink-soft)]">
+                          {memory.albumStyle === "filmstrip"
+                            ? "Contact Sheet"
+                            : memory.albumStyle === "grid"
+                              ? "Editorial Grid"
+                              : "Archival Polaroids"}
+                        </span>
+                      </div>
+
+                      {memory.albumStyle === "filmstrip" ? (
                   <div className="space-y-4">
                     {memory.photos.map((photo, idx) => (
                       <div key={photo.id} className="filmstrip-frame">
@@ -401,8 +412,11 @@ function MemoryAlbumContent() {
                     ))}
                   </div>
                 )}
-              </div>
-            </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </article>
         )}
       </main>
@@ -419,7 +433,7 @@ function MemoryAlbumContent() {
         >
           <div className="flex items-center justify-between gap-4">
             <div className="text-xs tracking-widest uppercase text-[#bfb6a6]">
-              {memory.title} · {String(lightboxIndex + 1).padStart(2, "0")} /{" "}
+              {getMemoryDisplayTitle(memory)} · {String(lightboxIndex + 1).padStart(2, "0")} /{" "}
               {String(memory.photos.length).padStart(2, "0")}
             </div>
             <div className="flex items-center gap-3">
@@ -463,7 +477,7 @@ function MemoryAlbumContent() {
 
             <img
               src={resolveMediaUrl(memory.photos[lightboxIndex].url)}
-              alt={memory.photos[lightboxIndex].caption || memory.title}
+              alt={memory.photos[lightboxIndex].caption || getMemoryDisplayTitle(memory)}
               className="max-h-[75dvh] max-w-full object-contain shadow-2xl"
             />
 

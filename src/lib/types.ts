@@ -51,9 +51,19 @@ export type SpineStyle =
   | "center-pill"
   | "twin-rings";
 
-export type PaperStyle = "cream" | "lined" | "dotgrid" | "framed";
+export type PaperStyle =
+  | "cream"
+  | "lined"
+  | "margin-lined"
+  | "dotgrid"
+  | "grid"
+  | "framed";
 
 export type BookFontStyle = "serif" | "sans" | "mono";
+
+export type PageNumberStyle = "classic" | "roman" | "minimal" | "hidden";
+
+export type PageHeaderStyle = "minimal" | "centered" | "ruled" | "botanical";
 
 export type DiaryBook = {
   id: string;
@@ -78,6 +88,11 @@ export type DiaryBook = {
   spineStyle?: SpineStyle;
   paperStyle?: PaperStyle;
   fontStyle?: BookFontStyle;
+  pageTint?: string;
+  pageInk?: string;
+  pageAccent?: string;
+  pageNumberStyle?: PageNumberStyle;
+  pageHeaderStyle?: PageHeaderStyle;
   showCoverTextWithImage?: boolean;
   height: number;
   thickness: number;
@@ -110,6 +125,20 @@ export type AlbumPhoto = {
   mimeType?: string;
 };
 
+export type MemoryBlockKind = "header" | "note" | "text" | "photo";
+
+export type MemoryLayoutBlock = {
+  id: string;
+  kind: MemoryBlockKind;
+  photoId?: string;
+  side: "left" | "right";
+  x: number;
+  y: number;
+  w: number;
+  z?: number;
+  rotation?: number;
+};
+
 export type MemoryAlbum = {
   id: string;
   bookId: string;
@@ -122,6 +151,7 @@ export type MemoryAlbum = {
   photos: AlbumPhoto[];
   coverPhotoId: string | null;
   albumStyle: AlbumStyle;
+  layoutBlocks?: MemoryLayoutBlock[];
   createdAt: string;
   updatedAt: string;
 };

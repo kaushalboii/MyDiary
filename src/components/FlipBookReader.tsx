@@ -3,8 +3,14 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  getBookFontCss,
+  getBookPageStyleVars,
+  getBookPaperCss,
+  getPageAccentColor,
+} from "@/lib/memory-layout";
 import { resolveMediaUrl } from "@/lib/storage-client";
-import type { DiaryBook, PaperStyle } from "@/lib/types";
+import type { DiaryBook } from "@/lib/types";
 import { createFrontCover } from "@/three/cover-art";
 
 export type BookSpread = {
@@ -20,35 +26,6 @@ type FlipState = {
   direction: 1 | -1;
   progress: number;
 };
-
-function paperPatternStyle(paperStyle: PaperStyle | undefined): React.CSSProperties {
-  if (paperStyle === "lined") {
-    return {
-      backgroundColor: "var(--page-bg)",
-      backgroundImage:
-        "repeating-linear-gradient(to bottom, transparent 0px, transparent 30px, var(--page-line) 30px, var(--page-line) 31px)",
-      backgroundPosition: "0 18px",
-    };
-  }
-  if (paperStyle === "dotgrid") {
-    return {
-      backgroundColor: "var(--page-bg)",
-      backgroundImage: "radial-gradient(var(--page-dot) 1px, transparent 1px)",
-      backgroundSize: "20px 20px",
-    };
-  }
-  return {
-    backgroundColor: "var(--page-bg)",
-  };
-}
-
-function pageFontFamily(fontStyle: DiaryBook["fontStyle"]): string {
-  if (fontStyle === "sans") return "var(--sans)";
-  if (fontStyle === "mono") {
-    return 'ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace';
-  }
-  return "var(--serif)";
-}
 
 export function FlipBookReader({
   book,
@@ -529,9 +506,11 @@ export function FlipBookReader({
     .join(", ");
 
   const currentSpread = spreads[safeSpreadIndex];
-  const paperCss = paperPatternStyle(book.paperStyle);
+  const paperCss = useMemo(() => getBookPaperCss(book), [book]);
+  const pageVars = useMemo(() => getBookPageStyleVars(book), [book]);
   const framedInner = book.paperStyle === "framed";
-  const fontCss = pageFontFamily(book.fontStyle);
+  const fontCss = getBookFontCss(book.fontStyle);
+  const pageAccent = getPageAccentColor(book);
 
   // Determine what sits underneath during active 3D flip (Desktop)
   const baseLeftContent =
@@ -628,7 +607,7 @@ export function FlipBookReader({
         <div
           className="pointer-events-none absolute top-0 right-10 z-30 hidden sm:block h-10 w-3.5 shadow-sm transition-opacity duration-200"
           style={{
-            backgroundColor: book.accent,
+            backgroundColor: pageAccent,
             clipPath: "polygon(0 0, 100% 0, 100% 100%, 50% 76%, 0 100%)",
             opacity: coverDone ? 1 : Math.max(0, (coverProgress - 0.55) / 0.35),
           }}
@@ -653,6 +632,7 @@ export function FlipBookReader({
               fontFamily: fontCss,
               color: "var(--page-ink)",
               touchAction: "pan-y",
+              ...pageVars,
             }}
           >
             <div className="relative h-[500px] sm:h-[540px] w-full overflow-hidden rounded-lg ring-1 ring-black/15">
@@ -786,6 +766,7 @@ export function FlipBookReader({
               fontFamily: fontCss,
               color: "var(--page-ink)",
               touchAction: "pan-y",
+              ...pageVars,
             }}
           >
             {/* Stationary Spread Base — exact invariant height & 50/50 split */}
@@ -948,8 +929,8 @@ export function FlipBookReader({
                   <div
                     className="flex h-full w-full flex-col justify-between border p-8"
                     style={{
-                      backgroundColor: "var(--page-bg)",
-                      borderColor: book.accent,
+                      backgroundColor: paperCss.backgroundColor,
+                      borderColor: pageAccent,
                     }}
                   >
                     <span
