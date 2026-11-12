@@ -70,47 +70,61 @@ function autoContrastInk(hex: string): string {
 }
 
 const CLOTH_PRESETS: ClothPreset[] = [
-  // Light, soft & minimal editorial palettes (first so changing colors is instant)
-  { name: "Ecru Tangerine", group: "soft", cover: "#F3ECE0", secondary: "#D9C3A5", accent: "#F26A1B", ink: "#1E1A16" },
-  { name: "Matcha Cream", group: "soft", cover: "#E4ECDF", secondary: "#C3D4BA", accent: "#3F7D58", ink: "#1E2E24" },
-  { name: "Skyline Mist", group: "soft", cover: "#DCE8F5", secondary: "#B4CCE3", accent: "#2563EB", ink: "#19263B" },
-  { name: "Lilac Porcelain", group: "soft", cover: "#EAE3F5", secondary: "#CEC0E6", accent: "#7C3AED", ink: "#261E38" },
-  { name: "Peach Linen", group: "soft", cover: "#F6E5D8", secondary: "#E4C2AA", accent: "#E05A2B", ink: "#362016" },
-  { name: "Oat & Cobalt", group: "soft", cover: "#F1EBE0", secondary: "#D7CBB8", accent: "#1D4ED8", ink: "#1F232B" },
-  { name: "Seafoam Glass", group: "soft", cover: "#D8ECEA", secondary: "#B0D5D1", accent: "#0F766E", ink: "#14302E" },
-  { name: "Buttercream", group: "soft", cover: "#F5ECCD", secondary: "#E2CF98", accent: "#C26D0A", ink: "#2E2411" },
-  { name: "Blush Rosemilk", group: "soft", cover: "#F5DFE4", secondary: "#E3BAC4", accent: "#C81E5A", ink: "#381823" },
-  { name: "Dove & Coral", group: "soft", cover: "#E6E8EC", secondary: "#C6CBD3", accent: "#E14454", ink: "#1E232A" },
-  { name: "Celadon Sage", group: "soft", cover: "#D6E6DD", secondary: "#B2CFC0", accent: "#1E6B52", ink: "#182E25" },
-  { name: "Periwinkle Ice", group: "soft", cover: "#DFE5F7", secondary: "#BCC8EC", accent: "#4338CA", ink: "#1B213D" },
-  { name: "Sand & Berry", group: "soft", cover: "#EFE3D9", secondary: "#D8C0AF", accent: "#9D2B5B", ink: "#301C24" },
-  { name: "Alabaster & Amber", group: "soft", cover: "#ECE9E2", secondary: "#CFC8BA", accent: "#D95F18", ink: "#23201C" },
-  // Bold & vibrant signature studio palettes
-  { name: "Obsidian Violet", group: "bold", cover: "#06070B", secondary: "#C9D2DC", accent: "#8A6BFF", ink: "#C9D2DC" },
-  { name: "Onyx Acid Lime", group: "bold", cover: "#030407", secondary: "#AAB0C4", accent: "#B8F23A", ink: "#AAB0C4" },
-  { name: "Oxblood Volt", group: "bold", cover: "#4A1824", secondary: "#A9A6A1", accent: "#D4FF1A", ink: "#F4EFE9" },
-  { name: "Periwinkle Magenta", group: "bold", cover: "#6A8DD6", secondary: "#F0EDE6", accent: "#E5007E", ink: "#F0EDE6" },
-  { name: "Prussian Solar", group: "bold", cover: "#07518A", secondary: "#FFF0D5", accent: "#F5E500", ink: "#FFF0D5" },
-  { name: "Abyssal Cyan", group: "bold", cover: "#0B1D26", secondary: "#D9E4EC", accent: "#00E5FF", ink: "#EBF3F7" },
-  { name: "Matcha Coral", group: "bold", cover: "#214D3A", secondary: "#E6DFCC", accent: "#FF6B4A", ink: "#F6F1E7" },
-  { name: "Plum Mint", group: "bold", cover: "#311847", secondary: "#D7CEDE", accent: "#3BFFB0", ink: "#F3EDF7" },
-  { name: "Crimson Ice", group: "bold", cover: "#C23B2B", secondary: "#F6ECE0", accent: "#D8FF3D", ink: "#FFF8F2" },
-  { name: "Graphite Amber", group: "bold", cover: "#1B1E26", secondary: "#C5CBD6", accent: "#FFB800", ink: "#E9EDF4" },
+  // Curated light pastels & calm memory-psychology editorial palettes (first so changing colors is instant)
+  { name: "Warm Oat Linen", group: "soft", cover: "#EAE0CE", secondary: "#B86B4B", accent: "#8E4B32", ink: "#261E18" },
+  { name: "Peach Terracotta", group: "soft", cover: "#DFA189", secondary: "#FAF1E6", accent: "#7D3E2B", ink: "#2B1914" },
+  { name: "Matcha Pastel", group: "soft", cover: "#B8C7A8", secondary: "#F2F5EC", accent: "#3E583C", ink: "#1E2B1D" },
+  { name: "Powder Sky Blue", group: "soft", cover: "#9EC0D1", secondary: "#F0F6F9", accent: "#285069", ink: "#162A36" },
+  { name: "Honey Buttercream", group: "soft", cover: "#E6D29E", secondary: "#8F5A38", accent: "#6B3D24", ink: "#292014" },
+  { name: "Dusty Peony Blush", group: "soft", cover: "#DFABB2", secondary: "#FAF0F2", accent: "#7B3040", ink: "#2E151C" },
+  { name: "Cool Pebble Mist", group: "soft", cover: "#D6D8DC", secondary: "#4D5563", accent: "#9E533E", ink: "#1E2229" },
+  { name: "Periwinkle Silk", group: "soft", cover: "#AAB9DF", secondary: "#F6F5FB", accent: "#3A4882", ink: "#1A2140" },
+  { name: "Eucalyptus Sage", group: "soft", cover: "#587D6C", secondary: "#F3EFE5", accent: "#CE935B", ink: "#FAF8F2" },
+  { name: "French Chambray", group: "soft", cover: "#537497", secondary: "#F1ECE3", accent: "#DFAC6F", ink: "#F8F6F0" },
+  { name: "Rosewood Clay", group: "soft", cover: "#8A4F53", secondary: "#F2E9DF", accent: "#E0A47A", ink: "#FAF4EB" },
+  { name: "Heather Plum", group: "soft", cover: "#715F88", secondary: "#F3EFF8", accent: "#E3B878", ink: "#FAF7FC" },
+  // Richer deep linen tones
+  { name: "Nordic Fjord", group: "bold", cover: "#446582", secondary: "#EEF1F5", accent: "#D99F59", ink: "#F6F8FB" },
+  { name: "Espresso Bark", group: "bold", cover: "#3A322C", secondary: "#EFE6D8", accent: "#D47E58", ink: "#F7F1E8" },
+  { name: "Moonlight Slate", group: "bold", cover: "#3E434C", secondary: "#E6E8ED", accent: "#B89EE0", ink: "#F3F5F8" },
+  { name: "Sea-Glass Lagoon", group: "bold", cover: "#2D6F6D", secondary: "#EAF3F1", accent: "#DCC684", ink: "#F2FAF8" },
+  { name: "Juniper Pine", group: "bold", cover: "#466858", secondary: "#EDF2ED", accent: "#CFA060", ink: "#F5F9F6" },
+  { name: "Velvet Fig Plum", group: "bold", cover: "#6B394F", secondary: "#F4ECEF", accent: "#E0AE79", ink: "#FAF4F6" },
+  { name: "Burnt Sienna", group: "bold", cover: "#9F5935", secondary: "#F6EFE6", accent: "#E0B46E", ink: "#FFF9F2" },
 ];
 
 const COVER_TEMPLATES: Array<{ id: CoverTemplate; label: string; hint: string }> = [
-  { id: "clean-minimal", label: "Clean Minimal", hint: "Quiet cloth & centered serif" },
-  { id: "bordered-plaque", label: "Framed Plaque", hint: "Inset cream label plate" },
+  { id: "side-spine-band", label: "Quarter Binding", hint: "Left cloth band & rule" },
+  { id: "bordered-plaque", label: "Framed Plaque", hint: "Centered paper label plate" },
+  { id: "clean-minimal", label: "Clean Minimal", hint: "Thin inset frame & mark" },
+  { id: "arch-frame", label: "Arch Frame", hint: "Soft museum archway" },
+  { id: "top-header-band", label: "Header Cloth", hint: "Upper band title block" },
+  { id: "sun-disc", label: "Sun Disc", hint: "Centered pastel circle" },
+  { id: "horizon-rule", label: "Horizon Rules", hint: "Three quiet tapered lines" },
   { id: "split-band", label: "Two-Tone Band", hint: "Contrast lower band" },
-  { id: "classic", label: "Classic Foil", hint: "Engraved geometric motif" },
+  { id: "double-inset", label: "Double Frame", hint: "Nested mitered rectangle" },
+  { id: "oval-medallion", label: "Oval Medallion", hint: "Heirloom elliptical plaque" },
+  { id: "corner-brackets", label: "Corner Crop", hint: "Minimal corner brackets" },
+  { id: "window-pane", label: "Window Pane", hint: "2×2 clean panel window" },
+  { id: "quarter-block", label: "Corner Block", hint: "Lower quadrant + hairline" },
+  { id: "bookmark-ribbon", label: "Silk Ribbon", hint: "Notched top bookmark strip" },
+  { id: "diagonal-sash", label: "Diagonal Fold", hint: "Clean corner diagonal" },
+  { id: "botanical-stem", label: "Botanical Stem", hint: "Minimalist pressed sprig" },
+  { id: "catalog-ticket", label: "Library Ticket", hint: "Ruled index label card" },
+  { id: "classic", label: "Classic Seal", hint: "Foil concentric motif" },
+  { id: "stepped-plinth", label: "Stepped Plinth", hint: "Layered bottom terraces" },
   { id: "photo-card", label: "Photo Cover", hint: "Full-bleed custom image" },
 ];
 
 const SPINE_STYLES: Array<{ id: SpineStyle; label: string }> = [
+  { id: "top-cap", label: "Top Cap" },
   { id: "banded", label: "Banded" },
-  { id: "classic", label: "Edge Stripe" },
+  { id: "twin-rings", label: "Twin Rings" },
   { id: "bordered", label: "Bordered" },
+  { id: "classic", label: "Edge Stripe" },
+  { id: "bottom-foot", label: "Bottom Foot" },
   { id: "minimal", label: "Clean Cloth" },
+  { id: "center-pill", label: "Center Pill" },
 ];
 
 const PAPER_STYLES: Array<{ id: PaperStyle; label: string; hint: string }> = [
@@ -517,8 +531,8 @@ export function VolumeEditorModal({
                     {(
                       [
                         { id: "soft", label: "Light & Soft" },
-                        { id: "bold", label: "Bold & Rich" },
-                        { id: "all", label: "All 24" },
+                        { id: "bold", label: "Rich Tones" },
+                        { id: "all", label: "All" },
                       ] as const
                     ).map((grp) => (
                       <button
@@ -650,7 +664,7 @@ export function VolumeEditorModal({
                 <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
                   Outer Cover Style
                 </label>
-                <div className="grid gap-2 sm:grid-cols-3">
+                <div className="grid max-h-48 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-3">
                   {COVER_TEMPLATES.map((tpl) => {
                     const active = coverTemplate === tpl.id;
                     return (
@@ -748,13 +762,13 @@ export function VolumeEditorModal({
                   <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
                     Shelf Spine Style
                   </label>
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                     {SPINE_STYLES.map((sp) => (
                       <button
                         key={sp.id}
                         type="button"
                         onClick={() => setSpineStyle(sp.id)}
-                        className={`border px-2.5 py-1.5 text-xs cursor-pointer ${
+                        className={`border px-2 py-1.5 text-[11px] cursor-pointer ${
                           spineStyle === sp.id
                             ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--paper-light)]"
                             : "border-[var(--hairline)] bg-[var(--paper)]"

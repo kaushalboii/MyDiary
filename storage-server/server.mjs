@@ -25,7 +25,7 @@ function loadDefaultBooks() {
   return JSON.parse(fs.readFileSync(DEFAULT_BOOKS_PATH, "utf8"));
 }
 
-const CURRENT_SCHEMA_VERSION = 7;
+const CURRENT_SCHEMA_VERSION = 9;
 
 const LEGACY_COVER_HEXES = new Set([
   // Early template seeds:
@@ -48,10 +48,20 @@ const LEGACY_COVER_HEXES = new Set([
   "#568049", "#237887", "#262b3d", "#6b4573", "#c97a2b", "#347ea3",
   "#b54865", "#e0a938", "#3f8f7b", "#6e2c40", "#2d5e43", "#7d4a6b",
   "#2f4b7c",
-  // v5/v6 dark slots #7-#19 replaced by Light & Soft Minimal in v7:
+  // v5/v6 dark slots #7-#19:
   "#214d3a", "#0b1d26", "#161822", "#311847", "#eae4d7", "#0b4f54",
   "#1b1e26", "#c23b2b", "#dedcd6", "#11224e", "#0f2d24", "#5e1b3a",
   "#1e1b18",
+  // v7 shelf:
+  "#06070b", "#f3ece0", "#030407", "#07518a", "#6a8dd6", "#4a1824",
+  "#e4ecdf", "#dce8f5", "#eae3f5", "#f6e5d8", "#f1ebe0", "#d8ecea",
+  "#f5eccd", "#f5dfe4", "#e6e8ec", "#d6e6dd", "#dfe5f7", "#efe3d9",
+  "#ece9e2",
+  // v8 pale washed pastel draft replaced by v9 rich editorial bookcloth collection:
+  "#efe8dc", "#dce6dc", "#dae5f2", "#e4dfed", "#f4e3d7", "#f3ebd1",
+  "#e3ece4", "#d9e7ec", "#e8e2f0", "#f3e1e4", "#ece5d8", "#d6eae7",
+  "#efe8d2", "#f5e2e6", "#e5e7eb", "#d8e7dd", "#dfe4f5", "#efe1d8",
+  "#edeae3",
 ]);
 
 function isLegacyDefaultShelf(books) {
@@ -231,9 +241,33 @@ const COVER_TEMPLATES = new Set([
   "clean-minimal",
   "bordered-plaque",
   "split-band",
+  "side-spine-band",
+  "arch-frame",
+  "top-header-band",
+  "sun-disc",
+  "horizon-rule",
+  "double-inset",
+  "oval-medallion",
+  "corner-brackets",
+  "window-pane",
+  "quarter-block",
+  "bookmark-ribbon",
+  "diagonal-sash",
+  "botanical-stem",
+  "catalog-ticket",
+  "stepped-plinth",
   "photo-card",
 ]);
-const SPINE_STYLES = new Set(["classic", "banded", "minimal", "bordered"]);
+const SPINE_STYLES = new Set([
+  "classic",
+  "banded",
+  "minimal",
+  "bordered",
+  "top-cap",
+  "bottom-foot",
+  "center-pill",
+  "twin-rings",
+]);
 const PAPER_STYLES = new Set(["cream", "lined", "dotgrid", "framed"]);
 const FONT_STYLES = new Set(["serif", "sans", "mono"]);
 
@@ -456,13 +490,13 @@ app.post("/api/books", requireAuth, async (req, res) => {
       quote: "",
       quoteBy: "",
       format: "Soft Linen Hardcover",
-      cover: "#DCE8F5",
-      secondary: "#B4CCE3",
-      accent: "#2563EB",
-      ink: "#19263B",
+      cover: "#EAE0CE",
+      secondary: "#B86B4B",
+      accent: "#8E4B32",
+      ink: "#261E18",
       motif: "lattice",
-      coverTemplate: "split-band",
-      spineStyle: "banded",
+      coverTemplate: "clean-minimal",
+      spineStyle: "top-cap",
       paperStyle: "cream",
       fontStyle: "serif",
       height: 2.12,

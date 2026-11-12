@@ -180,8 +180,8 @@ async function deleteFromStore(storeName: "books" | "memories", id: string): Pro
   });
 }
 
-const OFFLINE_BOOK_ORDER_KEY = "mydiary_offline_book_order_v7";
-const SERVER_BOOKS_CACHE_KEY = "mydiary_server_books_cache_v7";
+const OFFLINE_BOOK_ORDER_KEY = "mydiary_offline_book_order_v9";
+const SERVER_BOOKS_CACHE_KEY = "mydiary_server_books_cache_v9";
 
 const LEGACY_OFFLINE_COVERS = new Set([
   // Early template seeds:
@@ -204,10 +204,20 @@ const LEGACY_OFFLINE_COVERS = new Set([
   "#568049", "#237887", "#262b3d", "#6b4573", "#c97a2b", "#347ea3",
   "#b54865", "#e0a938", "#3f8f7b", "#6e2c40", "#2d5e43", "#7d4a6b",
   "#2f4b7c",
-  // v5/v6 dark slots #7-#19 replaced by Light & Soft Minimal in v7:
+  // v5/v6 dark slots #7-#19:
   "#214d3a", "#0b1d26", "#161822", "#311847", "#eae4d7", "#0b4f54",
   "#1b1e26", "#c23b2b", "#dedcd6", "#11224e", "#0f2d24", "#5e1b3a",
   "#1e1b18",
+  // v7 shelf:
+  "#06070b", "#f3ece0", "#030407", "#07518a", "#6a8dd6", "#4a1824",
+  "#e4ecdf", "#dce8f5", "#eae3f5", "#f6e5d8", "#f1ebe0", "#d8ecea",
+  "#f5eccd", "#f5dfe4", "#e6e8ec", "#d6e6dd", "#dfe5f7", "#efe3d9",
+  "#ece9e2",
+  // v8 pale washed pastel draft replaced by v9 rich editorial bookcloth collection:
+  "#efe8dc", "#dce6dc", "#dae5f2", "#e4dfed", "#f4e3d7", "#f3ebd1",
+  "#e3ece4", "#d9e7ec", "#e8e2f0", "#f3e1e4", "#ece5d8", "#d6eae7",
+  "#efe8d2", "#f5e2e6", "#e5e7eb", "#d8e7dd", "#dfe4f5", "#efe1d8",
+  "#edeae3",
 ]);
 
 export function loadCachedServerBooks(): DiaryBook[] | null {
@@ -423,6 +433,26 @@ export async function checkStorageHealth(
   return serverFetch<StorageHealth>("/api/health", {}, customConfig);
 }
 
+function upgradeLegacyServerBooks(books: DiaryBook[]): DiaryBook[] {
+  const byId = new Map(defaultBooks.map((b) => [b.id, b]));
+  return books.map((b) => {
+    const nextDefault = byId.get(b.id);
+    if (nextDefault && LEGACY_OFFLINE_COVERS.has(String(b.cover || "").toLowerCase())) {
+      return {
+        ...b,
+        cover: nextDefault.cover,
+        secondary: nextDefault.secondary,
+        accent: nextDefault.accent,
+        ink: nextDefault.ink,
+        coverTemplate: nextDefault.coverTemplate,
+        spineStyle: nextDefault.spineStyle,
+        motif: nextDefault.motif,
+      };
+    }
+    return b;
+  });
+}
+
 export async function fetchBooks(): Promise<{
   books: DiaryBook[];
   mode: StorageMode;
@@ -434,9 +464,13 @@ export async function fetchBooks(): Promise<{
       serverFetch<{ books: DiaryBook[] }>("/api/books", {}, config),
       checkStorageHealth(config).catch(() => null),
     ]);
-    saveCachedServerBooks(booksData.books);
+    const shouldUpgradeLegacy = (health?.schemaVersion ?? 0) < 9;
+    const books = shouldUpgradeLegacy
+      ? upgradeLegacyServerBooks(booksData.books)
+      : booksData.books;
+    saveCachedServerBooks(books);
     return {
-      books: booksData.books,
+      books,
       mode: "server",
       hostname: health?.hostname,
     };
@@ -491,13 +525,13 @@ export async function createBook(
       quote: input.quote?.trim() || "",
       quoteBy: input.quoteBy?.trim() || "",
       format: input.format || "Soft Linen Hardcover",
-      cover: input.cover || "#DCE8F5",
-      secondary: input.secondary || "#B4CCE3",
-      accent: input.accent || "#2563EB",
-      ink: input.ink || "#19263B",
+      cover: input.cover || "#EAE0CE",
+      secondary: input.secondary || "#B86B4B",
+      accent: input.accent || "#8E4B32",
+      ink: input.ink || "#261E18",
       motif: input.motif || "lattice",
-      coverTemplate: input.coverTemplate || "split-band",
-      spineStyle: input.spineStyle || "banded",
+      coverTemplate: input.coverTemplate || "clean-minimal",
+      spineStyle: input.spineStyle || "top-cap",
       paperStyle: input.paperStyle || "cream",
       fontStyle: input.fontStyle || "serif",
       height: input.height ?? 2.12,

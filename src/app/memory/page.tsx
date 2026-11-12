@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { BookMotifPreview } from "@/components/BookMotifPreview";
+import { BookOpeningReveal } from "@/components/BookOpeningReveal";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { defaultBooks } from "@/lib/default-books";
 import {
@@ -48,6 +49,7 @@ function MemoryAlbumContent() {
       return;
     }
     setLoading(true);
+    const startedAt = Date.now();
     try {
       const [booksRes, memRes] = await Promise.all([
         fetchBooks(),
@@ -55,6 +57,10 @@ function MemoryAlbumContent() {
       ]);
       setBooks(booksRes.books);
       setMemory(memRes.memory);
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < 560) {
+        await new Promise((resolve) => setTimeout(resolve, 560 - elapsed));
+      }
     } finally {
       setLoading(false);
     }
@@ -103,52 +109,61 @@ function MemoryAlbumContent() {
   return (
     <div className="diary-page">
       <header className="diary-topbar">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <Link
-            href={`/book?id=${encodeURIComponent(book.id)}`}
-            className="header-pill-btn"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            <span>{book.shortTitle}</span>
-          </Link>
-          <Link
-            href={`/?book=${encodeURIComponent(book.id)}`}
-            className="header-pill-btn"
-          >
-            <span>3D Shelf</span>
-          </Link>
+        <div className="wordmark hidden sm:flex">
+          <span>MY DIARY</span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="header-controls-cluster">
+          <nav className="top-dock" aria-label="Memory navigation">
+            <Link
+              href={`/book?id=${encodeURIComponent(book.id)}`}
+              className="top-dock__btn top-dock__btn--soft"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="max-w-[120px] truncate">{book.shortTitle}</span>
+            </Link>
+
+            <Link
+              href={`/?book=${encodeURIComponent(book.id)}`}
+              className="top-dock__btn"
+            >
+              <span>Shelf</span>
+            </Link>
+
+            {memory && (
+              <>
+                <span className="top-dock__divider" aria-hidden="true" />
+                <Link
+                  href={`/compose?bookId=${encodeURIComponent(book.id)}&edit=${encodeURIComponent(memory.id)}`}
+                  className="top-dock__btn"
+                >
+                  <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span className="hidden sm:inline">Edit Album</span>
+                  <span className="sm:hidden">Edit</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="top-dock__btn top-dock__btn--danger"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>{deleting ? "Removing..." : "Delete"}</span>
+                </button>
+              </>
+            )}
+          </nav>
+
           <ThemeToggle />
-          {memory && (
-            <>
-              <Link
-                href={`/compose?bookId=${encodeURIComponent(book.id)}&edit=${encodeURIComponent(memory.id)}`}
-                className="header-pill-btn"
-              >
-                <Edit3 className="h-3.5 w-3.5" />
-                <span>Edit Album</span>
-              </Link>
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={deleting}
-                className="header-pill-btn text-[var(--accent)] cursor-pointer"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                <span>{deleting ? "Removing..." : "Delete"}</span>
-              </button>
-            </>
-          )}
         </div>
       </header>
 
       <main className="diary-container">
         {loading ? (
-          <div className="stationery-card p-12 text-center font-serif text-lg italic text-[var(--ink-soft)]">
-            Opening your memory album...
-          </div>
+          <BookOpeningReveal
+            book={book}
+            statusLabel="Opening your memory album..."
+          />
         ) : !memory ? (
           <div className="stationery-card p-12 text-center">
             <h1

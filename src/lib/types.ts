@@ -24,9 +24,32 @@ export type CoverTemplate =
   | "clean-minimal"
   | "bordered-plaque"
   | "split-band"
+  | "side-spine-band"
+  | "arch-frame"
+  | "top-header-band"
+  | "sun-disc"
+  | "horizon-rule"
+  | "double-inset"
+  | "oval-medallion"
+  | "corner-brackets"
+  | "window-pane"
+  | "quarter-block"
+  | "bookmark-ribbon"
+  | "diagonal-sash"
+  | "botanical-stem"
+  | "catalog-ticket"
+  | "stepped-plinth"
   | "photo-card";
 
-export type SpineStyle = "classic" | "banded" | "minimal" | "bordered";
+export type SpineStyle =
+  | "classic"
+  | "banded"
+  | "minimal"
+  | "bordered"
+  | "top-cap"
+  | "bottom-foot"
+  | "center-pill"
+  | "twin-rings";
 
 export type PaperStyle = "cream" | "lined" | "dotgrid" | "framed";
 
@@ -112,6 +135,7 @@ export type StorageConfig = {
 export type StorageHealth = {
   ok: boolean;
   service: string;
+  schemaVersion?: number;
   hostname: string;
   platform: string;
   uptimeSeconds: number;

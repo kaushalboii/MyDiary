@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, Feather, Images, PenLine, Plus, SlidersHorizontal } from "lucide-react";
+import { ArrowUpRight, BookOpen, Feather, Images, PenLine, Plus, SlidersHorizontal } from "lucide-react";
 import { defaultBooks } from "@/lib/default-books";
 import {
   createBook,
@@ -297,13 +297,13 @@ function ShelfExperienceInner() {
     quote: "",
     quoteBy: "",
     format: "Soft Linen Hardcover",
-    cover: "#DCE8F5",
-    secondary: "#B4CCE3",
-    accent: "#2563EB",
-    ink: "#19263B",
+    cover: "#EAE0CE",
+    secondary: "#B86B4B",
+    accent: "#8E4B32",
+    ink: "#261E18",
     motif: "lattice",
-    coverTemplate: "split-band",
-    spineStyle: "banded",
+    coverTemplate: "clean-minimal",
+    spineStyle: "top-cap",
     paperStyle: "cream",
     fontStyle: "serif",
     height: 2.12,
@@ -332,29 +332,75 @@ function ShelfExperienceInner() {
           aria-label={`${siteConfig.wordmark}, ${siteConfig.collectionName}`}
         >
           <span>{siteConfig.wordmark}</span>
-          <span className="wordmark__divider" />
-          <span>{books.length} VOLUMES</span>
+          <span className="wordmark__divider hidden sm:block" />
+          <span className="hidden sm:inline">{books.length} VOLUMES</span>
         </div>
 
-        <div className="header-actions">
+        <div className="header-controls-cluster">
+          <nav className="top-dock" aria-label="Diary shelf controls">
+            <Link
+              href={`/book?id=${encodeURIComponent(activeBook.id)}`}
+              data-testid="open-active"
+              className="top-dock__btn top-dock__btn--soft"
+              aria-label={`Open ${activeBook.title}`}
+            >
+              <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Open</span>
+            </Link>
+
+            <button
+              type="button"
+              className="top-dock__btn"
+              data-testid="inspect-active"
+              disabled={isFocused}
+              onClick={() => engineRef.current?.focusBook(activeIndex)}
+              aria-label={`Inspect ${activeBook.title}`}
+              title={`Inspect ${activeBook.title}`}
+            >
+              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Inspect</span>
+            </button>
+
+            <button
+              type="button"
+              className="top-dock__btn"
+              data-testid="customize-active"
+              disabled={isFocused}
+              onClick={() => setEditorState({ mode: "edit", book: activeBook })}
+              aria-label={`Customize ${activeBook.title}`}
+              title={`Customize ${activeBook.title}`}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="hidden md:inline">Customize</span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="add-book"
+              onClick={() => setEditorState({ mode: "create" })}
+              className="top-dock__btn"
+              aria-label="Add Book"
+              title="Add Book"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Add Book</span>
+            </button>
+
+            <span className="top-dock__divider" aria-hidden="true" />
+
+            <Link
+              href={`/compose?bookId=${encodeURIComponent(activeBook.id)}`}
+              data-testid="write-memory"
+              className="top-dock__btn top-dock__btn--primary"
+              aria-label="Write Memory"
+            >
+              <PenLine className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Write Memory</span>
+              <span className="sm:hidden">Write</span>
+            </Link>
+          </nav>
+
           <ThemeToggle />
-
-          <button
-            type="button"
-            onClick={() => setEditorState({ mode: "create" })}
-            className="header-pill-btn cursor-pointer"
-          >
-            <Plus className="h-3 w-3" />
-            <span>Add Book</span>
-          </button>
-
-          <Link
-            href={`/compose?bookId=${encodeURIComponent(activeBook.id)}`}
-            className="header-pill-btn header-pill-btn--primary"
-          >
-            <PenLine className="h-3 w-3" />
-            <span>Write Memory</span>
-          </Link>
         </div>
       </header>
 
@@ -381,36 +427,6 @@ function ShelfExperienceInner() {
             ? ` · ${activeBook.photoCount} photos`
             : ""}
         </p>
-        <div className="browse-caption__actions">
-          <button
-            type="button"
-            className="inspect-button"
-            data-testid="inspect-active"
-            disabled={isFocused}
-            onClick={() => engineRef.current?.focusBook(activeIndex)}
-            aria-label={`Inspect ${activeBook.title}`}
-          >
-            <span>Inspect book</span>
-            <span aria-hidden="true">↗</span>
-          </button>
-          <Link
-            href={`/book?id=${encodeURIComponent(activeBook.id)}`}
-            className="inspect-button inspect-button--accent"
-          >
-            <span>Open book</span>
-            <span aria-hidden="true">→</span>
-          </Link>
-          <button
-            type="button"
-            className="inspect-button"
-            disabled={isFocused}
-            onClick={() => setEditorState({ mode: "edit", book: activeBook })}
-            aria-label={`Customize ${activeBook.title}`}
-          >
-            <SlidersHorizontal className="h-3 w-3" />
-            <span>Customize</span>
-          </button>
-        </div>
       </section>
 
       <button
@@ -501,7 +517,7 @@ function ShelfExperienceInner() {
                   onClick={() =>
                     setEditorState({ mode: "edit", book: selectedBook })
                   }
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-3 py-1 text-[9px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
+                  className="inline-flex min-h-[28px] items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-3.5 py-1.5 text-[9px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
                 >
                   <SlidersHorizontal className="h-3 w-3" />
                   <span>Customize Book</span>
@@ -626,12 +642,13 @@ function ShelfExperienceInner() {
       </aside>
 
       <div className="loading-screen" aria-hidden={ready}>
-        <div className="loading-screen__mark">
-          <span />
-          <span />
-          <span />
+        <div className="shelf-book-loader" aria-hidden="true">
+          <div className="shelf-book-loader__back" />
+          <div className="shelf-book-loader__page" />
+          <div className="shelf-book-loader__page shelf-book-loader__page--b" />
+          <div className="shelf-book-loader__cover" />
         </div>
-        <p>Assembling {books.length} memory volumes</p>
+        <p>Opening {books.length} memory volumes</p>
       </div>
 
       {editorState && (

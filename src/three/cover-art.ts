@@ -103,7 +103,7 @@ function drawMotif(
   ctx.save();
   ctx.strokeStyle = book.accent;
   ctx.fillStyle = book.accent;
-  ctx.globalAlpha = 0.48;
+  ctx.globalAlpha = 0.32;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
@@ -622,15 +622,38 @@ function contrastInkForHex(hex: string): string {
   return luma > 0.62 ? "#2e2a25" : "#f9f6ef";
 }
 
+type TypographyOptions = {
+  decalOnly?: boolean;
+  centered?: boolean;
+  footerColor?: string;
+  inkColor?: string;
+  titleY?: number;
+  imprintY?: number;
+  leftX?: number;
+  maxWidth?: number;
+  hideFooter?: boolean;
+};
+
 function drawCoverTypography(
   ctx: CanvasRenderingContext2D,
   book: DiaryBook,
   width: number,
   height: number,
-  decalOnly = false,
-  centered = false,
-  footerColor?: string,
+  decalOrOpts: boolean | TypographyOptions = false,
+  centeredArg = false,
+  footerColorArg?: string,
 ) {
+  const opts: TypographyOptions =
+    typeof decalOrOpts === "object"
+      ? decalOrOpts
+      : {
+          decalOnly: decalOrOpts,
+          centered: centeredArg,
+          footerColor: footerColorArg,
+        };
+
+  const decalOnly = Boolean(opts.decalOnly);
+  const centered = Boolean(opts.centered);
   const { serif, sans } = getFontStacks();
   const imprint =
     book.coverImprint !== undefined ? book.coverImprint : siteConfig.coverImprint;
@@ -638,26 +661,31 @@ function drawCoverTypography(
     book.coverFooter !== undefined ? book.coverFooter.trim() : "";
 
   ctx.save();
-  ctx.fillStyle = book.ink;
+  ctx.fillStyle = opts.inkColor || book.ink;
   ctx.textBaseline = "top";
   if (centered) {
     ctx.textAlign = "center";
   }
 
-  const textX = centered ? width * 0.5 : 82;
-  const titleX = centered ? width * 0.5 : 78;
+  const leftPad = opts.leftX ?? 82;
+  const textX = centered ? width * 0.5 : leftPad;
+  const titleX = centered ? width * 0.5 : leftPad - 4;
+  const maxTextWidth = opts.maxWidth ?? (centered ? width - 200 : width - leftPad - 76);
+  const imprintY = opts.imprintY ?? (centered ? 170 : 74);
 
   if (imprint) {
     ctx.letterSpacing = "7px";
-    ctx.font = `600 24px ${sans}`;
-    ctx.fillText(imprint, textX, centered ? 210 : 74);
+    ctx.font = `600 22px ${sans}`;
+    ctx.globalAlpha = 0.72;
+    ctx.fillText(imprint, textX, imprintY);
+    ctx.globalAlpha = 1;
   }
 
   ctx.letterSpacing = "0px";
   const titleSize =
-    book.title.length > 34 ? 72 : book.title.length > 20 ? 86 : 104;
+    book.title.length > 34 ? 68 : book.title.length > 20 ? 82 : 98;
   ctx.font = `520 ${titleSize}px ${serif}`;
-  const titleY = centered ? 310 : imprint ? 142 : 96;
+  const titleY = opts.titleY ?? (centered ? imprintY + 72 : imprint ? 138 : 94);
 
   let titleLines = 1;
   if (centered) {
@@ -666,7 +694,7 @@ function drawCoverTypography(
     let current = "";
     for (const word of words) {
       const test = current ? `${current} ${word}` : word;
-      if (ctx.measureText(test).width > width - 200 && current) {
+      if (ctx.measureText(test).width > maxTextWidth && current) {
         lines.push(current);
         current = word;
       } else {
@@ -685,27 +713,29 @@ function drawCoverTypography(
       book.title,
       titleX,
       titleY,
-      width - 156,
+      maxTextWidth,
       titleSize * 0.92,
       5,
     );
   }
 
   if (book.subtitle) {
-    ctx.font = `520 30px ${sans}`;
+    ctx.font = `500 28px ${sans}`;
+    ctx.globalAlpha = 0.78;
     ctx.letterSpacing = "0.2px";
     ctx.fillText(
       book.subtitle,
       textX,
       Math.max(
-        centered ? titleY + titleLines * titleSize * 0.96 + 38 : 320,
-        titleY + titleLines * titleSize * 0.96 + 34,
+        centered ? titleY + titleLines * titleSize * 0.96 + 34 : titleY + 150,
+        titleY + titleLines * titleSize * 0.96 + 30,
       ),
     );
+    ctx.globalAlpha = 1;
   }
 
-  if (!decalOnly) {
-    ctx.fillStyle = footerColor || book.ink;
+  if (!decalOnly && !opts.hideFooter) {
+    ctx.fillStyle = opts.footerColor || opts.inkColor || book.ink;
     ctx.globalAlpha = 0.72;
     ctx.font = `500 20px ${sans}`;
     ctx.letterSpacing = "3px";
@@ -717,10 +747,61 @@ function drawCoverTypography(
         ? `${book.memoryCount} ${book.memoryCount === 1 ? "MEMORY" : "MEMORIES"} · ${book.photoCount || 0} PHOTOS`
         : fallbackFooter;
     if (footerLabel) {
-      ctx.fillText(footerLabel, textX, height - 92);
+      ctx.fillText(footerLabel, textX, height - 88);
     }
   }
   ctx.restore();
+}
+
+function drawCoverFooterLabel(
+  ctx: CanvasRenderingContext2D,
+  book: DiaryBook,
+  width: number,
+  height: number,
+  color?: string,
+) {
+  const { sans } = getFontStacks();
+  const customFooter = book.coverFooter !== undefined ? book.coverFooter.trim() : "";
+  const footer =
+    customFooter ||
+    (book.memoryCount && book.memoryCount > 0
+      ? `${book.memoryCount} ${book.memoryCount === 1 ? "MEMORY" : "MEMORIES"}`
+      : "");
+  if (!footer) return;
+  ctx.save();
+  ctx.fillStyle = color || book.ink;
+  ctx.globalAlpha = 0.74;
+  ctx.font = `500 20px ${sans}`;
+  ctx.letterSpacing = "3px";
+  ctx.textAlign = "center";
+  ctx.fillText(footer, width * 0.5, height - 88);
+  ctx.restore();
+}
+
+function clipImageToRect(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+  borderColor?: string,
+) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, radius);
+  ctx.clip();
+  drawFittedImage(ctx, image, x, y, w, h);
+  ctx.restore();
+  if (borderColor) {
+    ctx.save();
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 4;
+    roundedRect(ctx, x, y, w, h, radius);
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 export function createFrontCover(
@@ -738,6 +819,8 @@ export function createFrontCover(
 
   const template = book.coverTemplate || (customCoverImg ? "photo-card" : "classic");
   const showText = book.showCoverTextWithImage ?? true;
+  const secondary = book.secondary || book.accent;
+  const { serif, sans } = getFontStacks();
 
   // Base cloth background
   ctx.fillStyle = book.cover;
@@ -760,28 +843,16 @@ export function createFrontCover(
     }
     addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
     if (showText) {
-      drawCoverTypography(ctx, book, logicalWidth, logicalHeight, false, false);
+      drawCoverTypography(ctx, book, logicalWidth, logicalHeight, { decalOnly: false });
     }
     return canvas;
   }
 
   if (template === "classic") {
-    const secondary = book.secondary || book.accent;
     drawMotif(ctx, book, logicalWidth, logicalHeight);
     addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
     if (customCoverImg) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.roundRect(140, 560, logicalWidth - 280, 680, 12);
-      ctx.clip();
-      drawFittedImage(ctx, customCoverImg, 140, 560, logicalWidth - 280, 680);
-      ctx.restore();
-      ctx.save();
-      ctx.strokeStyle = book.accent;
-      ctx.lineWidth = 6;
-      roundedRect(ctx, 140, 560, logicalWidth - 280, 680, 12);
-      ctx.stroke();
-      ctx.restore();
+      clipImageToRect(ctx, customCoverImg, 140, 560, logicalWidth - 280, 680, 12, book.accent);
     }
     ctx.save();
     ctx.globalAlpha = 0.55;
@@ -789,15 +860,14 @@ export function createFrontCover(
     ctx.lineWidth = 4;
     ctx.strokeRect(22, 22, logicalWidth - 44, logicalHeight - 44);
     ctx.restore();
-    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, false, false);
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, { decalOnly: false });
     return canvas;
   }
 
   if (template === "clean-minimal") {
-    const secondary = book.secondary || book.ink;
     addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
     ctx.save();
-    ctx.globalAlpha = 0.45;
+    ctx.globalAlpha = 0.48;
     ctx.strokeStyle = secondary;
     ctx.lineWidth = 3;
     roundedRect(ctx, 56, 56, logicalWidth - 112, logicalHeight - 112, 12);
@@ -810,12 +880,7 @@ export function createFrontCover(
     ctx.restore();
 
     if (customCoverImg) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.roundRect(212, 680, 600, 440, 14);
-      ctx.clip();
-      drawFittedImage(ctx, customCoverImg, 212, 680, 600, 440);
-      ctx.restore();
+      clipImageToRect(ctx, customCoverImg, 212, 680, 600, 440, 14);
     } else {
       ctx.save();
       ctx.strokeStyle = book.accent;
@@ -832,12 +897,15 @@ export function createFrontCover(
       ctx.restore();
     }
 
-    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, false, true);
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      centered: true,
+      imprintY: 210,
+      titleY: 310,
+    });
     return canvas;
   }
 
   if (template === "bordered-plaque") {
-    const { serif, sans } = getFontStacks();
     const plaqueBg = book.secondary || "#faf7f0";
     const plaqueInk = contrastInkForHex(plaqueBg);
     addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
@@ -865,78 +933,586 @@ export function createFrontCover(
     ctx.stroke();
     ctx.restore();
 
-    ctx.save();
-    ctx.fillStyle = plaqueInk;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    const imprint =
-      book.coverImprint !== undefined ? book.coverImprint : siteConfig.coverImprint;
-    if (imprint) {
-      ctx.font = `600 22px ${sans}`;
-      ctx.letterSpacing = "6px";
-      ctx.fillText(imprint, logicalWidth * 0.5, plaqueY + 66);
-    }
-    ctx.letterSpacing = "0px";
-    const titleSize = book.title.length > 26 ? 68 : 88;
-    ctx.font = `520 ${titleSize}px ${serif}`;
-    const words = book.title.split(/\s+/);
-    const lines: string[] = [];
-    let line = "";
-    for (const w of words) {
-      const next = line ? `${line} ${w}` : w;
-      if (ctx.measureText(next).width > plaqueW - 110 && line) {
-        lines.push(line);
-        line = w;
-      } else {
-        line = next;
-      }
-    }
-    if (line) lines.push(line);
-    const startY = plaqueY + (imprint ? 150 : 120);
-    lines.slice(0, 4).forEach((entry, idx) => {
-      ctx.fillText(entry, logicalWidth * 0.5, startY + idx * titleSize * 0.96);
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      centered: true,
+      decalOnly: true,
+      inkColor: plaqueInk,
+      imprintY: plaqueY + 64,
+      titleY: plaqueY + (book.coverImprint !== "" ? 140 : 108),
+      maxWidth: plaqueW - 110,
     });
-    if (book.subtitle) {
-      ctx.globalAlpha = 0.78;
-      ctx.font = `500 28px ${sans}`;
-      ctx.fillText(
-        book.subtitle,
-        logicalWidth * 0.5,
-        startY + Math.min(lines.length, 4) * titleSize * 0.96 + 30,
+
+    if (customCoverImg) {
+      clipImageToRect(
+        ctx,
+        customCoverImg,
+        plaqueX,
+        plaqueY + plaqueH + 54,
+        plaqueW,
+        560,
+        10,
       );
-      ctx.globalAlpha = 1;
+    }
+    drawCoverFooterLabel(ctx, book, logicalWidth, logicalHeight);
+    return canvas;
+  }
+
+  if (template === "side-spine-band") {
+    addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
+    const bandW = 132;
+    ctx.save();
+    ctx.fillStyle = secondary;
+    ctx.fillRect(0, 0, bandW, logicalHeight);
+    ctx.fillStyle = book.accent;
+    ctx.fillRect(bandW, 0, 8, logicalHeight);
+    ctx.fillRect(198, logicalHeight - 164, 96, 5);
+    ctx.restore();
+
+    if (customCoverImg) {
+      clipImageToRect(ctx, customCoverImg, 198, 610, 680, 560, 12, book.accent);
+    }
+
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      leftX: 198,
+      imprintY: 112,
+      titleY: 186,
+      maxWidth: logicalWidth - 260,
+    });
+    return canvas;
+  }
+
+  if (template === "arch-frame") {
+    addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
+    const ax = 212;
+    const ay = 560;
+    const aw = logicalWidth - 424;
+    const ah = 740;
+    const radius = aw / 2;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(ax, ay + ah);
+    ctx.lineTo(ax, ay + radius);
+    ctx.arc(ax + radius, ay + radius, radius, Math.PI, 0);
+    ctx.lineTo(ax + aw, ay + ah);
+    ctx.closePath();
+    if (customCoverImg) {
+      ctx.clip();
+      drawFittedImage(ctx, customCoverImg, ax, ay, aw, ah);
+    } else {
+      ctx.fillStyle = secondary;
+      ctx.fill();
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = book.accent;
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay + ah);
+    ctx.lineTo(ax, ay + radius);
+    ctx.arc(ax + radius, ay + radius, radius, Math.PI, 0);
+    ctx.lineTo(ax + aw, ay + ah);
+    ctx.closePath();
+    ctx.stroke();
+
+    if (!customCoverImg) {
+      ctx.fillStyle = book.accent;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.arc(ax + radius, ay + radius + 120, 14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(ax + radius - 48, ay + ah - 120, 96, 4);
+    }
+    ctx.restore();
+
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      centered: true,
+      imprintY: 108,
+      titleY: 180,
+    });
+    return canvas;
+  }
+
+  if (template === "top-header-band") {
+    addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
+    const bandH = Math.round(logicalHeight * 0.42);
+    const headerInk = contrastInkForHex(secondary);
+
+    ctx.save();
+    ctx.fillStyle = secondary;
+    ctx.fillRect(0, 0, logicalWidth, bandH);
+    ctx.fillStyle = book.accent;
+    ctx.fillRect(0, bandH - 6, logicalWidth, 12);
+    ctx.restore();
+
+    if (customCoverImg) {
+      clipImageToRect(ctx, customCoverImg, 132, bandH + 84, logicalWidth - 264, 620, 12);
+    } else {
+      ctx.save();
+      ctx.strokeStyle = book.accent;
+      ctx.lineWidth = 4;
+      ctx.globalAlpha = 0.78;
+      ctx.beginPath();
+      ctx.arc(logicalWidth * 0.5, logicalHeight * 0.72, 118, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = book.accent;
+      ctx.beginPath();
+      ctx.arc(logicalWidth * 0.5, logicalHeight * 0.72, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      centered: true,
+      inkColor: headerInk,
+      footerColor: book.ink,
+      imprintY: 120,
+      titleY: 200,
+    });
+    return canvas;
+  }
+
+  if (template === "sun-disc") {
+    addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
+    const cx = logicalWidth * 0.5;
+    const cy = 980;
+    const r = 248;
+
+    ctx.save();
+    if (customCoverImg) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.clip();
+      drawFittedImage(ctx, customCoverImg, cx - r, cy - r, r * 2, r * 2);
+    } else {
+      ctx.fillStyle = secondary;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = book.accent;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 26, Math.PI * 0.14, Math.PI * 0.86);
+    ctx.stroke();
+    ctx.fillStyle = book.accent;
+    ctx.fillRect(cx - 190, cy + r + 58, 380, 5);
+    ctx.restore();
+
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      centered: true,
+      imprintY: 128,
+      titleY: 204,
+    });
+    return canvas;
+  }
+
+  if (template === "horizon-rule") {
+    addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
+    if (customCoverImg) {
+      clipImageToRect(ctx, customCoverImg, 132, 620, logicalWidth - 264, 580, 12, book.accent);
+    } else {
+      ctx.save();
+      const center = logicalWidth * 0.5;
+      const bars: Array<[number, number, string, number]> = [
+        [770, 540, secondary, 28],
+        [846, 360, book.accent, 6],
+        [916, 200, secondary, 20],
+        [978, 96, book.accent, 5],
+      ];
+      bars.forEach(([y, w, color, h]) => {
+        ctx.fillStyle = color;
+        roundedRect(ctx, center - w * 0.5, y, w, h, h * 0.5);
+        ctx.fill();
+      });
+      ctx.restore();
+    }
+
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      centered: true,
+      imprintY: 170,
+      titleY: 256,
+    });
+    return canvas;
+  }
+
+  if (template === "double-inset") {
+    addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
+    ctx.save();
+    ctx.strokeStyle = secondary;
+    ctx.lineWidth = 10;
+    roundedRect(ctx, 44, 44, logicalWidth - 88, logicalHeight - 88, 6);
+    ctx.stroke();
+    ctx.strokeStyle = book.accent;
+    ctx.lineWidth = 3.5;
+    roundedRect(ctx, 72, 72, logicalWidth - 144, logicalHeight - 144, 4);
+    ctx.stroke();
+    ctx.restore();
+
+    if (customCoverImg) {
+      clipImageToRect(ctx, customCoverImg, 160, 680, logicalWidth - 320, 540, 8, book.accent);
+    } else {
+      ctx.save();
+      ctx.strokeStyle = book.accent;
+      ctx.lineWidth = 3.5;
+      ctx.strokeRect(logicalWidth * 0.5 - 32, 860, 64, 64);
+      ctx.fillStyle = secondary;
+      ctx.fillRect(logicalWidth * 0.5 - 12, 880, 24, 24);
+      ctx.restore();
+    }
+
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      centered: true,
+      imprintY: 220,
+      titleY: 310,
+      maxWidth: logicalWidth - 260,
+    });
+    return canvas;
+  }
+
+  if (template === "oval-medallion") {
+    const ovalInk = contrastInkForHex(secondary);
+    addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
+    const cx = logicalWidth * 0.5;
+    const cy = customCoverImg ? 520 : 710;
+    const rx = 330;
+    const ry = customCoverImg ? 290 : 410;
+
+    ctx.save();
+    ctx.fillStyle = secondary;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = book.accent;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx - 18, ry - 18, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    if (customCoverImg) {
+      clipImageToRect(ctx, customCoverImg, 212, 900, 600, 420, 12, book.accent);
+    }
+
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      centered: true,
+      decalOnly: true,
+      inkColor: ovalInk,
+      imprintY: cy - 170,
+      titleY: cy - 86,
+      maxWidth: rx * 1.45,
+    });
+    drawCoverFooterLabel(ctx, book, logicalWidth, logicalHeight);
+    return canvas;
+  }
+
+  if (template === "corner-brackets") {
+    addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
+    ctx.save();
+    ctx.fillStyle = secondary;
+    ctx.globalAlpha = 0.55;
+    ctx.fillRect(108, 690, logicalWidth - 216, 480);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = book.accent;
+    ctx.lineWidth = 6;
+    const pad = 64;
+    const arm = 88;
+    const corners: Array<[number, number, number, number]> = [
+      [pad, pad, 1, 1],
+      [logicalWidth - pad, pad, -1, 1],
+      [pad, logicalHeight - pad, 1, -1],
+      [logicalWidth - pad, logicalHeight - pad, -1, -1],
+    ];
+    corners.forEach(([x, y, sx, sy]) => {
+      ctx.beginPath();
+      ctx.moveTo(x + sx * arm, y);
+      ctx.lineTo(x, y);
+      ctx.lineTo(x, y + sy * arm);
+      ctx.stroke();
+    });
+    ctx.restore();
+
+    if (customCoverImg) {
+      clipImageToRect(ctx, customCoverImg, 148, 730, logicalWidth - 296, 400, 8);
+    }
+
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      leftX: 112,
+      imprintY: 132,
+      titleY: 204,
+      maxWidth: logicalWidth - 224,
+    });
+    return canvas;
+  }
+
+  if (template === "window-pane") {
+    addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
+    const wx = 212;
+    const wy = 620;
+    const ww = logicalWidth - 424;
+    const wh = 620;
+    const gutter = 24;
+    const pw = (ww - gutter) / 2;
+    const ph = (wh - gutter) / 2;
+
+    if (customCoverImg) {
+      clipImageToRect(ctx, customCoverImg, wx, wy, ww, wh, 10, book.accent);
+      ctx.save();
+      ctx.fillStyle = book.cover;
+      ctx.fillRect(wx + pw, wy, gutter, wh);
+      ctx.fillRect(wx, wy + ph, ww, gutter);
+      ctx.restore();
+    } else {
+      ctx.save();
+      ctx.fillStyle = secondary;
+      for (let r = 0; r < 2; r += 1) {
+        for (let c = 0; c < 2; c += 1) {
+          roundedRect(
+            ctx,
+            wx + c * (pw + gutter),
+            wy + r * (ph + gutter),
+            pw,
+            ph,
+            8,
+          );
+          ctx.fill();
+        }
+      }
+      ctx.strokeStyle = book.accent;
+      ctx.lineWidth = 4;
+      roundedRect(ctx, wx - 16, wy - 16, ww + 32, wh + 32, 12);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      centered: true,
+      imprintY: 118,
+      titleY: 196,
+    });
+    return canvas;
+  }
+
+  if (template === "quarter-block") {
+    addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
+    const splitX = 410;
+    const splitY = 790;
+    const qInk = contrastInkForHex(secondary);
+    ctx.save();
+    ctx.fillStyle = secondary;
+    ctx.fillRect(splitX, splitY, logicalWidth - splitX, logicalHeight - splitY);
+    ctx.fillStyle = book.accent;
+    ctx.fillRect(splitX - 4, 0, 8, logicalHeight);
+    ctx.fillRect(0, splitY - 4, logicalWidth, 8);
+    if (book.yearLabel) {
+      ctx.fillStyle = qInk;
+      ctx.globalAlpha = 0.85;
+      ctx.font = `500 34px ${serif}`;
+      ctx.fillText(book.yearLabel, splitX + 54, splitY + 62);
     }
     ctx.restore();
 
     if (customCoverImg) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.roundRect(plaqueX, plaqueY + plaqueH + 54, plaqueW, 560, 10);
-      ctx.clip();
-      drawFittedImage(ctx, customCoverImg, plaqueX, plaqueY + plaqueH + 54, plaqueW, 560);
-      ctx.restore();
+      clipImageToRect(ctx, customCoverImg, splitX + 52, splitY + 130, 500, 480, 10);
     }
 
-    ctx.save();
-    ctx.fillStyle = book.ink;
-    ctx.globalAlpha = 0.76;
-    ctx.font = `500 20px ${sans}`;
-    ctx.letterSpacing = "3px";
-    ctx.textAlign = "center";
-    const footer =
-      book.coverFooter?.trim() ||
-      (book.memoryCount && book.memoryCount > 0
-        ? `${book.memoryCount} ${book.memoryCount === 1 ? "MEMORY" : "MEMORIES"}`
-        : "");
-    if (footer) {
-      ctx.fillText(footer, logicalWidth * 0.5, logicalHeight - 92);
-    }
-    ctx.restore();
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      leftX: 82,
+      imprintY: 100,
+      titleY: 170,
+      maxWidth: logicalWidth - 180,
+    });
     return canvas;
   }
 
-  // "split-band": two-tone lower horizontal cloth/secondary band + crisp vibrant seam
-  const { serif, sans } = getFontStacks();
+  if (template === "bookmark-ribbon") {
+    addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
+    const rx = 744;
+    const rw = 110;
+    const rh = 1120;
+    ctx.save();
+    ctx.fillStyle = secondary;
+    ctx.beginPath();
+    ctx.moveTo(rx, 0);
+    ctx.lineTo(rx + rw, 0);
+    ctx.lineTo(rx + rw, rh);
+    ctx.lineTo(rx + rw * 0.5, rh - 64);
+    ctx.lineTo(rx, rh);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = book.accent;
+    ctx.fillRect(rx + 18, 0, 8, rh - 18);
+    ctx.restore();
+
+    if (customCoverImg) {
+      clipImageToRect(ctx, customCoverImg, 82, 720, 580, 500, 12, book.accent);
+    }
+
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      leftX: 82,
+      imprintY: 100,
+      titleY: 176,
+      maxWidth: 610,
+    });
+    return canvas;
+  }
+
+  if (template === "diagonal-sash") {
+    addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
+    ctx.save();
+    ctx.fillStyle = secondary;
+    ctx.beginPath();
+    ctx.moveTo(190, logicalHeight);
+    ctx.lineTo(logicalWidth, 760);
+    ctx.lineTo(logicalWidth, logicalHeight);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = book.accent;
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(190, logicalHeight);
+    ctx.lineTo(logicalWidth, 760);
+    ctx.stroke();
+    ctx.restore();
+
+    if (customCoverImg) {
+      clipImageToRect(ctx, customCoverImg, 82, 620, 560, 440, 10, book.accent);
+    }
+
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      leftX: 82,
+      imprintY: 96,
+      titleY: 172,
+      maxWidth: logicalWidth - 190,
+    });
+    return canvas;
+  }
+
+  if (template === "botanical-stem") {
+    addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
+    const cx = logicalWidth * 0.5;
+    if (customCoverImg) {
+      clipImageToRect(ctx, customCoverImg, 212, 660, 600, 500, 12, book.accent);
+    } else {
+      ctx.save();
+      ctx.fillStyle = secondary;
+      ctx.beginPath();
+      ctx.ellipse(cx, 940, 220, 300, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = book.accent;
+      ctx.lineWidth = 6;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(cx, 1140);
+      ctx.quadraticCurveTo(cx - 10, 930, cx, 720);
+      ctx.stroke();
+      const leaves: Array<[number, number, number]> = [
+        [cx, 1020, -1],
+        [cx, 920, 1],
+        [cx, 820, -1],
+      ];
+      leaves.forEach(([lx, ly, dir]) => {
+        ctx.beginPath();
+        ctx.moveTo(lx, ly);
+        ctx.quadraticCurveTo(lx + dir * 110, ly - 55, lx + dir * 124, ly - 105);
+        ctx.quadraticCurveTo(lx + dir * 34, ly - 74, lx, ly);
+        ctx.fillStyle = book.accent;
+        ctx.globalAlpha = 0.78;
+        ctx.fill();
+      });
+      ctx.restore();
+    }
+
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      centered: true,
+      imprintY: 120,
+      titleY: 196,
+    });
+    return canvas;
+  }
+
+  if (template === "catalog-ticket") {
+    const cardInk = contrastInkForHex(secondary);
+    addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
+    const tx = 142;
+    const ty = 740;
+    const tw = logicalWidth - 284;
+    const th = 460;
+
+    ctx.save();
+    ctx.fillStyle = secondary;
+    roundedRect(ctx, tx, ty, tw, th, 10);
+    ctx.fill();
+    ctx.fillStyle = book.accent;
+    ctx.fillRect(tx, ty + 62, tw, 6);
+    ctx.strokeStyle = book.accent;
+    ctx.globalAlpha = 0.45;
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 4; i += 1) {
+      const ly = ty + 162 + i * 68;
+      ctx.beginPath();
+      ctx.moveTo(tx + 44, ly);
+      ctx.lineTo(tx + tw - 44, ly);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 0.88;
+    ctx.fillStyle = cardInk;
+    ctx.font = `600 22px ${sans}`;
+    ctx.letterSpacing = "4px";
+    ctx.fillText(`VOLUME ${book.spineMark || "Archive"}`, tx + 44, ty + 24);
+    ctx.font = `500 32px ${serif}`;
+    ctx.letterSpacing = "0px";
+    ctx.fillText(book.yearLabel || book.shortTitle, tx + 44, ty + 104);
+    ctx.restore();
+
+    if (customCoverImg) {
+      clipImageToRect(ctx, customCoverImg, tx + 340, ty + 96, tw - 384, th - 130, 8);
+    }
+
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      leftX: 142,
+      imprintY: 112,
+      titleY: 184,
+      maxWidth: logicalWidth - 284,
+    });
+    return canvas;
+  }
+
+  if (template === "stepped-plinth") {
+    addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
+    ctx.save();
+    const layers = [
+      { y: 1110, x: 230, w: logicalWidth - 460, alpha: 0.72 },
+      { y: 1230, x: 120, w: logicalWidth - 240, alpha: 0.86 },
+      { y: 1350, x: 0, w: logicalWidth, alpha: 1 },
+    ];
+    layers.forEach((step) => {
+      ctx.fillStyle = secondary;
+      ctx.globalAlpha = step.alpha;
+      ctx.fillRect(step.x, step.y, step.w, logicalHeight - step.y);
+      ctx.fillStyle = book.accent;
+      ctx.globalAlpha = 0.9;
+      ctx.fillRect(step.x, step.y, step.w, 6);
+    });
+    ctx.restore();
+
+    if (customCoverImg) {
+      clipImageToRect(ctx, customCoverImg, 180, 620, logicalWidth - 360, 440, 10, book.accent);
+    }
+
+    drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+      centered: true,
+      imprintY: 148,
+      titleY: 226,
+    });
+    return canvas;
+  }
+
+  // "split-band": two-tone lower horizontal cloth/secondary band + crisp accent seam
   addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
   const bandTop = Math.round(logicalHeight * 0.58);
   const bandColor = book.secondary || book.accent;
@@ -950,19 +1526,15 @@ export function createFrontCover(
   ctx.restore();
 
   if (customCoverImg) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(82, bandTop + 54, logicalWidth - 164, logicalHeight - bandTop - 164, 14);
-    ctx.clip();
-    drawFittedImage(
+    clipImageToRect(
       ctx,
       customCoverImg,
       82,
       bandTop + 54,
       logicalWidth - 164,
       logicalHeight - bandTop - 164,
+      14,
     );
-    ctx.restore();
   } else {
     ctx.save();
     ctx.fillStyle = bandInk;
@@ -972,7 +1544,10 @@ export function createFrontCover(
     ctx.restore();
   }
 
-  drawCoverTypography(ctx, book, logicalWidth, logicalHeight, false, false, bandInk);
+  drawCoverTypography(ctx, book, logicalWidth, logicalHeight, {
+    decalOnly: false,
+    footerColor: bandInk,
+  });
   return canvas;
 }
 
@@ -1039,6 +1614,48 @@ export function createSpineCover(book: DiaryBook) {
     ctx.globalAlpha = 0.78;
     ctx.fillRect(42, 64, 5, logicalHeight - 128);
     ctx.restore();
+  } else if (spineStyle === "top-cap") {
+    ctx.save();
+    ctx.fillStyle = secondary;
+    ctx.fillRect(0, 0, logicalWidth, 182);
+    ctx.fillStyle = book.accent;
+    ctx.fillRect(0, 182, logicalWidth, 12);
+    ctx.fillRect(logicalWidth * 0.5 - 32, logicalHeight - 160, 64, 6);
+    ctx.restore();
+  } else if (spineStyle === "bottom-foot") {
+    ctx.save();
+    ctx.fillStyle = secondary;
+    ctx.fillRect(0, logicalHeight - 224, logicalWidth, 224);
+    ctx.fillStyle = book.accent;
+    ctx.fillRect(0, logicalHeight - 224, logicalWidth, 12);
+    ctx.fillRect(logicalWidth * 0.5 - 34, 128, 68, 8);
+    ctx.restore();
+  } else if (spineStyle === "center-pill") {
+    ctx.save();
+    ctx.fillStyle = secondary;
+    roundedRect(ctx, logicalWidth * 0.5 - 48, 92, 96, 132, 48);
+    ctx.fill();
+    ctx.strokeStyle = book.accent;
+    ctx.lineWidth = 5;
+    roundedRect(ctx, logicalWidth * 0.5 - 48, 92, 96, 132, 48);
+    ctx.stroke();
+    ctx.fillStyle = book.accent;
+    ctx.beginPath();
+    ctx.arc(logicalWidth * 0.5, 158, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(logicalWidth * 0.5 - 28, logicalHeight - 168, 56, 6);
+    ctx.restore();
+  } else if (spineStyle === "twin-rings") {
+    ctx.save();
+    [118, 146, 174].forEach((y, i) => {
+      ctx.fillStyle = i === 1 ? book.accent : secondary;
+      ctx.fillRect(0, y, logicalWidth, i === 1 ? 10 : 6);
+    });
+    [logicalHeight - 210, logicalHeight - 182, logicalHeight - 154].forEach((y, i) => {
+      ctx.fillStyle = i === 1 ? book.accent : secondary;
+      ctx.fillRect(0, y, logicalWidth, i === 1 ? 10 : 6);
+    });
+    ctx.restore();
   } else {
     ctx.save();
     ctx.fillStyle = book.accent;
@@ -1056,9 +1673,13 @@ export function createSpineCover(book: DiaryBook) {
   const hasSubLabel = !isThin && Boolean(book.yearLabel || book.subtitle);
   const titleOffset = isThin ? 0 : hasSubLabel ? -18 : 0;
   const titleStartY =
-    spineStyle === "banded" ? logicalHeight - 280 : logicalHeight - 160;
+    spineStyle === "banded" || spineStyle === "bottom-foot" || spineStyle === "twin-rings"
+      ? logicalHeight - 280
+      : logicalHeight - 185;
   const maxTitleLength =
-    spineStyle === "banded" ? 1360 : 1480;
+    spineStyle === "banded" || spineStyle === "top-cap" || spineStyle === "center-pill"
+      ? 1340
+      : 1440;
   ctx.translate(logicalWidth / 2 + titleOffset, titleStartY);
   ctx.rotate(-Math.PI / 2);
   const baseSize = isThin ? 94 : 78;
@@ -1075,7 +1696,8 @@ export function createSpineCover(book: DiaryBook) {
   ctx.restore();
 
   ctx.save();
-  ctx.fillStyle = book.ink;
+  ctx.fillStyle =
+    spineStyle === "bottom-foot" ? contrastInkForHex(secondary) : book.ink;
   ctx.font = `700 ${isThin ? 34 : 26}px ${sans}`;
   ctx.textAlign = "center";
   const spineMark =

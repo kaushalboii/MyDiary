@@ -265,23 +265,32 @@ export function MemoryComposer({
   return (
     <div className="diary-page">
       <header className="diary-topbar">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <Link
-            href={`/book?id=${encodeURIComponent(bookId)}`}
-            className="header-pill-btn"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            <span>Back to {activeBook.shortTitle}</span>
-          </Link>
-          <Link
-            href={`/?book=${encodeURIComponent(bookId)}`}
-            className="header-pill-btn"
-          >
-            <span>3D Shelf</span>
-          </Link>
+        <div className="wordmark hidden sm:flex">
+          <span>MY DIARY</span>
         </div>
 
-        <ThemeToggle />
+        <div className="header-controls-cluster">
+          <nav className="top-dock" aria-label="Composer navigation">
+            <Link
+              href={`/book?id=${encodeURIComponent(bookId)}`}
+              className="top-dock__btn top-dock__btn--soft"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="max-w-[160px] truncate">Back to {activeBook.shortTitle}</span>
+            </Link>
+
+            <span className="top-dock__divider" aria-hidden="true" />
+
+            <Link
+              href={`/?book=${encodeURIComponent(bookId)}`}
+              className="top-dock__btn"
+            >
+              <span>3D Shelf</span>
+            </Link>
+          </nav>
+
+          <ThemeToggle />
+        </div>
       </header>
 
       <main className="diary-container max-w-5xl">

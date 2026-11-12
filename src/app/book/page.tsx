@@ -18,6 +18,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { BookOpeningReveal } from "@/components/BookOpeningReveal";
 import { FlipBookReader, type BookSpread } from "@/components/FlipBookReader";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { VolumeEditorModal } from "@/components/VolumeEditorModal";
@@ -62,6 +63,7 @@ function BookMemoriesContent() {
   const loadData = useCallback(
     async (preserveSpread = false) => {
       setLoading(true);
+      const startedAt = Date.now();
       try {
         const booksRes = await fetchBooks();
         setBooks(booksRes.books);
@@ -83,6 +85,10 @@ function BookMemoriesContent() {
             setActiveSpreadIndex(1);
           } else {
             setActiveSpreadIndex(0);
+          }
+          const elapsed = Date.now() - startedAt;
+          if (elapsed < 820) {
+            await new Promise((resolve) => setTimeout(resolve, 820 - elapsed));
           }
         }
       } finally {
@@ -516,59 +522,74 @@ function BookMemoriesContent() {
   return (
     <div className="diary-page">
       <header className="diary-topbar">
-        <div className="flex items-center gap-2.5">
-          <Link
-            href={`/?book=${encodeURIComponent(book.id)}`}
-            className="header-pill-btn"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            <span>Shelf</span>
-          </Link>
-
-          <select
-            aria-label="Switch book"
-            value={book.id}
-            onChange={(e) =>
-              router.push(`/book?id=${encodeURIComponent(e.target.value)}`)
-            }
-            className="max-w-[165px] sm:max-w-xs truncate rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-3.5 py-1.5 text-xs font-medium"
-          >
-            {books.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.title}
-                {(item.memoryCount ?? 0) > 0 ? ` (${item.memoryCount})` : ""}
-              </option>
-            ))}
-          </select>
+        <div
+          className="wordmark hidden sm:flex"
+          aria-label={book.shortTitle}
+        >
+          <span>MY DIARY</span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="header-controls-cluster">
+          <nav className="top-dock" aria-label="Book controls">
+            <Link
+              href={`/?book=${encodeURIComponent(book.id)}`}
+              className="top-dock__btn top-dock__btn--soft"
+              aria-label="Back to 3D Shelf"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Shelf</span>
+            </Link>
+
+            <select
+              aria-label="Switch book"
+              value={book.id}
+              onChange={(e) =>
+                router.push(`/book?id=${encodeURIComponent(e.target.value)}`)
+              }
+              className="top-dock__select"
+            >
+              {books.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.title}
+                  {(item.memoryCount ?? 0) > 0 ? ` (${item.memoryCount})` : ""}
+                </option>
+              ))}
+            </select>
+
+            <span className="top-dock__divider" aria-hidden="true" />
+
+            <button
+              type="button"
+              onClick={() => setEditingVolume(true)}
+              className="top-dock__btn"
+              aria-label="Customize Book"
+              title="Customize Book"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Customize</span>
+            </button>
+
+            <Link
+              href={`/compose?bookId=${encodeURIComponent(book.id)}`}
+              className="top-dock__btn top-dock__btn--primary"
+              aria-label="Write Memory"
+            >
+              <PenLine className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Write Memory</span>
+              <span className="sm:hidden">Write</span>
+            </Link>
+          </nav>
+
           <ThemeToggle />
-
-          <button
-            type="button"
-            onClick={() => setEditingVolume(true)}
-            className="header-pill-btn cursor-pointer"
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Customize Book</span>
-          </button>
-
-          <Link
-            href={`/compose?bookId=${encodeURIComponent(book.id)}`}
-            className="header-pill-btn header-pill-btn--primary"
-          >
-            <PenLine className="h-3.5 w-3.5" />
-            <span>Write Memory</span>
-          </Link>
         </div>
       </header>
 
       <main className="diary-container">
         {loading ? (
-          <div className="stationery-card p-16 text-center font-serif text-lg italic text-[var(--ink-soft)]">
-            Opening {book.title}...
-          </div>
+          <BookOpeningReveal
+            book={book}
+            statusLabel={`Opening ${book.title}...`}
+          />
         ) : (
           <FlipBookReader
             book={book}
