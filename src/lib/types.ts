@@ -132,22 +132,54 @@ export type StorageConfig = {
   label: string;
 };
 
+export type UserRole = "owner" | "member";
+export type UserStatus = "active" | "pending" | "suspended";
+
+export type AuthUser = {
+  id: string;
+  username: string;
+  displayName: string;
+  role: UserRole;
+  status: UserStatus;
+  createdAt?: string;
+  lastLoginAt?: string | null;
+};
+
+export type AuthStatusResponse = {
+  ok: boolean;
+  needsOwnerSetup: boolean;
+  accountRequired: boolean;
+  needsSetupToken: boolean;
+  registrationMode: "invite-or-approval" | "invite-only";
+  authenticated: boolean;
+  user: AuthUser | null;
+};
+
+export type MemberSummary = AuthUser & {
+  booksCount: number;
+  memoriesCount: number;
+};
+
+export type InviteSummary = {
+  id: string;
+  label: string;
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type CreatedInvite = InviteSummary & {
+  code: string;
+};
+
 export type StorageHealth = {
   ok: boolean;
   service: string;
   schemaVersion?: number;
-  hostname?: string;
-  platform?: string;
-  uptimeSeconds?: number;
   authRequired: boolean;
   tokenAuthorized: boolean;
-  dataDir?: string;
-  stats?: {
-    booksCount: number;
-    memoriesCount: number;
-    photosCount: number;
-    uploadsBytes: number;
-  };
+  needsOwnerSetup?: boolean;
+  accountRequired?: boolean;
+  user?: AuthUser | null;
 };
 
 export type StorageMode = "server" | "offline-fallback";

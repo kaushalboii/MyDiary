@@ -29,6 +29,7 @@ import {
   fetchBooks,
   fetchMemories,
   isStorageAuthError,
+  loadCachedServerBooks,
   resolveMediaUrl,
   updateBook,
   type BookPatchInput,
@@ -43,7 +44,7 @@ function BookMemoriesContent() {
   const requestedBookId = params.get("id") || "";
   const requestedMemoryId = params.get("memory") || "";
 
-  const [books, setBooks] = useState<DiaryBook[]>(defaultBooks);
+  const [books, setBooks] = useState<DiaryBook[]>(() => loadCachedServerBooks() || defaultBooks);
   const [memories, setMemories] = useState<MemoryAlbum[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
@@ -65,14 +66,20 @@ function BookMemoriesContent() {
     async (preserveSpread = false) => {
       setLoading(true);
       try {
-        const booksRes = await fetchBooks();
+        const [booksRes, initialMemRes] = await Promise.all([
+          fetchBooks(),
+          requestedBookId ? fetchMemories({ bookId: requestedBookId }) : Promise.resolve(null),
+        ]);
         setBooks(booksRes.books);
         const targetId =
           requestedBookId && booksRes.books.some((b) => b.id === requestedBookId)
             ? requestedBookId
             : booksRes.books[0]?.id || "memories-2022";
 
-        const memRes = await fetchMemories({ bookId: targetId });
+        const memRes =
+          initialMemRes && targetId === requestedBookId
+            ? initialMemRes
+            : await fetchMemories({ bookId: targetId });
         setMemories(memRes.memories);
 
         if (!preserveSpread) {

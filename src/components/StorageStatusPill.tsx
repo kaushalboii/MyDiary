@@ -20,7 +20,7 @@ export function StorageStatusPill({
 
   const label =
     mode === "server"
-      ? hostname || config.label || "Mini Server"
+      ? hostname || config.label || "Private Archive"
       : "Offline Fallback";
 
   return (
@@ -29,7 +29,7 @@ export function StorageStatusPill({
         type="button"
         onClick={() => setOpen(true)}
         className="header-pill-btn"
-        title="Configure kaushals-mini-server storage connection"
+        title="Manage account, members & archive security"
       >
         <span
           className="inline-block h-2 w-2 rounded-full"

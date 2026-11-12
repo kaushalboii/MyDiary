@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { checkStorageHealth } from "@/lib/storage-client";
+import { checkStorageHealth, loadStorageConfig } from "@/lib/storage-client";
 import { isVaultUnlocked } from "@/lib/vault-security";
 
 const PING_INTERVAL_MS = 18 * 60 * 1000;
@@ -12,6 +12,7 @@ export function KeepAliveBeacon() {
 
     function ping() {
       if (!isVaultUnlocked()) return;
+      if (!loadStorageConfig().serverUrl) return;
       const now = Date.now();
       if (now - lastPingAt < 60 * 1000) return;
       lastPingAt = now;

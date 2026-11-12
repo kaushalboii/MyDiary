@@ -55,7 +55,7 @@ export function FlipBookReader({
   spreads,
   activeIndex,
   onChangeIndex,
-  opening = false,
+  opening: _opening = false,
 }: {
   book: DiaryBook;
   spreads: BookSpread[];
@@ -203,26 +203,9 @@ export function FlipBookReader({
 
     cancelAnimationFrame(coverRafRef.current);
 
-    if (opening) {
-      let lastTime = performance.now();
-      const tickCrack = (now: number) => {
-        const dt = Math.min(64, Math.max(0, now - lastTime));
-        lastTime = now;
-        const next = Math.min(
-          0.16,
-          coverProgressRef.current + (0.16 - coverProgressRef.current) * Math.min(1, dt * 0.008),
-        );
-        coverProgressRef.current = next;
-        setCoverProgress(next);
-        coverRafRef.current = requestAnimationFrame(tickCrack);
-      };
-      coverRafRef.current = requestAnimationFrame(tickCrack);
-      return () => cancelAnimationFrame(coverRafRef.current);
-    }
-
     const startVal = coverProgressRef.current;
     const startedAt = performance.now();
-    const duration = Math.max(460, Math.round((1 - startVal) * 860));
+    const duration = Math.max(460, Math.round((1 - startVal) * 760));
 
     const tickOpen = (now: number) => {
       const t = Math.min(1, (now - startedAt) / duration);
@@ -242,7 +225,7 @@ export function FlipBookReader({
 
     coverRafRef.current = requestAnimationFrame(tickOpen);
     return () => cancelAnimationFrame(coverRafRef.current);
-  }, [book.id, opening, coverDone]);
+  }, [book.id, coverDone]);
 
   // Sync mobile side when spread index changes externally (chapter link, URL, reset)
   useEffect(() => {

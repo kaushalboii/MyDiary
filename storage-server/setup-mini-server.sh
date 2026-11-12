@@ -35,7 +35,7 @@ chmod 700 data data/uploads
 
 if [ -n "$GENERATED_TOKEN" ]; then
   echo "Generated private DIARY_STORAGE_TOKEN in .env (chmod 600)."
-  echo "Copy this token once into Settings -> Security & Mini Server in your MyDiary web app:"
+  echo "Copy this Setup/Access Token once into Account & Security -> Owner Setup if deploying remotely:"
   echo "  $GENERATED_TOKEN"
 fi
 

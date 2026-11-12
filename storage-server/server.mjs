@@ -1,7 +1,6 @@
 import "dotenv/config";
 import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import cors from "cors";
@@ -14,37 +13,43 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT || 4321);
 const HOST = process.env.HOST || "0.0.0.0";
 const DATA_DIR = path.resolve(__dirname, process.env.DATA_DIR || "./data");
-const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
-const DB_FILE = path.join(DATA_DIR, "diary.json");
+const LEGACY_UPLOADS_DIR = path.join(DATA_DIR, "uploads");
+const LEGACY_DB_FILE = path.join(DATA_DIR, "diary.json");
+const USERS_DIR = path.join(DATA_DIR, "users");
+const USERS_FILE = path.join(DATA_DIR, "users.json");
+const INVITES_FILE = path.join(DATA_DIR, "invites.json");
+const REVOKED_FILE = path.join(DATA_DIR, "revoked-sessions.json");
 const DEFAULT_BOOKS_PATH = path.join(__dirname, "default-books.json");
+const ALLOW_ACCESS_REQUESTS = process.env.ALLOW_ACCESS_REQUESTS !== "false";
 
-fs.mkdirSync(UPLOADS_DIR, { recursive: true, mode: 0o700 });
+fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
+fs.mkdirSync(LEGACY_UPLOADS_DIR, { recursive: true, mode: 0o700 });
+fs.mkdirSync(USERS_DIR, { recursive: true, mode: 0o700 });
 
 const IS_LOOPBACK_HOST =
   HOST === "127.0.0.1" || HOST === "localhost" || HOST === "::1";
 
-function resolveActiveToken() {
-  const configured = (process.env.DIARY_STORAGE_TOKEN || "").trim();
+function resolveSecretFile(envName, filename, allowEmptyOnLoopback) {
+  const configured = (process.env[envName] || "").trim();
   if (configured) return configured;
-  if (IS_LOOPBACK_HOST || process.env.ALLOW_INSECURE_PUBLIC === "true") {
+  if (allowEmptyOnLoopback && (IS_LOOPBACK_HOST || process.env.ALLOW_INSECURE_PUBLIC === "true")) {
     return "";
   }
-  const secretPath = path.join(DATA_DIR, ".storage-token");
+  const secretPath = path.join(DATA_DIR, filename);
   if (fs.existsSync(secretPath)) {
     const saved = fs.readFileSync(secretPath, "utf8").trim();
     if (saved) return saved;
   }
   const generated = crypto.randomBytes(32).toString("hex");
   fs.writeFileSync(secretPath, `${generated}\n`, { mode: 0o600 });
-  console.log(
-    `[mydiary-storage] Public bind without DIARY_STORAGE_TOKEN detected; generated secret token in ${secretPath} (mode 0600).`,
-  );
   return generated;
 }
 
-const TOKEN = resolveActiveToken();
-const MEDIA_SIGNING_KEY = TOKEN
-  ? crypto.createHmac("sha256", "mydiary-media-ticket-v1").update(TOKEN).digest()
+const TOKEN = resolveSecretFile("DIARY_STORAGE_TOKEN", ".storage-token", true);
+const SESSION_SECRET = resolveSecretFile("DIARY_SESSION_SECRET", ".session-secret", false);
+const MEDIA_SECRET_MATERIAL = SESSION_SECRET || TOKEN;
+const MEDIA_SIGNING_KEY = MEDIA_SECRET_MATERIAL
+  ? crypto.createHmac("sha256", "mydiary-media-ticket-v2").update(MEDIA_SECRET_MATERIAL).digest()
   : null;
 
 function timingSafeEqualStr(a, b) {
@@ -55,7 +60,10 @@ function timingSafeEqualStr(a, b) {
 }
 
 const SAFE_ID_RE = /^[a-zA-Z0-9_-]{1,96}$/;
+const SAFE_USERNAME_RE = /^[a-z0-9][a-z0-9._-]{2,31}$/;
 const SAFE_FILENAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,120}$/;
+const LEGACY_SCOPE_ID = "__legacy__";
+const SESSION_TTL_SECONDS = 12 * 60 * 60;
 const ALLOWED_IMAGE_MIMES = new Map([
   ["image/jpeg", ".jpg"],
   ["image/png", ".png"],
@@ -63,6 +71,235 @@ const ALLOWED_IMAGE_MIMES = new Map([
   ["image/gif", ".gif"],
   ["image/avif", ".avif"],
 ]);
+
+function writeJsonAtomic(filePath, data) {
+  const tmpFile = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), { mode: 0o600, encoding: "utf8" });
+  fs.renameSync(tmpFile, filePath);
+}
+
+function normalizeUsername(raw) {
+  return String(raw || "").trim().toLowerCase();
+}
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const derived = crypto.scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 }).toString("hex");
+  return `scrypt$16384$8$1$${salt}$${derived}`;
+}
+
+function verifyPassword(password, storedHash) {
+  if (typeof password !== "string" || typeof storedHash !== "string") return false;
+  const parts = storedHash.split("$");
+  if (parts.length !== 6 || parts[0] !== "scrypt") return false;
+  const N = Number(parts[1]);
+  const r = Number(parts[2]);
+  const p = Number(parts[3]);
+  const salt = parts[4];
+  const expectedHex = parts[5];
+  if (!salt || !expectedHex || !Number.isFinite(N) || !Number.isFinite(r) || !Number.isFinite(p)) {
+    return false;
+  }
+  try {
+    const derived = crypto.scryptSync(password, salt, 64, { N, r, p });
+    const expected = Buffer.from(expectedHex, "hex");
+    if (derived.length !== expected.length) return false;
+    return crypto.timingSafeEqual(derived, expected);
+  } catch {
+    return false;
+  }
+}
+
+function hashInviteCode(code) {
+  const clean = String(code || "").trim().toUpperCase();
+  return crypto.createHash("sha256").update(clean).digest("hex");
+}
+
+function makeInviteCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.randomBytes(8);
+  let out = "MYD-";
+  for (let i = 0; i < 8; i += 1) {
+    if (i === 4) out += "-";
+    out += alphabet[bytes[i] % alphabet.length];
+  }
+  return out;
+}
+
+function readUsersStore() {
+  if (!fs.existsSync(USERS_FILE)) return { users: [] };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(USERS_FILE, "utf8"));
+    return { users: Array.isArray(parsed.users) ? parsed.users : [] };
+  } catch {
+    return { users: [] };
+  }
+}
+
+function writeUsersStore(store) {
+  writeJsonAtomic(USERS_FILE, { users: store.users });
+}
+
+function readInvitesStore() {
+  if (!fs.existsSync(INVITES_FILE)) return { invites: [] };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(INVITES_FILE, "utf8"));
+    return { invites: Array.isArray(parsed.invites) ? parsed.invites : [] };
+  } catch {
+    return { invites: [] };
+  }
+}
+
+function writeInvitesStore(store) {
+  writeJsonAtomic(INVITES_FILE, { invites: store.invites });
+}
+
+function readRevokedSessions() {
+  if (!fs.existsSync(REVOKED_FILE)) return { revoked: [] };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(REVOKED_FILE, "utf8"));
+    const nowSec = Math.floor(Date.now() / 1000);
+    const active = Array.isArray(parsed.revoked)
+      ? parsed.revoked.filter((item) => item && typeof item.jti === "string" && Number(item.exp) > nowSec)
+      : [];
+    return { revoked: active };
+  } catch {
+    return { revoked: [] };
+  }
+}
+
+function revokeSessionJti(jti, exp) {
+  if (!jti) return;
+  const store = readRevokedSessions();
+  if (!store.revoked.some((r) => r.jti === jti)) {
+    store.revoked.push({ jti, exp: Number(exp) || Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS });
+    writeJsonAtomic(REVOKED_FILE, store);
+  }
+}
+
+function isSessionRevoked(jti) {
+  if (!jti) return true;
+  return readRevokedSessions().revoked.some((r) => r.jti === jti);
+}
+
+function toPublicUser(user) {
+  return {
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName,
+    role: user.role,
+    status: user.status,
+    createdAt: user.createdAt,
+    lastLoginAt: user.lastLoginAt || null,
+  };
+}
+
+function signSessionToken(user) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const payload = {
+    jti: crypto.randomUUID(),
+    uid: user.id,
+    username: user.username,
+    role: user.role,
+    iat: nowSec,
+    exp: nowSec + SESSION_TTL_SECONDS,
+  };
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const sig = crypto.createHmac("sha256", SESSION_SECRET).update(encoded).digest("hex");
+  return `v1.${encoded}.${sig}`;
+}
+
+function verifySessionToken(tokenStr) {
+  if (typeof tokenStr !== "string" || !tokenStr.startsWith("v1.")) return null;
+  const parts = tokenStr.split(".");
+  if (parts.length !== 3) return null;
+  const [, encoded, sig] = parts;
+  if (!encoded || !/^[0-9a-f]{64}$/i.test(sig || "")) return null;
+  const expectedSig = crypto.createHmac("sha256", SESSION_SECRET).update(encoded).digest("hex");
+  if (!timingSafeEqualStr(sig.toLowerCase(), expectedSig.toLowerCase())) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (!payload?.uid || !payload?.jti || !Number.isFinite(payload.exp) || payload.exp <= nowSec) {
+      return null;
+    }
+    if (isSessionRevoked(payload.jti)) return null;
+    const { users } = readUsersStore();
+    const user = users.find((u) => u.id === payload.uid && u.status === "active");
+    if (!user) return null;
+    return { user, payload };
+  } catch {
+    return null;
+  }
+}
+
+function getScopePaths(scopeId = LEGACY_SCOPE_ID) {
+  if (!scopeId || scopeId === LEGACY_SCOPE_ID) {
+    fs.mkdirSync(LEGACY_UPLOADS_DIR, { recursive: true, mode: 0o700 });
+    return {
+      scopeId: LEGACY_SCOPE_ID,
+      dir: DATA_DIR,
+      dbFile: LEGACY_DB_FILE,
+      uploadsDir: LEGACY_UPLOADS_DIR,
+      uploadPrefix: "/uploads",
+    };
+  }
+  const safeId = String(scopeId);
+  if (!SAFE_ID_RE.test(safeId)) {
+    throw new Error("Invalid user storage scope");
+  }
+  const userDir = path.join(USERS_DIR, safeId);
+  const uploadsDir = path.join(userDir, "uploads");
+  fs.mkdirSync(uploadsDir, { recursive: true, mode: 0o700 });
+  return {
+    scopeId: safeId,
+    dir: userDir,
+    dbFile: path.join(userDir, "diary.json"),
+    uploadsDir,
+    uploadPrefix: `/uploads/${safeId}`,
+  };
+}
+
+function migrateLegacyDataToOwner(ownerId) {
+  const { dbFile: ownerDbFile, uploadsDir: ownerUploadsDir } = getScopePaths(ownerId);
+  if (fs.existsSync(ownerDbFile) || !fs.existsSync(LEGACY_DB_FILE)) return;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(LEGACY_DB_FILE, "utf8"));
+    const rewriteUploadUrl = (u) => {
+      if (typeof u !== "string" || !u.startsWith("/uploads/")) return u;
+      const cleanName = path.basename(u.split("?")[0]);
+      return `/uploads/${ownerId}/${cleanName}`;
+    };
+    const books = (Array.isArray(parsed.books) ? parsed.books : []).map((b) => ({
+      ...b,
+      coverImage: b.coverImage ? rewriteUploadUrl(b.coverImage) : undefined,
+    }));
+    const memories = (Array.isArray(parsed.memories) ? parsed.memories : []).map((m) => ({
+      ...m,
+      photos: Array.isArray(m.photos)
+        ? m.photos.map((p) => ({ ...p, url: rewriteUploadUrl(p.url) }))
+        : [],
+    }));
+    if (fs.existsSync(LEGACY_UPLOADS_DIR)) {
+      for (const file of fs.readdirSync(LEGACY_UPLOADS_DIR)) {
+        const src = path.join(LEGACY_UPLOADS_DIR, file);
+        const dst = path.join(ownerUploadsDir, file);
+        if (fs.statSync(src).isFile() && !fs.existsSync(dst)) {
+          fs.copyFileSync(src, dst);
+        }
+      }
+    }
+    writeJsonAtomic(ownerDbFile, {
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      books: books.length > 0 ? books : loadDefaultBooks(),
+      memories,
+      updatedAt: new Date().toISOString(),
+    });
+    fs.renameSync(LEGACY_DB_FILE, path.join(DATA_DIR, "diary.legacy.migrated.json"));
+  } catch {
+    // Fallback gracefully if legacy file could not be read
+  }
+}
 
 function hasValidImageMagicBytes(filePath) {
   try {
@@ -109,13 +346,30 @@ function hasValidImageMagicBytes(filePath) {
   }
 }
 
+function parseUploadPath(raw) {
+  const clean = String(raw || "").trim().split("?")[0];
+  if (!clean.startsWith("/uploads/")) return null;
+  const rel = clean.slice("/uploads/".length);
+  const parts = rel.split("/").filter(Boolean);
+  if (parts.length === 1 && SAFE_FILENAME_RE.test(parts[0])) {
+    return { scopeId: LEGACY_SCOPE_ID, filename: parts[0], cleanPath: `/uploads/${parts[0]}` };
+  }
+  if (parts.length === 2 && SAFE_ID_RE.test(parts[0]) && SAFE_FILENAME_RE.test(parts[1])) {
+    return {
+      scopeId: parts[0],
+      filename: parts[1],
+      cleanPath: `/uploads/${parts[0]}/${parts[1]}`,
+    };
+  }
+  return null;
+}
+
 function isSafeImageUrl(raw) {
   if (typeof raw !== "string") return false;
   const trimmed = raw.trim();
   if (!trimmed) return false;
   if (trimmed.startsWith("/uploads/")) {
-    const cleanName = trimmed.slice("/uploads/".length).split("?")[0];
-    return SAFE_FILENAME_RE.test(cleanName);
+    return Boolean(parseUploadPath(trimmed));
   }
   if (/^data:image\/(png|jpeg|jpg|webp|gif|avif);base64,[a-zA-Z0-9+/=]+$/i.test(trimmed)) {
     return true;
@@ -128,58 +382,67 @@ function isSafeImageUrl(raw) {
   }
 }
 
-function stripMediaSignature(url) {
+function stripMediaSignature(url, fallbackScopeId = LEGACY_SCOPE_ID) {
   if (typeof url !== "string") return "";
   const trimmed = url.trim();
   if (!trimmed) return "";
   if (trimmed.startsWith("/uploads/")) {
-    return `/uploads/${path.basename(trimmed.split("?")[0])}`;
+    const parsed = parseUploadPath(trimmed);
+    if (!parsed) return "";
+    if (fallbackScopeId !== LEGACY_SCOPE_ID && parsed.scopeId === LEGACY_SCOPE_ID) {
+      return `/uploads/${fallbackScopeId}/${parsed.filename}`;
+    }
+    return parsed.cleanPath;
   }
   return trimmed;
 }
 
-function signMediaPath(url) {
+function signMediaPath(url, scopeId = LEGACY_SCOPE_ID) {
   if (typeof url !== "string" || !url.startsWith("/uploads/") || !MEDIA_SIGNING_KEY) {
     return url;
   }
-  const cleanName = path.basename(url.split("?")[0]);
-  if (!SAFE_FILENAME_RE.test(cleanName)) return url;
+  const parsed = parseUploadPath(url);
+  if (!parsed) return url;
+  const effScope = parsed.scopeId !== LEGACY_SCOPE_ID ? parsed.scopeId : scopeId;
+  const prefix = effScope && effScope !== LEGACY_SCOPE_ID ? `/uploads/${effScope}` : "/uploads";
+  const ticketKey =
+    effScope && effScope !== LEGACY_SCOPE_ID ? `${effScope}/${parsed.filename}` : parsed.filename;
   const exp = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
   const sig = crypto
     .createHmac("sha256", MEDIA_SIGNING_KEY)
-    .update(`${cleanName}:${exp}`)
+    .update(`${ticketKey}:${exp}`)
     .digest("hex");
-  return `/uploads/${cleanName}?exp=${exp}&sig=${sig}`;
+  return `${prefix}/${parsed.filename}?exp=${exp}&sig=${sig}`;
 }
 
-function verifyMediaSignature(filename, expRaw, sigRaw) {
+function verifyMediaSignature(ticketKey, expRaw, sigRaw) {
   if (!MEDIA_SIGNING_KEY) return true;
   const exp = Number(expRaw);
   if (!Number.isFinite(exp) || exp < Math.floor(Date.now() / 1000)) return false;
   if (typeof sigRaw !== "string" || !/^[0-9a-f]{64}$/i.test(sigRaw)) return false;
   const expected = crypto
     .createHmac("sha256", MEDIA_SIGNING_KEY)
-    .update(`${filename}:${exp}`)
+    .update(`${ticketKey}:${exp}`)
     .digest("hex");
   return timingSafeEqualStr(sigRaw.toLowerCase(), expected.toLowerCase());
 }
 
-function signBookMedia(book) {
+function signBookMedia(book, scopeId = LEGACY_SCOPE_ID) {
   if (!MEDIA_SIGNING_KEY || !book?.coverImage) return book;
   return {
     ...book,
-    coverImage: signMediaPath(book.coverImage),
+    coverImage: signMediaPath(book.coverImage, scopeId),
   };
 }
 
-function signMemoryMedia(memory) {
+function signMemoryMedia(memory, scopeId = LEGACY_SCOPE_ID) {
   if (!MEDIA_SIGNING_KEY || !memory) return memory;
   return {
     ...memory,
     photos: Array.isArray(memory.photos)
       ? memory.photos.map((p) => ({
           ...p,
-          url: signMediaPath(p.url),
+          url: signMediaPath(p.url, scopeId),
         }))
       : [],
   };
@@ -250,18 +513,19 @@ function isLegacyDefaultShelf(books) {
   return false;
 }
 
-function readDb() {
-  if (!fs.existsSync(DB_FILE)) {
+function readDb(scopeId = LEGACY_SCOPE_ID) {
+  const { dbFile } = getScopePaths(scopeId);
+  if (!fs.existsSync(dbFile)) {
     const initial = {
       schemaVersion: CURRENT_SCHEMA_VERSION,
       books: loadDefaultBooks(),
       memories: [],
       updatedAt: new Date().toISOString(),
     };
-    writeDbSync(initial);
+    writeDbSync(initial, scopeId);
     return initial;
   }
-  const raw = fs.readFileSync(DB_FILE, "utf8");
+  const raw = fs.readFileSync(dbFile, "utf8");
   const parsed = JSON.parse(raw);
   if (!Array.isArray(parsed.memories)) {
     parsed.memories = [];
@@ -293,32 +557,32 @@ function readDb() {
       });
     }
     parsed.schemaVersion = CURRENT_SCHEMA_VERSION;
-    writeDbSync(parsed);
+    writeDbSync(parsed, scopeId);
   }
   return parsed;
 }
 
-function writeDbSync(data) {
+function writeDbSync(data, scopeId = LEGACY_SCOPE_ID) {
+  const { dbFile } = getScopePaths(scopeId);
   const payload = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     books: data.books,
     memories: data.memories,
     updatedAt: new Date().toISOString(),
   };
-  const tmpFile = `${DB_FILE}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmpFile, JSON.stringify(payload, null, 2), "utf8");
-  fs.renameSync(tmpFile, DB_FILE);
+  writeJsonAtomic(dbFile, payload);
 }
 
-let writeQueue = Promise.resolve();
-function mutateDb(mutator) {
-  const task = writeQueue.then(async () => {
-    const db = readDb();
+const scopeQueues = new Map();
+function mutateDb(mutator, scopeId = LEGACY_SCOPE_ID) {
+  const prev = scopeQueues.get(scopeId) || Promise.resolve();
+  const task = prev.then(async () => {
+    const db = readDb(scopeId);
     const result = await mutator(db);
-    writeDbSync(db);
+    writeDbSync(db, scopeId);
     return result;
   });
-  writeQueue = task.catch(() => undefined);
+  scopeQueues.set(scopeId, task.catch(() => undefined));
   return task;
 }
 
@@ -333,7 +597,7 @@ function directorySizeBytes(dir) {
   return total;
 }
 
-function enrichBooks(db) {
+function enrichBooks(db, scopeId = LEGACY_SCOPE_ID) {
   const statsByBook = new Map();
   for (const memory of db.memories) {
     const prev = statsByBook.get(memory.bookId) || {
@@ -352,15 +616,18 @@ function enrichBooks(db) {
     statsByBook.set(memory.bookId, prev);
   }
   return db.books.map((book) =>
-    signBookMedia({
-      ...book,
-      ...(statsByBook.get(book.id) || {
-        memoryCount: 0,
-        photoCount: 0,
-        latestMemoryDate: null,
-        latestMemoryTitle: null,
-      }),
-    }),
+    signBookMedia(
+      {
+        ...book,
+        ...(statsByBook.get(book.id) || {
+          memoryCount: 0,
+          photoCount: 0,
+          latestMemoryDate: null,
+          latestMemoryTitle: null,
+        }),
+      },
+      scopeId,
+    ),
   );
 }
 
@@ -377,7 +644,8 @@ function normalizeParagraphs(input) {
   return [];
 }
 
-function cleanupOrphanedUploads(db) {
+function cleanupOrphanedUploads(db, scopeId = LEGACY_SCOPE_ID) {
+  const { uploadsDir } = getScopePaths(scopeId);
   const referenced = new Set();
   for (const memory of db.memories) {
     for (const photo of memory.photos || []) {
@@ -390,11 +658,11 @@ function cleanupOrphanedUploads(db) {
       if (cleanName) referenced.add(cleanName);
     }
   }
-  if (!fs.existsSync(UPLOADS_DIR)) return;
-  for (const file of fs.readdirSync(UPLOADS_DIR)) {
+  if (!fs.existsSync(uploadsDir)) return;
+  for (const file of fs.readdirSync(uploadsDir)) {
     if (!referenced.has(file)) {
       try {
-        fs.unlinkSync(path.join(UPLOADS_DIR, file));
+        fs.unlinkSync(path.join(uploadsDir, file));
       } catch {
         // Ignore cleanup failures for missing files.
       }
@@ -456,7 +724,7 @@ function makeBookId(title, existingBooks) {
   return `${base}-${n}`;
 }
 
-function applyBookPatch(current, patch) {
+function applyBookPatch(current, patch, scopeId = LEGACY_SCOPE_ID) {
   const nextTitle =
     typeof patch.title === "string" && patch.title.trim() ? patch.title.trim() : current.title;
   const nextShort =
@@ -510,7 +778,7 @@ function applyBookPatch(current, patch) {
       patch.coverImage === "" || patch.coverImage === null
         ? undefined
         : typeof patch.coverImage === "string" && isSafeImageUrl(patch.coverImage)
-          ? stripMediaSignature(patch.coverImage)
+          ? stripMediaSignature(patch.coverImage, scopeId)
           : current.coverImage,
     showCoverTextWithImage:
       typeof patch.showCoverTextWithImage === "boolean"
@@ -587,11 +855,78 @@ function extractRequestToken(req) {
   return String(req.headers["x-diary-token"] || "").trim();
 }
 
-function isAuthorizedRequest(req) {
-  if (!TOKEN) return true;
+function getClientIpKey(req) {
+  return req.ip || req.socket?.remoteAddress || "unknown";
+}
+
+function isLoopbackReq(req) {
+  const addr = String(req.socket?.remoteAddress || "");
+  return (
+    IS_LOOPBACK_HOST ||
+    addr === "127.0.0.1" ||
+    addr === "::1" ||
+    addr === "::ffff:127.0.0.1"
+  );
+}
+
+function authenticateRequest(req) {
+  const { users } = readUsersStore();
+  const hasAccounts = users.length > 0;
   const candidate = extractRequestToken(req);
-  if (!candidate) return false;
-  return timingSafeEqualStr(candidate, TOKEN);
+
+  if (candidate) {
+    const verifiedSession = verifySessionToken(candidate);
+    if (verifiedSession) {
+      return {
+        authorized: true,
+        kind: "session",
+        user: verifiedSession.user,
+        sessionPayload: verifiedSession.payload,
+        scopeId: verifiedSession.user.id,
+        isOwner: verifiedSession.user.role === "owner",
+      };
+    }
+    if (TOKEN && timingSafeEqualStr(candidate, TOKEN)) {
+      const firstOwner = users.find((u) => u.role === "owner" && u.status === "active") || null;
+      return {
+        authorized: true,
+        kind: "owner-token",
+        user: firstOwner,
+        sessionPayload: null,
+        scopeId: firstOwner ? firstOwner.id : LEGACY_SCOPE_ID,
+        isOwner: true,
+      };
+    }
+    return { authorized: false, kind: "invalid-token", scopeId: LEGACY_SCOPE_ID, isOwner: false };
+  }
+
+  if (!TOKEN && !hasAccounts) {
+    return {
+      authorized: true,
+      kind: "loopback-open",
+      user: null,
+      sessionPayload: null,
+      scopeId: LEGACY_SCOPE_ID,
+      isOwner: true,
+    };
+  }
+
+  return { authorized: false, kind: "missing", scopeId: LEGACY_SCOPE_ID, isOwner: false };
+}
+
+function checkRateLimitBlocked(req, res) {
+  const ipKey = getClientIpKey(req);
+  const now = Date.now();
+  const existing = failedAuthByIp.get(ipKey);
+  if (existing && existing.blockedUntil > now) {
+    const retryAfterSec = Math.max(1, Math.ceil((existing.blockedUntil - now) / 1000));
+    res.setHeader("Retry-After", String(retryAfterSec));
+    res.status(429).json({
+      error: "Too many failed authentication attempts. Please try again later.",
+    });
+    return true;
+  }
+  return false;
 }
 
 function recordAuthFailure(ipKey) {
@@ -616,53 +951,74 @@ function recordAuthFailure(ipKey) {
   return existing;
 }
 
-function requireAuth(req, res, next) {
-  if (!TOKEN) return next();
-  const ipKey = req.ip || req.socket?.remoteAddress || "unknown";
+function clearAuthFailures(req) {
+  failedAuthByIp.delete(getClientIpKey(req));
+}
+
+function failAuthWithRateLimit(req, res, statusCode, message) {
   const now = Date.now();
-  const existing = failedAuthByIp.get(ipKey);
-  if (existing && existing.blockedUntil > now) {
-    const retryAfterSec = Math.max(1, Math.ceil((existing.blockedUntil - now) / 1000));
-    res.setHeader("Retry-After", String(retryAfterSec));
-    return res.status(429).json({
-      error: "Too many failed authentication attempts. Please try again later.",
-    });
-  }
-
-  if (isAuthorizedRequest(req)) {
-    if (existing) failedAuthByIp.delete(ipKey);
-    return next();
-  }
-
-  const afterFail = recordAuthFailure(ipKey);
+  const afterFail = recordAuthFailure(getClientIpKey(req));
   if (afterFail.blockedUntil > now) {
     const retryAfterSec = Math.max(1, Math.ceil((afterFail.blockedUntil - now) / 1000));
     res.setHeader("Retry-After", String(retryAfterSec));
-    return res.status(429).json({
+    res.status(429).json({
       error: "Too many failed authentication attempts. Please try again later.",
     });
+    return;
   }
-  return res.status(401).json({ error: "Unauthorized: valid storage token required." });
+  res.status(statusCode).json({ error: message });
 }
 
-app.get("/uploads/:filename", (req, res) => {
-  const rawName = String(req.params.filename || "");
-  if (!SAFE_FILENAME_RE.test(rawName)) {
-    return res.status(400).json({ error: "Invalid media filename." });
+function requireAuth(req, res, next) {
+  if (checkRateLimitBlocked(req, res)) return;
+
+  const auth = authenticateRequest(req);
+  if (auth.authorized) {
+    clearAuthFailures(req);
+    req.auth = auth;
+    req.authUser = auth.user;
+    req.storageScope = auth.scopeId;
+    return next();
   }
 
-  if (TOKEN) {
-    const authorizedByHeader = extractRequestToken(req)
-      ? isAuthorizedRequest(req)
-      : false;
-    const authorizedBySig = verifyMediaSignature(rawName, req.query.exp, req.query.sig);
+  return failAuthWithRateLimit(
+    req,
+    res,
+    401,
+    "Authentication required. Please sign in to access your diary.",
+  );
+}
+
+function requireOwner(req, res, next) {
+  requireAuth(req, res, () => {
+    if (!req.auth?.isOwner) {
+      return res.status(403).json({ error: "Owner permission required." });
+    }
+    return next();
+  });
+}
+
+function serveScopedUpload(scopeId, rawName, req, res) {
+  if ((scopeId !== LEGACY_SCOPE_ID && !SAFE_ID_RE.test(scopeId)) || !SAFE_FILENAME_RE.test(rawName)) {
+    return res.status(400).json({ error: "Invalid media path." });
+  }
+  const { users } = readUsersStore();
+  const requireProtection = Boolean(TOKEN) || users.length > 0;
+  const ticketKey = scopeId === LEGACY_SCOPE_ID ? rawName : `${scopeId}/${rawName}`;
+
+  if (requireProtection) {
+    const auth = authenticateRequest(req);
+    const authorizedByHeader =
+      auth.authorized && (auth.kind === "owner-token" || auth.scopeId === scopeId);
+    const authorizedBySig = verifyMediaSignature(ticketKey, req.query.exp, req.query.sig);
     if (!authorizedByHeader && !authorizedBySig) {
       return res.status(401).json({ error: "Unauthorized media access." });
     }
   }
 
-  const resolved = path.resolve(UPLOADS_DIR, rawName);
-  if (!resolved.startsWith(UPLOADS_DIR + path.sep)) {
+  const { uploadsDir } = getScopePaths(scopeId);
+  const resolved = path.resolve(uploadsDir, rawName);
+  if (!resolved.startsWith(uploadsDir + path.sep)) {
     return res.status(400).json({ error: "Invalid media path." });
   }
   if (!fs.existsSync(resolved)) {
@@ -674,13 +1030,24 @@ app.get("/uploads/:filename", (req, res) => {
   res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
   res.setHeader(
     "Cache-Control",
-    TOKEN ? "private, max-age=3600" : "public, max-age=31536000, immutable",
+    requireProtection ? "private, max-age=3600" : "public, max-age=31536000, immutable",
   );
   return res.sendFile(resolved);
+}
+
+app.get("/uploads/:userId/:filename", (req, res) => {
+  serveScopedUpload(String(req.params.userId || ""), String(req.params.filename || ""), req, res);
+});
+
+app.get("/uploads/:filename", (req, res) => {
+  serveScopedUpload(LEGACY_SCOPE_ID, String(req.params.filename || ""), req, res);
 });
 
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+  destination: (req, _file, cb) => {
+    const { uploadsDir } = getScopePaths(req.storageScope || LEGACY_SCOPE_ID);
+    cb(null, uploadsDir);
+  },
   filename: (_req, file, cb) => {
     const mime = String(file.mimetype || "").toLowerCase();
     const ext = ALLOWED_IMAGE_MIMES.get(mime) || ".jpg";
@@ -706,46 +1073,367 @@ const upload = multer({
   },
 });
 
-app.get("/api/health", (req, res) => {
-  const tokenOk = isAuthorizedRequest(req);
-  if (TOKEN && !tokenOk) {
-    res.json({
-      ok: true,
-      service: "mydiary-storage",
-      authRequired: true,
-      tokenAuthorized: false,
+// --- Multi-User Auth & Owner Verification Routes ---
+
+app.get("/api/auth/status", (req, res) => {
+  const { users } = readUsersStore();
+  const auth = authenticateRequest(req);
+  const authenticated = auth.authorized && (auth.kind === "session" || auth.kind === "owner-token");
+  res.json({
+    ok: true,
+    needsOwnerSetup: users.length === 0,
+    accountRequired: users.length > 0 || Boolean(TOKEN),
+    needsSetupToken: users.length === 0 && Boolean(TOKEN) && !isLoopbackReq(req),
+    registrationMode: ALLOW_ACCESS_REQUESTS ? "invite-or-approval" : "invite-only",
+    authenticated,
+    user: auth.user ? toPublicUser(auth.user) : null,
+  });
+});
+
+app.post("/api/auth/bootstrap-owner", (req, res) => {
+  if (checkRateLimitBlocked(req, res)) return;
+  const store = readUsersStore();
+  if (store.users.length > 0) {
+    return res.status(403).json({ error: "Owner account already exists. Please sign in." });
+  }
+
+  const body = req.body || {};
+  const providedSetup =
+    typeof body.setupToken === "string" && body.setupToken.trim()
+      ? body.setupToken.trim()
+      : extractRequestToken(req);
+
+  if (TOKEN && !isLoopbackReq(req) && !timingSafeEqualStr(providedSetup, TOKEN)) {
+    return failAuthWithRateLimit(
+      req,
+      res,
+      401,
+      "Valid setup key is required to claim owner on a remote server.",
+    );
+  }
+
+  const username = normalizeUsername(body.username);
+  const displayName = String(body.displayName || username).trim().slice(0, 64);
+  const password = typeof body.password === "string" ? body.password : "";
+
+  if (!SAFE_USERNAME_RE.test(username)) {
+    return res.status(400).json({
+      error: "Username must be 3–32 characters (lowercase letters, numbers, '.', '_', '-').",
+    });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters." });
+  }
+
+  const owner = {
+    id: `usr_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`,
+    username,
+    displayName: displayName || username,
+    passwordHash: hashPassword(password),
+    role: "owner",
+    status: "active",
+    invitedBy: null,
+    createdAt: new Date().toISOString(),
+    lastLoginAt: new Date().toISOString(),
+  };
+
+  store.users.push(owner);
+  writeUsersStore(store);
+  migrateLegacyDataToOwner(owner.id);
+  clearAuthFailures(req);
+
+  const sessionToken = signSessionToken(owner);
+  res.status(201).json({
+    sessionToken,
+    user: toPublicUser(owner),
+  });
+});
+
+app.post("/api/auth/login", (req, res) => {
+  if (checkRateLimitBlocked(req, res)) return;
+
+  const body = req.body || {};
+  const username = normalizeUsername(body.username);
+  const password = typeof body.password === "string" ? body.password : "";
+
+  if (!username || !password) {
+    return res.status(400).json({ error: "Username and password are required." });
+  }
+
+  const store = readUsersStore();
+  const user = store.users.find((u) => u.username === username);
+  if (!user || !verifyPassword(password, user.passwordHash)) {
+    return failAuthWithRateLimit(req, res, 401, "Invalid username or password.");
+  }
+
+  if (user.status === "pending") {
+    return res.status(403).json({
+      error: "Account is awaiting verification by the archive owner.",
+    });
+  }
+  if (user.status !== "active") {
+    return res.status(403).json({ error: "Account is currently suspended." });
+  }
+
+  user.lastLoginAt = new Date().toISOString();
+  writeUsersStore(store);
+  clearAuthFailures(req);
+
+  const sessionToken = signSessionToken(user);
+  res.json({
+    sessionToken,
+    user: toPublicUser(user),
+  });
+});
+
+app.post("/api/auth/register", (req, res) => {
+  if (checkRateLimitBlocked(req, res)) return;
+
+  const store = readUsersStore();
+  if (store.users.length === 0) {
+    return res.status(400).json({
+      error: "Owner setup has not finished yet. Create the owner account first.",
+    });
+  }
+
+  const body = req.body || {};
+  const username = normalizeUsername(body.username);
+  const displayName = String(body.displayName || username).trim().slice(0, 64);
+  const password = typeof body.password === "string" ? body.password : "";
+  const inviteCode = typeof body.inviteCode === "string" ? body.inviteCode.trim() : "";
+
+  if (!SAFE_USERNAME_RE.test(username)) {
+    return res.status(400).json({
+      error: "Username must be 3–32 characters (lowercase letters, numbers, '.', '_', '-').",
+    });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters." });
+  }
+  if (store.users.some((u) => u.username === username)) {
+    return res.status(409).json({ error: "That username is already registered." });
+  }
+
+  if (inviteCode) {
+    const inviteStore = readInvitesStore();
+    const codeHash = hashInviteCode(inviteCode);
+    const nowIso = new Date().toISOString();
+    const invite = inviteStore.invites.find(
+      (inv) =>
+        !inv.usedBy &&
+        (!inv.expiresAt || inv.expiresAt > nowIso) &&
+        timingSafeEqualStr(inv.codeHash, codeHash),
+    );
+    if (!invite) {
+      return failAuthWithRateLimit(req, res, 401, "Invalid or expired invite verification code.");
+    }
+
+    const member = {
+      id: `usr_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`,
+      username,
+      displayName: displayName || username,
+      passwordHash: hashPassword(password),
+      role: "member",
+      status: "active",
+      invitedBy: invite.createdBy,
+      createdAt: nowIso,
+      lastLoginAt: nowIso,
+    };
+
+    invite.usedBy = member.id;
+    invite.usedByUsername = member.username;
+    invite.usedAt = nowIso;
+    writeInvitesStore(inviteStore);
+
+    store.users.push(member);
+    writeUsersStore(store);
+    readDb(member.id);
+    clearAuthFailures(req);
+
+    const sessionToken = signSessionToken(member);
+    res.status(201).json({
+      pendingVerification: false,
+      sessionToken,
+      user: toPublicUser(member),
     });
     return;
   }
 
-  const db = readDb();
-  const photosCount = db.memories.reduce(
-    (sum, m) => sum + (Array.isArray(m.photos) ? m.photos.length : 0),
-    0,
-  );
+  if (!ALLOW_ACCESS_REQUESTS) {
+    return res.status(403).json({
+      error: "A valid owner invite code is required to register.",
+    });
+  }
 
+  const pendingCount = store.users.filter((u) => u.status === "pending").length;
+  if (pendingCount >= 25) {
+    return res.status(429).json({
+      error: "Too many unverified requests are pending. Use an invite code instead.",
+    });
+  }
+
+  const pendingMember = {
+    id: `usr_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`,
+    username,
+    displayName: displayName || username,
+    passwordHash: hashPassword(password),
+    role: "member",
+    status: "pending",
+    invitedBy: null,
+    createdAt: new Date().toISOString(),
+    lastLoginAt: null,
+  };
+  store.users.push(pendingMember);
+  writeUsersStore(store);
+
+  res.status(202).json({
+    pendingVerification: true,
+    user: toPublicUser(pendingMember),
+    message: "Account request submitted. Ask the archive owner to verify and activate your access.",
+  });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  const auth = authenticateRequest(req);
+  if (auth.kind === "session" && auth.sessionPayload?.jti) {
+    revokeSessionJti(auth.sessionPayload.jti, auth.sessionPayload.exp);
+  }
+  res.json({ ok: true });
+});
+
+app.get("/api/auth/me", requireAuth, (req, res) => {
   res.json({
     ok: true,
-    service: "mydiary-storage",
-    schemaVersion: db.schemaVersion ?? CURRENT_SCHEMA_VERSION,
-    hostname: os.hostname(),
-    platform: os.platform(),
-    uptimeSeconds: Math.round(process.uptime()),
-    authRequired: Boolean(TOKEN),
-    tokenAuthorized: tokenOk,
-    dataDir: DATA_DIR,
-    stats: {
+    user: req.authUser ? toPublicUser(req.authUser) : null,
+    isOwner: Boolean(req.auth?.isOwner),
+  });
+});
+
+app.get("/api/admin/members", requireOwner, (_req, res) => {
+  const { users } = readUsersStore();
+  const { invites } = readInvitesStore();
+  const nowIso = new Date().toISOString();
+
+  const members = users.map((u) => {
+    const db = readDb(u.id);
+    return {
+      ...toPublicUser(u),
       booksCount: db.books.length,
       memoriesCount: db.memories.length,
-      photosCount,
-      uploadsBytes: directorySizeBytes(UPLOADS_DIR),
+    };
+  });
+
+  const activeInvites = invites
+    .filter((inv) => !inv.usedBy && (!inv.expiresAt || inv.expiresAt > nowIso))
+    .map((inv) => ({
+      id: inv.id,
+      label: inv.label,
+      createdAt: inv.createdAt,
+      expiresAt: inv.expiresAt,
+    }));
+
+  res.json({ members, invites: activeInvites });
+});
+
+app.post("/api/admin/invites", requireOwner, (req, res) => {
+  const label = String(req.body?.label || "Member Invite").trim().slice(0, 64) || "Member Invite";
+  const expiresDays = Math.max(1, Math.min(30, Number(req.body?.expiresDays) || 7));
+  const rawCode = makeInviteCode();
+  const store = readInvitesStore();
+  const invite = {
+    id: crypto.randomUUID(),
+    label,
+    codeHash: hashInviteCode(rawCode),
+    createdBy: req.authUser?.id || "owner-token",
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + expiresDays * 86_400_000).toISOString(),
+    usedBy: null,
+    usedAt: null,
+  };
+  store.invites.unshift(invite);
+  writeInvitesStore(store);
+  res.status(201).json({
+    invite: {
+      id: invite.id,
+      label: invite.label,
+      createdAt: invite.createdAt,
+      expiresAt: invite.expiresAt,
+      code: rawCode,
     },
   });
 });
 
-app.get("/api/books", requireAuth, (_req, res) => {
-  const db = readDb();
-  res.json({ books: enrichBooks(db) });
+app.delete("/api/admin/invites/:id", requireOwner, (req, res) => {
+  const inviteId = String(req.params.id || "");
+  const store = readInvitesStore();
+  const next = store.invites.filter((i) => i.id !== inviteId);
+  writeInvitesStore({ invites: next });
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/members/:id/status", requireOwner, (req, res) => {
+  const memberId = String(req.params.id || "");
+  const nextStatus = String(req.body?.status || "");
+  if (nextStatus !== "active" && nextStatus !== "suspended") {
+    return res.status(400).json({ error: "Status must be 'active' or 'suspended'." });
+  }
+  const store = readUsersStore();
+  const member = store.users.find((u) => u.id === memberId);
+  if (!member) {
+    return res.status(404).json({ error: "Member account not found." });
+  }
+  if (member.role === "owner" && nextStatus !== "active") {
+    return res.status(400).json({ error: "Owner account cannot be suspended." });
+  }
+  member.status = nextStatus;
+  writeUsersStore(store);
+  if (nextStatus === "active") {
+    readDb(member.id);
+  }
+  res.json({ member: toPublicUser(member) });
+});
+
+app.delete("/api/admin/members/:id", requireOwner, (req, res) => {
+  const memberId = String(req.params.id || "");
+  const store = readUsersStore();
+  const member = store.users.find((u) => u.id === memberId);
+  if (!member) {
+    return res.status(404).json({ error: "Member account not found." });
+  }
+  if (member.role === "owner") {
+    return res.status(400).json({ error: "Owner account cannot be deleted." });
+  }
+  store.users = store.users.filter((u) => u.id !== memberId);
+  writeUsersStore(store);
+  try {
+    fs.rmSync(path.join(USERS_DIR, memberId), { recursive: true, force: true });
+  } catch {
+    // Ignore cleanup failures
+  }
+  res.json({ ok: true });
+});
+
+app.get("/api/health", (req, res) => {
+  const { users } = readUsersStore();
+  const auth = authenticateRequest(req);
+  const authRequired = Boolean(TOKEN) || users.length > 0;
+  const authorized = auth.authorized && (users.length === 0 || auth.kind !== "loopback-open");
+
+  res.json({
+    ok: true,
+    service: "mydiary-storage",
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    authRequired,
+    tokenAuthorized: authorized,
+    needsOwnerSetup: users.length === 0,
+    accountRequired: users.length > 0 || Boolean(TOKEN),
+    user: auth.user ? toPublicUser(auth.user) : null,
+  });
+});
+
+app.get("/api/books", requireAuth, (req, res) => {
+  const db = readDb(req.storageScope);
+  res.json({ books: enrichBooks(db, req.storageScope) });
 });
 
 app.post("/api/books", requireAuth, async (req, res) => {
@@ -790,18 +1478,18 @@ app.post("/api/books", requireAuth, async (req, res) => {
       thickness: 0.24,
       width: 1.3,
     };
-    const nextBook = applyBookPatch(baseTemplate, body);
+    const nextBook = applyBookPatch(baseTemplate, body, req.storageScope);
     const rawPos = Number(body.positionIndex);
     const insertAt = Number.isFinite(rawPos)
       ? Math.min(db.books.length, Math.max(0, Math.round(rawPos)))
       : db.books.length;
     db.books.splice(insertAt, 0, nextBook);
-    const books = enrichBooks(db);
+    const books = enrichBooks(db, req.storageScope);
     return {
       book: books.find((b) => b.id === nextBook.id),
       books,
     };
-  });
+  }, req.storageScope);
   res.status(201).json(result);
 });
 
@@ -825,8 +1513,8 @@ app.put("/api/books/reorder", requireAuth, async (req, res) => {
       reordered.push(remaining);
     }
     db.books = reordered;
-    return enrichBooks(db);
-  });
+    return enrichBooks(db, req.storageScope);
+  }, req.storageScope);
   res.json({ books });
 });
 
@@ -845,7 +1533,7 @@ app.put("/api/books/:id", requireAuth, async (req, res) => {
     const idx = db.books.findIndex((b) => b.id === bookId);
     if (idx === -1) return null;
     const current = db.books[idx];
-    const next = applyBookPatch(current, patch);
+    const next = applyBookPatch(current, patch, req.storageScope);
     db.books[idx] = next;
 
     if (typeof patch.positionIndex === "number" && Number.isFinite(patch.positionIndex)) {
@@ -856,13 +1544,13 @@ app.put("/api/books/:id", requireAuth, async (req, res) => {
       }
     }
 
-    cleanupOrphanedUploads(db);
-    const books = enrichBooks(db);
+    cleanupOrphanedUploads(db, req.storageScope);
+    const books = enrichBooks(db, req.storageScope);
     return {
       book: books.find((b) => b.id === bookId),
       books,
     };
-  });
+  }, req.storageScope);
 
   if (!result) {
     res.status(404).json({ error: "Book volume not found." });
@@ -885,9 +1573,9 @@ app.delete("/api/books/:id", requireAuth, async (req, res) => {
     if (idx === -1) return null;
     db.books.splice(idx, 1);
     db.memories = db.memories.filter((m) => m.bookId !== bookId);
-    cleanupOrphanedUploads(db);
-    return { ok: true, books: enrichBooks(db) };
-  });
+    cleanupOrphanedUploads(db, req.storageScope);
+    return { ok: true, books: enrichBooks(db, req.storageScope) };
+  }, req.storageScope);
 
   if (!result) {
     res.status(404).json({ error: "Book volume not found." });
@@ -901,7 +1589,7 @@ app.delete("/api/books/:id", requireAuth, async (req, res) => {
 });
 
 app.get("/api/memories", requireAuth, (req, res) => {
-  const db = readDb();
+  const db = readDb(req.storageScope);
   const bookId = typeof req.query.bookId === "string" ? req.query.bookId.trim() : "";
   const query = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
   const mood = typeof req.query.mood === "string" ? req.query.mood.trim() : "";
@@ -935,7 +1623,7 @@ app.get("/api/memories", requireAuth, (req, res) => {
     return left.localeCompare(right);
   });
 
-  res.json({ memories: memories.map(signMemoryMedia) });
+  res.json({ memories: memories.map((m) => signMemoryMedia(m, req.storageScope)) });
 });
 
 app.get("/api/memories/:id", requireAuth, (req, res) => {
@@ -944,13 +1632,13 @@ app.get("/api/memories/:id", requireAuth, (req, res) => {
     res.status(400).json({ error: "Invalid memory ID format." });
     return;
   }
-  const db = readDb();
+  const db = readDb(req.storageScope);
   const memory = db.memories.find((m) => m.id === memoryId);
   if (!memory) {
     res.status(404).json({ error: "Memory not found." });
     return;
   }
-  res.json({ memory: signMemoryMedia(memory) });
+  res.json({ memory: signMemoryMedia(memory, req.storageScope) });
 });
 
 app.post("/api/upload", requireAuth, upload.array("photos", 24), (req, res) => {
@@ -969,10 +1657,11 @@ app.post("/api/upload", requireAuth, upload.array("photos", 24), (req, res) => {
     }
   }
 
+  const { uploadPrefix } = getScopePaths(req.storageScope);
   const uploaded = files.map((file) => ({
     id: crypto.randomUUID(),
     filename: file.filename,
-    url: signMediaPath(`/uploads/${file.filename}`),
+    url: signMediaPath(`${uploadPrefix}/${file.filename}`, req.storageScope),
     originalName: file.originalname,
     size: file.size,
     mimeType: file.mimetype,
@@ -981,7 +1670,7 @@ app.post("/api/upload", requireAuth, upload.array("photos", 24), (req, res) => {
   res.status(201).json({ files: uploaded });
 });
 
-function sanitizeIncomingPhotos(rawPhotos) {
+function sanitizeIncomingPhotos(rawPhotos, scopeId = LEGACY_SCOPE_ID) {
   if (!Array.isArray(rawPhotos)) return { error: null, photos: [] };
   const photos = [];
   for (const photo of rawPhotos) {
@@ -989,7 +1678,7 @@ function sanitizeIncomingPhotos(rawPhotos) {
     if (!url || !isSafeImageUrl(url)) {
       return { error: "Unsupported or unsafe photo URL." };
     }
-    const cleanUrl = stripMediaSignature(url);
+    const cleanUrl = stripMediaSignature(url, scopeId);
     const rawFilename = String(photo?.filename || "");
     const cleanFilename = rawFilename
       ? path.basename(rawFilename)
@@ -1012,14 +1701,15 @@ function sanitizeIncomingPhotos(rawPhotos) {
   return { error: null, photos };
 }
 
-function saveVerifiedBase64Raster(dataUrl, prefix = "") {
+function saveVerifiedBase64Raster(dataUrl, scopeId = LEGACY_SCOPE_ID, prefix = "") {
   const match = String(dataUrl || "").match(
     /^data:image\/(png|jpeg|jpg|webp|gif|avif);base64,([a-zA-Z0-9+/=\r\n]+)$/i,
   );
   if (!match) return null;
+  const { uploadsDir, uploadPrefix } = getScopePaths(scopeId);
   const rawExt = match[1].toLowerCase().replace("jpeg", "jpg");
   const filename = `${prefix}${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${rawExt}`;
-  const dest = path.join(UPLOADS_DIR, filename);
+  const dest = path.join(uploadsDir, filename);
   fs.writeFileSync(dest, Buffer.from(match[2], "base64"));
   if (!hasValidImageMagicBytes(dest)) {
     try {
@@ -1029,7 +1719,7 @@ function saveVerifiedBase64Raster(dataUrl, prefix = "") {
     }
     return null;
   }
-  return { filename, url: `/uploads/${filename}` };
+  return { filename, url: `${uploadPrefix}/${filename}` };
 }
 
 app.post("/api/memories", requireAuth, async (req, res) => {
@@ -1047,7 +1737,7 @@ app.post("/api/memories", requireAuth, async (req, res) => {
     return;
   }
 
-  const photoCheck = sanitizeIncomingPhotos(body.photos);
+  const photoCheck = sanitizeIncomingPhotos(body.photos, req.storageScope);
   if (photoCheck.error) {
     res.status(400).json({ error: photoCheck.error });
     return;
@@ -1087,13 +1777,13 @@ app.post("/api/memories", requireAuth, async (req, res) => {
 
     db.memories.push(memory);
     return { memory };
-  });
+  }, req.storageScope);
 
   if (created.error) {
     res.status(404).json({ error: created.error });
     return;
   }
-  res.status(201).json({ memory: signMemoryMedia(created.memory) });
+  res.status(201).json({ memory: signMemoryMedia(created.memory, req.storageScope) });
 });
 
 app.put("/api/memories/:id", requireAuth, async (req, res) => {
@@ -1111,7 +1801,7 @@ app.put("/api/memories/:id", requireAuth, async (req, res) => {
 
   let sanitizedPhotos = null;
   if (body.photos !== undefined) {
-    const check = sanitizeIncomingPhotos(body.photos);
+    const check = sanitizeIncomingPhotos(body.photos, req.storageScope);
     if (check.error) {
       res.status(400).json({ error: check.error });
       return;
@@ -1152,15 +1842,15 @@ app.put("/api/memories/:id", requireAuth, async (req, res) => {
     };
 
     db.memories[idx] = updated;
-    cleanupOrphanedUploads(db);
+    cleanupOrphanedUploads(db, req.storageScope);
     return updated;
-  });
+  }, req.storageScope);
 
   if (!result) {
     res.status(404).json({ error: "Memory not found." });
     return;
   }
-  res.json({ memory: signMemoryMedia(result) });
+  res.json({ memory: signMemoryMedia(result, req.storageScope) });
 });
 
 app.delete("/api/memories/:id", requireAuth, async (req, res) => {
@@ -1173,9 +1863,9 @@ app.delete("/api/memories/:id", requireAuth, async (req, res) => {
     const idx = db.memories.findIndex((m) => m.id === memoryId);
     if (idx === -1) return false;
     db.memories.splice(idx, 1);
-    cleanupOrphanedUploads(db);
+    cleanupOrphanedUploads(db, req.storageScope);
     return true;
-  });
+  }, req.storageScope);
 
   if (!deleted) {
     res.status(404).json({ error: "Memory not found." });
@@ -1196,23 +1886,30 @@ app.post("/api/sync", requireAuth, async (req, res) => {
 
       let normalizedCoverImage = incomingBook.coverImage;
       if (typeof normalizedCoverImage === "string" && normalizedCoverImage.startsWith("data:")) {
-        const saved = saveVerifiedBase64Raster(normalizedCoverImage, "cover-");
+        const saved = saveVerifiedBase64Raster(normalizedCoverImage, req.storageScope, "cover-");
         normalizedCoverImage = saved ? saved.url : undefined;
       } else if (typeof normalizedCoverImage === "string" && normalizedCoverImage) {
         normalizedCoverImage = isSafeImageUrl(normalizedCoverImage)
-          ? stripMediaSignature(normalizedCoverImage)
+          ? stripMediaSignature(normalizedCoverImage, req.storageScope)
           : undefined;
       }
 
       const idx = db.books.findIndex((b) => b.id === incomingId);
       if (idx !== -1) {
-        db.books[idx] = applyBookPatch(db.books[idx], {
-          ...incomingBook,
-          coverImage: normalizedCoverImage,
-        });
+        db.books[idx] = applyBookPatch(
+          db.books[idx],
+          { ...incomingBook, coverImage: normalizedCoverImage },
+          req.storageScope,
+        );
         updatedBooks += 1;
       } else {
-        db.books.push(applyBookPatch({ ...incomingBook, id: incomingId }, { coverImage: normalizedCoverImage }));
+        db.books.push(
+          applyBookPatch(
+            { ...incomingBook, id: incomingId },
+            { coverImage: normalizedCoverImage },
+            req.storageScope,
+          ),
+        );
         updatedBooks += 1;
       }
     }
@@ -1229,7 +1926,7 @@ app.post("/api/sync", requireAuth, async (req, res) => {
       for (const photo of incomingMemory.photos || []) {
         const rawUrl = String(photo?.url || "");
         if (rawUrl.startsWith("data:")) {
-          const saved = saveVerifiedBase64Raster(rawUrl);
+          const saved = saveVerifiedBase64Raster(rawUrl, req.storageScope);
           if (saved) {
             photos.push({
               ...photo,
@@ -1244,7 +1941,7 @@ app.post("/api/sync", requireAuth, async (req, res) => {
           photos.push({
             ...photo,
             id: typeof photo?.id === "string" && SAFE_ID_RE.test(photo.id) ? photo.id : crypto.randomUUID(),
-            url: stripMediaSignature(rawUrl),
+            url: stripMediaSignature(rawUrl, req.storageScope),
             filename: photo?.filename ? path.basename(String(photo.filename)) : "",
           });
         }
@@ -1256,7 +1953,7 @@ app.post("/api/sync", requireAuth, async (req, res) => {
     }
 
     return { updatedBooks, addedMemories, totalMemories: db.memories.length };
-  });
+  }, req.storageScope);
 
   res.json({ ok: true, ...result });
 });
@@ -1269,7 +1966,7 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: "Unexpected storage server error" });
 });
 
-readDb();
+readDb(LEGACY_SCOPE_ID);
 app.listen(PORT, HOST, () => {
-  console.log(`[mydiary-storage] running on http://${HOST}:${PORT} (data: ${DATA_DIR})`);
+  console.log(`[mydiary-storage] running on http://${HOST}:${PORT}`);
 });

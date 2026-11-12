@@ -2,7 +2,12 @@ import { defaultBooks } from "./default-books";
 import type {
   AlbumPhoto,
   AlbumStyle,
+  AuthStatusResponse,
+  AuthUser,
+  CreatedInvite,
   DiaryBook,
+  InviteSummary,
+  MemberSummary,
   MemoryAlbum,
   StorageConfig,
   StorageHealth,
@@ -10,11 +15,13 @@ import type {
 } from "./types";
 import {
   AUTH_REQUIRED_EVENT,
+  AUTH_SESSION_KEY,
   getUnlockedVaultSecrets,
   hasVaultEnvelope,
   isVaultUnlocked,
   scrubPlaintextConfigToken,
   touchVaultActivity,
+  updateUnlockedVaultToken,
 } from "./vault-security";
 
 export class StorageAuthError extends Error {
@@ -40,8 +47,7 @@ const CONFIG_KEY = "mydiary_storage_config_v1";
 const IDB_NAME = "mydiary_offline_fallback_v1";
 const IDB_VERSION = 1;
 
-export const DEFAULT_STORAGE_URL =
-  "https://4321-agq2i7yzuidu26jymgrfnit3ea.instabox.tech";
+export const DEFAULT_STORAGE_URL = "";
 
 function isLoopbackUrl(url: string): boolean {
   return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/i.test(url.trim());
@@ -61,12 +67,38 @@ export function getDefaultStorageConfig(): StorageConfig {
   return {
     serverUrl: normalizeServerUrl(envUrl || DEFAULT_STORAGE_URL),
     token: envToken || "",
-    label: "kaushals-mini-server",
+    label: "Private Archive",
   };
 }
 
 export function normalizeServerUrl(url: string): string {
   return url.trim().replace(/\/+$/, "");
+}
+
+export function getSessionToken(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.sessionStorage.getItem(AUTH_SESSION_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function saveSessionToken(token: string) {
+  if (typeof window === "undefined") return;
+  const trimmed = token.trim();
+  try {
+    if (trimmed) {
+      window.sessionStorage.setItem(AUTH_SESSION_KEY, trimmed);
+    } else {
+      window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+    }
+  } catch {
+    // Ignore storage quota issues
+  }
+  updateUnlockedVaultToken(trimmed);
+  clearCachedServerBooks();
+  window.dispatchEvent(new CustomEvent("mydiary:storage-config-changed"));
 }
 
 export function loadStorageConfig(): StorageConfig {
@@ -81,6 +113,7 @@ export function loadStorageConfig(): StorageConfig {
   let baseUrl = defaults.serverUrl;
   let label = defaults.label;
   let plainToken = defaults.token;
+  const sessionToken = getSessionToken();
 
   try {
     const raw = window.localStorage.getItem(CONFIG_KEY);
@@ -92,7 +125,8 @@ export function loadStorageConfig(): StorageConfig {
           ? defaults.serverUrl
           : candidate;
       if (typeof parsed.label === "string" && parsed.label.trim()) {
-        label = parsed.label.trim();
+        const cleanedLabel = parsed.label.trim();
+        label = cleanedLabel.includes("mini-server") ? "Private Archive" : cleanedLabel;
       }
       if (!vaultEnabled && typeof parsed.token === "string") {
         plainToken = parsed.token;
@@ -113,12 +147,15 @@ export function loadStorageConfig(): StorageConfig {
         !isLocalBrowserHost() && isLoopbackUrl(unlockedUrl)
           ? defaults.serverUrl
           : unlockedUrl || baseUrl,
-      token: unlocked.token || "",
-      label: unlocked.label?.trim() || label,
+      token: sessionToken || unlocked.token || "",
+      label:
+        unlocked.label?.trim() && !unlocked.label.trim().includes("mini-server")
+          ? unlocked.label.trim()
+          : label,
     };
   }
 
-  return { serverUrl: baseUrl, token: plainToken, label };
+  return { serverUrl: baseUrl, token: sessionToken || plainToken, label };
 }
 
 export function saveStorageConfig(config: StorageConfig) {
@@ -127,7 +164,7 @@ export function saveStorageConfig(config: StorageConfig) {
   const normalized: StorageConfig = {
     serverUrl: normalizeServerUrl(config.serverUrl),
     token: vaultEnabled ? "" : config.token.trim(),
-    label: config.label.trim() || "kaushals-mini-server",
+    label: config.label.trim() || "Private Archive",
   };
   window.localStorage.setItem(CONFIG_KEY, JSON.stringify(normalized));
   clearCachedServerBooks();
@@ -574,10 +611,12 @@ export async function fetchBooks(): Promise<{
     return {
       books,
       mode: "server",
-      hostname: health?.hostname,
     };
   } catch (err) {
-    if (isStorageAuthError(err)) throw err;
+    if (isStorageAuthError(err)) {
+      clearCachedServerBooks();
+      throw err;
+    }
     const books = await getOfflineBooks();
     return { books, mode: "offline-fallback" };
   }
@@ -973,4 +1012,233 @@ export async function syncOfflineToServer(
     customConfig,
   );
   return { addedMemories: res.addedMemories, updatedBooks: res.updatedBooks };
+}
+
+// --- Multi-User Auth & Owner Verification APIs ---
+
+async function publicAuthFetch<T>(
+  path: string,
+  init: RequestInit = {},
+  customConfig?: StorageConfig,
+): Promise<T> {
+  const config = customConfig ?? loadStorageConfig();
+  const base = normalizeServerUrl(config.serverUrl);
+  if (!base) {
+    throw new Error("No archive server URL is configured.");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${base}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        ...authHeaders(config),
+        ...(init.headers || {}),
+      },
+    });
+    const body = (await response.json().catch(() => ({}))) as { error?: string } & T;
+    if (!response.ok) {
+      throw new Error(body?.error || `Request failed (${response.status})`);
+    }
+    return body as T;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function getAuthStatus(
+  customConfig?: StorageConfig,
+): Promise<AuthStatusResponse | null> {
+  const config = customConfig ?? loadStorageConfig();
+  const base = normalizeServerUrl(config.serverUrl);
+  if (!base) return null;
+  try {
+    return await publicAuthFetch<AuthStatusResponse>("/api/auth/status", {}, config);
+  } catch {
+    return null;
+  }
+}
+
+export async function bootstrapOwnerAccount(
+  input: {
+    username: string;
+    displayName?: string;
+    password: string;
+    setupToken?: string;
+  },
+  customConfig?: StorageConfig,
+): Promise<{ sessionToken: string; user: AuthUser }> {
+  const res = await publicAuthFetch<{ sessionToken: string; user: AuthUser }>(
+    "/api/auth/bootstrap-owner",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+    customConfig,
+  );
+  if (res.sessionToken) {
+    saveSessionToken(res.sessionToken);
+  }
+  return res;
+}
+
+export async function loginAccount(
+  input: { username: string; password: string },
+  customConfig?: StorageConfig,
+): Promise<{ sessionToken: string; user: AuthUser }> {
+  const res = await publicAuthFetch<{ sessionToken: string; user: AuthUser }>(
+    "/api/auth/login",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+    customConfig,
+  );
+  if (res.sessionToken) {
+    saveSessionToken(res.sessionToken);
+  }
+  return res;
+}
+
+export async function registerAccount(
+  input: {
+    username: string;
+    displayName?: string;
+    password: string;
+    inviteCode?: string;
+  },
+  customConfig?: StorageConfig,
+): Promise<{
+  pendingVerification: boolean;
+  sessionToken?: string;
+  user: AuthUser;
+  message?: string;
+}> {
+  const res = await publicAuthFetch<{
+    pendingVerification: boolean;
+    sessionToken?: string;
+    user: AuthUser;
+    message?: string;
+  }>(
+    "/api/auth/register",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+    customConfig,
+  );
+  if (res.sessionToken) {
+    saveSessionToken(res.sessionToken);
+  }
+  return res;
+}
+
+export async function logoutAccount(customConfig?: StorageConfig): Promise<void> {
+  const config = customConfig ?? loadStorageConfig();
+  const base = normalizeServerUrl(config.serverUrl);
+  if (base && config.token) {
+    try {
+      await fetch(`${base}/api/auth/logout`, {
+        method: "POST",
+        headers: authHeaders(config),
+      });
+    } catch {
+      // Clear local session even if server is offline
+    }
+  }
+  try {
+    window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+  } catch {
+    // Ignore storage issues
+  }
+  updateUnlockedVaultToken("");
+  scrubPlaintextConfigToken();
+  clearCachedServerBooks();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent(AUTH_REQUIRED_EVENT, {
+        detail: { message: "Signed out of your diary session.", status: 401 },
+      }),
+    );
+  }
+}
+
+export async function fetchCurrentAccount(
+  customConfig?: StorageConfig,
+): Promise<{ user: AuthUser | null; isOwner: boolean }> {
+  return serverFetch<{ ok: boolean; user: AuthUser | null; isOwner: boolean }>(
+    "/api/auth/me",
+    {},
+    customConfig,
+  );
+}
+
+export async function fetchAdminMembers(
+  customConfig?: StorageConfig,
+): Promise<{ members: MemberSummary[]; invites: InviteSummary[] }> {
+  return serverFetch<{ members: MemberSummary[]; invites: InviteSummary[] }>(
+    "/api/admin/members",
+    {},
+    customConfig,
+  );
+}
+
+export async function createMemberInvite(
+  input?: { label?: string; expiresDays?: number },
+  customConfig?: StorageConfig,
+): Promise<CreatedInvite> {
+  const res = await serverFetch<{ invite: CreatedInvite }>(
+    "/api/admin/invites",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input || {}),
+    },
+    customConfig,
+  );
+  return res.invite;
+}
+
+export async function revokeMemberInvite(
+  inviteId: string,
+  customConfig?: StorageConfig,
+): Promise<void> {
+  await serverFetch<{ ok: boolean }>(
+    `/api/admin/invites/${encodeURIComponent(inviteId)}`,
+    { method: "DELETE" },
+    customConfig,
+  );
+}
+
+export async function setMemberStatus(
+  memberId: string,
+  status: "active" | "suspended",
+  customConfig?: StorageConfig,
+): Promise<AuthUser> {
+  const res = await serverFetch<{ member: AuthUser }>(
+    `/api/admin/members/${encodeURIComponent(memberId)}/status`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    },
+    customConfig,
+  );
+  return res.member;
+}
+
+export async function removeMemberAccount(
+  memberId: string,
+  customConfig?: StorageConfig,
+): Promise<void> {
+  await serverFetch<{ ok: boolean }>(
+    `/api/admin/members/${encodeURIComponent(memberId)}`,
+    { method: "DELETE" },
+    customConfig,
+  );
 }

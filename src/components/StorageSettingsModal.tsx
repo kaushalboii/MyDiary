@@ -4,29 +4,50 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Check,
+  CheckCircle2,
   Copy,
-  HardDrive,
+  Eye,
+  EyeOff,
   KeyRound,
   Lock,
+  LogOut,
   RefreshCw,
-  Server,
   ShieldAlert,
   ShieldCheck,
-  Terminal,
+  Ticket,
   Trash2,
   Unlock,
   UploadCloud,
+  UserCheck,
+  UserPlus,
+  Users,
   X,
 } from "lucide-react";
 import {
+  bootstrapOwnerAccount,
   checkStorageHealth,
-  getDefaultStorageConfig,
+  createMemberInvite,
+  fetchAdminMembers,
+  getAuthStatus,
   getOfflineDraftCount,
   loadStorageConfig,
+  loginAccount,
+  logoutAccount,
+  registerAccount,
+  removeMemberAccount,
+  revokeMemberInvite,
   saveStorageConfig,
+  setMemberStatus,
   syncOfflineToServer,
 } from "@/lib/storage-client";
-import type { StorageConfig, StorageHealth } from "@/lib/types";
+import type {
+  AuthStatusResponse,
+  CreatedInvite,
+  InviteSummary,
+  MemberSummary,
+  StorageConfig,
+  StorageHealth,
+} from "@/lib/types";
 import {
   disableVaultLock,
   enableVaultLock,
@@ -35,21 +56,6 @@ import {
   unlockVaultWithPassphrase,
   wipeLocalDiaryData,
 } from "@/lib/vault-security";
-
-function formatBytes(bytes: number): string {
-  if (!bytes) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
-}
-
-const SERVER_SETUP_SNIPPET = `# On your private host (binds 0.0.0.0 with automatic fail-closed secret token):
-cd MyDiary/storage-server && bash setup-mini-server.sh`;
 
 function isLoopbackServerUrl(url: string): boolean {
   try {
@@ -61,7 +67,7 @@ function isLoopbackServerUrl(url: string): boolean {
   }
 }
 
-type ModalTab = "vault" | "server";
+type ModalTab = "vault" | "account";
 
 export function StorageSettingsModal({
   open,
@@ -78,12 +84,14 @@ export function StorageSettingsModal({
   const [tab, setTab] = useState<ModalTab>(initialTab);
   const [config, setConfig] = useState<StorageConfig>(() => loadStorageConfig());
   const [health, setHealth] = useState<StorageHealth | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [authStatus, setAuthStatus] = useState<AuthStatusResponse | null>(null);
   const [testing, setTesting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Sync offline drafts
+  const [offlineCount, setOfflineCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
-  const [offlineCount, setOfflineCount] = useState(0);
-  const [copiedCmd, setCopiedCmd] = useState(false);
 
   // Vault state
   const [vaultEnabled, setVaultEnabled] = useState(false);
@@ -95,6 +103,31 @@ export function StorageSettingsModal({
   const [vaultError, setVaultError] = useState<string | null>(null);
   const [vaultBusy, setVaultBusy] = useState(false);
   const [confirmWipe, setConfirmWipe] = useState(false);
+
+  // Account & Members state
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authFormMode, setAuthFormMode] = useState<"signin" | "register">("signin");
+  const [username, setUsername] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [password, setPassword] = useState("");
+  const [inviteCodeInput, setInviteCodeInput] = useState("");
+  const [setupTokenInput, setSetupTokenInput] = useState("");
+  const [accountNotice, setAccountNotice] = useState<string | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
+
+  // Owner management state
+  const [members, setMembers] = useState<MemberSummary[]>([]);
+  const [invites, setInvites] = useState<InviteSummary[]>([]);
+  const [inviteLabel, setInviteLabel] = useState("");
+  const [freshInvite, setFreshInvite] = useState<CreatedInvite | null>(null);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [adminLoading, setAdminLoading] = useState(false);
+
+  // Masked endpoint override (never displays default/configured endpoint URL)
+  const [overrideUrl, setOverrideUrl] = useState("");
+  const [overrideLabel, setOverrideLabel] = useState("");
+  const [overrideToken, setOverrideToken] = useState("");
+  const [revealUrl, setRevealUrl] = useState(false);
   const [resealPassphrase, setResealPassphrase] = useState("");
 
   useEffect(() => {
@@ -110,6 +143,38 @@ export function StorageSettingsModal({
     return () => window.removeEventListener("keydown", handleKey);
   }, [open, onClose]);
 
+  async function refreshConnectionAndAccount(target: StorageConfig) {
+    setTesting(true);
+    setError(null);
+    try {
+      const [h, a] = await Promise.all([
+        checkStorageHealth(target).catch(() => null),
+        getAuthStatus(target),
+      ]);
+      setHealth(h);
+      setAuthStatus(a);
+
+      if (a?.authenticated && a.user?.role === "owner") {
+        setAdminLoading(true);
+        try {
+          const adminRes = await fetchAdminMembers(target);
+          setMembers(adminRes.members);
+          setInvites(adminRes.invites);
+        } catch {
+          setMembers([]);
+          setInvites([]);
+        } finally {
+          setAdminLoading(false);
+        }
+      } else {
+        setMembers([]);
+        setInvites([]);
+      }
+    } finally {
+      setTesting(false);
+    }
+  }
+
   useEffect(() => {
     if (!open) return;
     setTab(initialTab);
@@ -124,32 +189,17 @@ export function StorageSettingsModal({
     setResealPassphrase("");
     setVaultNotice(null);
     setVaultError(null);
+    setAccountError(null);
+    setAccountNotice(null);
+    setFreshInvite(null);
+    setOverrideUrl("");
+    setOverrideLabel(loaded.label || "Private Archive");
+    setOverrideToken("");
     setConfirmWipe(false);
     setSyncResult(null);
-    void runHealthCheck(loaded);
+    void refreshConnectionAndAccount(loaded);
     void getOfflineDraftCount().then(setOfflineCount);
   }, [open, initialTab]);
-
-  async function runHealthCheck(target: StorageConfig) {
-    setTesting(true);
-    setError(null);
-    try {
-      const status = await checkStorageHealth(target);
-      setHealth(status);
-      if (status.authRequired && !status.tokenAuthorized) {
-        setError("Server requires a valid owner token in the Access Token field.");
-      }
-    } catch (err) {
-      setHealth(null);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Could not reach storage server at this URL.",
-      );
-    } finally {
-      setTesting(false);
-    }
-  }
 
   async function handleEnableOrUpdateVault(e: React.FormEvent) {
     e.preventDefault();
@@ -180,7 +230,7 @@ export function StorageSettingsModal({
         setNewPassphrase("");
         setConfirmPassphrase("");
         setVaultNotice(
-          "Owner Vault Lock enabled. Token is now AES-256-GCM sealed and cleared from plain browser storage.",
+          "Owner Vault Lock enabled. Credentials are now AES-256-GCM sealed on this browser.",
         );
       } catch (err) {
         setVaultError(err instanceof Error ? err.message : "Failed to enable Vault Lock.");
@@ -254,25 +304,174 @@ export function StorageSettingsModal({
     }
   }
 
-  async function handleSaveAndConnect(e: React.FormEvent) {
+  async function handleOwnerBootstrap(e: React.FormEvent) {
+    e.preventDefault();
+    setAuthBusy(true);
+    setAccountError(null);
+    setAccountNotice(null);
+    try {
+      await bootstrapOwnerAccount({
+        username: username.trim(),
+        displayName: displayName.trim() || username.trim(),
+        password,
+        setupToken: setupTokenInput.trim() || undefined,
+      });
+      setPassword("");
+      setSetupTokenInput("");
+      setAccountNotice("Owner account created. Your archive data is now isolated under your account.");
+      const updated = loadStorageConfig();
+      setConfig(updated);
+      await refreshConnectionAndAccount(updated);
+      onConnected?.();
+    } catch (err) {
+      setAccountError(err instanceof Error ? err.message : "Owner setup failed.");
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function handleSignInOrRegister(e: React.FormEvent) {
+    e.preventDefault();
+    setAuthBusy(true);
+    setAccountError(null);
+    setAccountNotice(null);
+    try {
+      if (authFormMode === "signin") {
+        await loginAccount({ username: username.trim(), password });
+        setPassword("");
+        setAccountNotice("Signed in to your private diary.");
+      } else {
+        const res = await registerAccount({
+          username: username.trim(),
+          displayName: displayName.trim() || username.trim(),
+          password,
+          inviteCode: inviteCodeInput.trim() || undefined,
+        });
+        setPassword("");
+        setInviteCodeInput("");
+        if (res.pendingVerification) {
+          setAccountNotice(
+            res.message || "Access request submitted. Waiting for archive owner verification.",
+          );
+          return;
+        }
+        setAccountNotice("Account verified and activated.");
+      }
+      const updated = loadStorageConfig();
+      setConfig(updated);
+      await refreshConnectionAndAccount(updated);
+      onConnected?.();
+    } catch (err) {
+      setAccountError(err instanceof Error ? err.message : "Authentication failed.");
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function handleSignOut() {
+    setAuthBusy(true);
+    try {
+      onClose();
+      await logoutAccount();
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function handleGenerateInvite(e: React.FormEvent) {
+    e.preventDefault();
+    setAccountError(null);
+    setAdminLoading(true);
+    try {
+      const created = await createMemberInvite({
+        label: inviteLabel.trim() || "Member Invite",
+        expiresDays: 7,
+      });
+      setFreshInvite(created);
+      setInviteLabel("");
+      const adminRes = await fetchAdminMembers();
+      setMembers(adminRes.members);
+      setInvites(adminRes.invites);
+    } catch (err) {
+      setAccountError(err instanceof Error ? err.message : "Could not generate invite.");
+    } finally {
+      setAdminLoading(false);
+    }
+  }
+
+  async function handleRevokeInvite(inviteId: string) {
+    setAdminLoading(true);
+    try {
+      await revokeMemberInvite(inviteId);
+      const adminRes = await fetchAdminMembers();
+      setMembers(adminRes.members);
+      setInvites(adminRes.invites);
+    } catch (err) {
+      setAccountError(err instanceof Error ? err.message : "Could not revoke invite.");
+    } finally {
+      setAdminLoading(false);
+    }
+  }
+
+  async function handleToggleMemberStatus(member: MemberSummary, nextStatus: "active" | "suspended") {
+    setAdminLoading(true);
+    setAccountError(null);
+    try {
+      await setMemberStatus(member.id, nextStatus);
+      const adminRes = await fetchAdminMembers();
+      setMembers(adminRes.members);
+      setInvites(adminRes.invites);
+    } catch (err) {
+      setAccountError(err instanceof Error ? err.message : "Could not update member status.");
+    } finally {
+      setAdminLoading(false);
+    }
+  }
+
+  async function handleRemoveMember(member: MemberSummary) {
+    setAdminLoading(true);
+    setAccountError(null);
+    try {
+      await removeMemberAccount(member.id);
+      const adminRes = await fetchAdminMembers();
+      setMembers(adminRes.members);
+      setInvites(adminRes.invites);
+    } catch (err) {
+      setAccountError(err instanceof Error ? err.message : "Could not remove member.");
+    } finally {
+      setAdminLoading(false);
+    }
+  }
+
+  async function handleSaveEndpointOverride(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const nextConfig: StorageConfig = {
+      serverUrl: overrideUrl.trim() || config.serverUrl,
+      token: overrideToken.trim() || config.token,
+      label: overrideLabel.trim() || "Private Archive",
+    };
+
     if (vaultEnabled) {
       if (!resealPassphrase.trim()) {
-        setError("Enter your Owner Vault passphrase below to re-seal server credentials.");
+        setError("Enter your Owner Vault passphrase to update sealed connection settings.");
         return;
       }
       try {
         await unlockVaultWithPassphrase(resealPassphrase);
-        await enableVaultLock(resealPassphrase, config, autoLockMinutes);
+        await enableVaultLock(resealPassphrase, nextConfig, autoLockMinutes);
         setResealPassphrase("");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Incorrect vault passphrase.");
         return;
       }
     }
-    saveStorageConfig(config);
-    await runHealthCheck(config);
+
+    saveStorageConfig(nextConfig);
+    setConfig(nextConfig);
+    setOverrideUrl("");
+    setOverrideToken("");
+    await refreshConnectionAndAccount(nextConfig);
     onConnected?.();
   }
 
@@ -283,25 +482,23 @@ export function StorageSettingsModal({
     try {
       const result = await syncOfflineToServer(config);
       setSyncResult(
-        `Synced ${result.addedMemories} memories and ${result.updatedBooks} volume updates to ${config.label}.`,
+        `Synced ${result.addedMemories} memories and ${result.updatedBooks} volume updates to your archive.`,
       );
-      await runHealthCheck(config);
+      await refreshConnectionAndAccount(config);
       onConnected?.();
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Sync failed. Check server URL and token.",
+        err instanceof Error ? err.message : "Sync failed. Check connection or sign in.",
       );
     } finally {
       setSyncing(false);
     }
   }
 
-  async function copyCommands() {
-    await navigator.clipboard.writeText(SERVER_SETUP_SNIPPET);
-    setCopiedCmd(true);
-    setTimeout(() => setCopiedCmd(false), 1800);
+  async function copyInviteCode(code: string) {
+    await navigator.clipboard.writeText(code);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 1800);
   }
 
   if (!open || !mounted || typeof document === "undefined") return null;
@@ -309,13 +506,15 @@ export function StorageSettingsModal({
   const tokenConfigured = Boolean(config.token.trim());
   const serverProtected = Boolean(health?.authRequired);
   const loopbackServer = isLoopbackServerUrl(config.serverUrl);
+  const currentUser = authStatus?.user ?? health?.user ?? null;
+  const isOwner = currentUser?.role === "owner";
 
   const modalContent = (
     <div
       className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-6 backdrop-blur-xs"
       role="dialog"
       aria-modal="true"
-      aria-label="Owner security and storage settings"
+      aria-label="Account, verification and vault security settings"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -327,7 +526,7 @@ export function StorageSettingsModal({
         <button
           type="button"
           onClick={onClose}
-          aria-label="Close security and storage settings"
+          aria-label="Close security and account settings"
           className="absolute top-5 right-5 grid h-9 w-9 place-items-center rounded-full border border-[var(--hairline)] bg-[var(--paper)] hover:bg-[var(--paper-deep)] cursor-pointer"
         >
           <X className="h-4 w-4" />
@@ -336,17 +535,17 @@ export function StorageSettingsModal({
         <div className="mb-5">
           <p className="eyebrow">
             <ShieldCheck className="h-3.5 w-3.5" />
-            <span>Owner Privacy &amp; Storage</span>
+            <span>Privacy, Accounts &amp; Encryption</span>
           </p>
           <h2
             className="m-0 text-3xl font-normal tracking-tight"
             style={{ fontFamily: "var(--serif)" }}
           >
-            Security &amp; Private Storage
+            Security &amp; Member Access
           </h2>
           <p className="mt-2 text-sm text-[var(--ink-soft)]">
-            Seal your diary credentials on this browser with a personal passphrase and verify your
-            token-protected archive server.
+            Protect this browser with an AES-256-GCM passphrase lock and manage isolated accounts,
+            invite verification codes, and member approvals.
           </p>
         </div>
 
@@ -367,16 +566,16 @@ export function StorageSettingsModal({
           </button>
           <button
             type="button"
-            onClick={() => setTab("server")}
-            data-testid="tab-private-server"
+            onClick={() => setTab("account")}
+            data-testid="tab-account-members"
             className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold tracking-wider uppercase cursor-pointer transition-colors ${
-              tab === "server"
+              tab === "account"
                 ? "bg-[var(--ink)] text-[var(--paper-light)]"
                 : "text-[var(--ink-soft)] hover:text-[var(--ink)]"
             }`}
           >
-            <Server className="h-3.5 w-3.5" />
-            <span>Private Storage Server</span>
+            <Users className="h-3.5 w-3.5" />
+            <span>Account &amp; Members</span>
           </button>
         </div>
 
@@ -428,22 +627,24 @@ export function StorageSettingsModal({
                 <div className="flex items-center gap-2">
                   {health && serverProtected && health.tokenAuthorized ? (
                     <ShieldCheck className="h-3.5 w-3.5 text-[#4e7c53]" />
-                  ) : health && (!serverProtected && !loopbackServer) ? (
+                  ) : health && !serverProtected && !loopbackServer ? (
                     <ShieldAlert className="h-3.5 w-3.5 text-[#b87a3d]" />
                   ) : (
                     <KeyRound className="h-3.5 w-3.5 text-[var(--ink-soft)]" />
                   )}
                   <span>
-                    Server Auth:{" "}
+                    Archive Auth:{" "}
                     <strong>
                       {health
                         ? serverProtected
                           ? health.tokenAuthorized
-                            ? "Verified"
-                            : "Token Required"
+                            ? currentUser
+                              ? `@${currentUser.username}`
+                              : "Verified"
+                            : "Sign In Required"
                           : loopbackServer
-                            ? "Loopback Open"
-                            : "Unprotected Remote"
+                            ? "Local Open"
+                            : "Unprotected"
                         : testing
                           ? "Checking"
                           : "Offline"}
@@ -453,7 +654,7 @@ export function StorageSettingsModal({
                 <div className="flex items-center gap-2">
                   <KeyRound className="h-3.5 w-3.5 text-[var(--ink-soft)]" />
                   <span>
-                    Token Loaded: <strong>{tokenConfigured ? "Yes" : "None"}</strong>
+                    Session Active: <strong>{tokenConfigured ? "Yes" : "None"}</strong>
                   </span>
                 </div>
               </div>
@@ -579,7 +780,7 @@ export function StorageSettingsModal({
                 </button>
               ) : (
                 <div className="flex flex-wrap items-center justify-between gap-3 border border-[var(--hairline)] bg-[var(--paper)] p-3 text-xs">
-                  <span>Removes only local browser tokens and drafts; your private server stays intact.</span>
+                  <span>Removes only local browser tokens and drafts; your remote archive stays intact.</span>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -606,214 +807,452 @@ export function StorageSettingsModal({
             </div>
           </div>
         ) : (
-          <div>
-            {/* Live status banner */}
-            <div className="mb-6 border border-[var(--hairline)] bg-[var(--paper)] p-4">
+          <div className="space-y-6">
+            {/* Connection & Account Status Card */}
+            <div className="border border-[var(--hairline)] bg-[var(--paper)] p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <span
-                    className="inline-block h-2.5 w-2.5 rounded-full"
-                    style={{
-                      backgroundColor:
-                        health && (!health.authRequired || health.tokenAuthorized)
-                          ? "#4e7c53"
-                          : "#a74735",
-                    }}
-                  />
-                  <span className="text-xs font-semibold tracking-wider uppercase">
-                    {health
-                      ? health.authRequired && !health.tokenAuthorized
-                        ? "Server Reachable · Token Required"
-                        : `Connected · ${health.hostname || "Private Server"}${health.platform ? ` (${health.platform})` : ""}`
-                      : "Server Unreachable (Offline Fallback)"}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void runHealthCheck(config)}
-                  disabled={testing}
-                  className="inline-flex items-center gap-1.5 border border-[var(--hairline)] bg-[var(--paper-light)] px-3 py-1.5 text-[11px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
-                >
-                  <RefreshCw className={`h-3 w-3 ${testing ? "animate-spin" : ""}`} />
-                  <span>{testing ? "Checking..." : "Test Connection"}</span>
-                </button>
-              </div>
-
-              {health?.stats ? (
-                <div className="mt-3 grid grid-cols-3 gap-3 border-t border-[var(--hairline)] pt-3 text-xs">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--ink-soft)]">
-                      Memories Stored
-                    </div>
-                    <div className="mt-0.5 font-serif text-lg">
-                      {health.stats.memoriesCount}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--ink-soft)]">
-                      Album Photos
-                    </div>
-                    <div className="mt-0.5 font-serif text-lg">
-                      {health.stats.photosCount}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--ink-soft)]">
-                      Media Disk Used
-                    </div>
-                    <div className="mt-0.5 font-serif text-lg">
-                      {formatBytes(health.stats.uploadsBytes)}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {error ? (
-                <p className="mt-3 text-xs font-medium text-[var(--accent)]" role="alert">
-                  {error}
-                </p>
-              ) : null}
-            </div>
-
-            <form onSubmit={handleSaveAndConnect} className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                    Server Label
-                  </label>
-                  <input
-                    type="text"
-                    value={config.label}
-                    onChange={(e) => setConfig({ ...config, label: e.target.value })}
-                    placeholder="kaushals-mini-server"
-                    className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3.5 py-2.5 text-sm"
-                  />
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="inline-block h-2.5 w-2.5 rounded-full"
+                      style={{
+                        backgroundColor:
+                          health && (!health.authRequired || health.tokenAuthorized)
+                            ? "#4e7c53"
+                            : "#a74735",
+                      }}
+                    />
+                    <span className="text-xs font-semibold tracking-wider uppercase">
+                      {currentUser
+                        ? `${currentUser.displayName} (@${currentUser.username}) · ${currentUser.role}`
+                        : health
+                          ? health.authRequired
+                            ? "Archive Protected · Sign In Required"
+                            : "Connected · Single-User Mode"
+                          : "Archive Unreachable (Offline Drafts)"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--ink-soft)]">
+                    {currentUser
+                      ? "Your volumes, entries, and uploaded media are strictly isolated under your account."
+                      : "Create an owner account to lock anonymous access and invite verified members later."}
+                  </p>
                 </div>
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                    Owner Access Token
-                  </label>
-                  <input
-                    type="password"
-                    value={config.token}
-                    onChange={(e) => setConfig({ ...config, token: e.target.value })}
-                    placeholder="DIARY_STORAGE_TOKEN"
-                    className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3.5 py-2.5 text-sm"
-                  />
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void refreshConnectionAndAccount(config)}
+                    disabled={testing}
+                    className="inline-flex items-center gap-1.5 border border-[var(--hairline)] bg-[var(--paper-light)] px-3 py-1.5 text-[11px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${testing ? "animate-spin" : ""}`} />
+                    <span>{testing ? "Checking..." : "Refresh"}</span>
+                  </button>
+
+                  {currentUser ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleSignOut()}
+                      disabled={authBusy}
+                      data-testid="account-signout-btn"
+                      className="inline-flex items-center gap-1.5 border border-[var(--hairline)] bg-[var(--paper-light)] px-3 py-1.5 text-[11px] font-semibold tracking-wider text-[var(--accent)] uppercase cursor-pointer hover:border-[var(--accent)]"
+                    >
+                      <LogOut className="h-3 w-3" />
+                      <span>Sign Out</span>
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
-              <div>
-                <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                  Storage Server URL
-                </label>
-                <input
-                  type="url"
-                  required
-                  value={config.serverUrl}
-                  onChange={(e) => setConfig({ ...config, serverUrl: e.target.value })}
-                  placeholder="https://your-private-server or http://127.0.0.1:4321"
-                  className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3.5 py-2.5 text-sm"
-                />
-              </div>
-
-              {vaultEnabled ? (
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                    Current Vault Passphrase (required to re-seal token)
-                  </label>
-                  <input
-                    type="password"
-                    value={resealPassphrase}
-                    onChange={(e) => setResealPassphrase(e.target.value)}
-                    placeholder="Enter vault passphrase to save & seal credentials"
-                    className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3.5 py-2.5 text-sm"
-                  />
-                </div>
-              ) : null}
-
-              <div className="flex flex-wrap items-center gap-3 pt-1">
-                <button
-                  type="submit"
-                  className="inline-flex items-center gap-2 bg-[var(--ink)] px-5 py-2.5 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)]"
-                >
-                  <HardDrive className="h-3.5 w-3.5" />
-                  <span>Save &amp; Connect</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const defaults = getDefaultStorageConfig();
-                    setConfig((prev) => ({
-                      ...defaults,
-                      token: prev.token || defaults.token,
-                    }));
-                    saveStorageConfig({
-                      ...defaults,
-                      token: config.token || defaults.token,
-                    });
-                    void runHealthCheck({
-                      ...defaults,
-                      token: config.token || defaults.token,
-                    });
-                    onConnected?.();
-                  }}
-                  className="inline-flex items-center gap-2 border border-[var(--hairline)] bg-[var(--paper-light)] px-4 py-2.5 text-xs font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
-                >
-                  <span>Use Default URL</span>
-                </button>
-
-                {offlineCount > 0 && health && (!health.authRequired || health.tokenAuthorized) ? (
+              {offlineCount > 0 && health && (!health.authRequired || health.tokenAuthorized) ? (
+                <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-[var(--hairline)] pt-3">
                   <button
                     type="button"
                     onClick={() => void handleSyncOffline()}
                     disabled={syncing}
-                    className="inline-flex items-center gap-2 border border-[var(--ink)] bg-[var(--paper-light)] px-4 py-2.5 text-xs font-semibold tracking-wider uppercase cursor-pointer hover:bg-[var(--paper-deep)]"
+                    className="inline-flex items-center gap-2 border border-[var(--ink)] bg-[var(--paper-light)] px-3.5 py-1.5 text-[11px] font-semibold tracking-wider uppercase cursor-pointer hover:bg-[var(--paper-deep)]"
                   >
                     <UploadCloud className="h-3.5 w-3.5" />
                     <span>
-                      {syncing
-                        ? "Syncing..."
-                        : `Sync ${offlineCount} Offline Draft(s) → Server`}
+                      {syncing ? "Syncing..." : `Sync ${offlineCount} Offline Draft(s)`}
                     </span>
                   </button>
-                ) : null}
-              </div>
-
-              {syncResult ? (
-                <p className="text-xs font-medium text-[#466f4b]">{syncResult}</p>
-              ) : null}
-            </form>
-
-            <div className="mt-7 border-t border-[var(--hairline)] pt-5">
-              <div className="mb-2 flex items-center justify-between">
-                <div className="flex items-center gap-2 text-[10px] font-semibold tracking-widest uppercase text-[var(--ink-soft)]">
-                  <Terminal className="h-3.5 w-3.5" />
-                  <span>Private Server Setup</span>
+                  {syncResult ? (
+                    <span className="text-xs font-medium text-[#466f4b]">{syncResult}</span>
+                  ) : null}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void copyCommands()}
-                  className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wider uppercase text-[var(--accent)] cursor-pointer"
-                >
-                  {copiedCmd ? (
-                    <>
-                      <Check className="h-3 w-3" />
-                      <span>Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3 w-3" />
-                      <span>Copy Command</span>
-                    </>
-                  )}
-                </button>
-              </div>
-              <pre className="overflow-x-auto border border-[var(--hairline)] bg-[#23201c] p-3.5 text-xs leading-relaxed text-[#eee8db]">
-                <code>{SERVER_SETUP_SNIPPET}</code>
-              </pre>
+              ) : null}
             </div>
+
+            {accountError ? (
+              <p className="text-xs font-medium text-[var(--accent)]" role="alert">
+                {accountError}
+              </p>
+            ) : null}
+            {accountNotice ? (
+              <p className="text-xs font-medium text-[#466f4b]">{accountNotice}</p>
+            ) : null}
+
+            {/* Owner Account Creation / Sign In when not signed in cleanly */}
+            {!currentUser && health ? (
+              authStatus?.needsOwnerSetup ? (
+                <form onSubmit={handleOwnerBootstrap} className="space-y-4 border border-[var(--hairline)] bg-[var(--paper-light)] p-4">
+                  <h3 className="m-0 font-serif text-lg">Claim Owner Account</h3>
+                  <p className="m-0 text-xs text-[var(--ink-soft)]">
+                    Set up your owner login to enable strict per-user diary isolation and member verification.
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <input
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="Owner username (min 3 chars)"
+                      required
+                      className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                    />
+                    <input
+                      type="text"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      placeholder="Display name"
+                      className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Password (min 8 chars)"
+                      required
+                      className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                    />
+                    {authStatus.needsSetupToken ? (
+                      <input
+                        type="password"
+                        value={setupTokenInput}
+                        onChange={(e) => setSetupTokenInput(e.target.value)}
+                        placeholder="Server setup key"
+                        required
+                        className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                      />
+                    ) : null}
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={authBusy}
+                    className="inline-flex items-center gap-2 bg-[var(--ink)] px-4 py-2 text-xs font-semibold tracking-wider text-[var(--paper-light)] uppercase cursor-pointer"
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    <span>{authBusy ? "Creating..." : "Activate Owner Security"}</span>
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleSignInOrRegister} className="space-y-4 border border-[var(--hairline)] bg-[var(--paper-light)] p-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="m-0 font-serif text-lg">
+                      {authFormMode === "signin" ? "Sign In to Account" : "Join With Verification"}
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAuthFormMode((m) => (m === "signin" ? "register" : "signin"))
+                      }
+                      className="text-xs font-semibold uppercase tracking-wider text-[var(--accent)] cursor-pointer"
+                    >
+                      {authFormMode === "signin" ? "Have an Invite Code?" : "Back to Sign In"}
+                    </button>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <input
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="Username"
+                      required
+                      className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                    />
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Password"
+                      required
+                      className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  {authFormMode === "register" ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <input
+                        type="text"
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        placeholder="Display name"
+                        className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                      />
+                      <input
+                        type="text"
+                        value={inviteCodeInput}
+                        onChange={(e) => setInviteCodeInput(e.target.value.toUpperCase())}
+                        placeholder="Invite code (MYD-XXXX-XXXX)"
+                        className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                      />
+                    </div>
+                  ) : null}
+                  <button
+                    type="submit"
+                    disabled={authBusy}
+                    className="inline-flex items-center gap-2 bg-[var(--ink)] px-4 py-2 text-xs font-semibold tracking-wider text-[var(--paper-light)] uppercase cursor-pointer"
+                  >
+                    <UserPlus className="h-3.5 w-3.5" />
+                    <span>{authBusy ? "Submitting..." : authFormMode === "signin" ? "Sign In" : "Verify & Join"}</span>
+                  </button>
+                </form>
+              )
+            ) : null}
+
+            {/* Owner-Only Invite Generation & Member Verification Console */}
+            {isOwner ? (
+              <div className="space-y-5">
+                <div className="border border-[var(--hairline)] bg-[var(--paper-light)] p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <Ticket className="h-4 w-4 text-[var(--accent)]" />
+                    <h3 className="m-0 font-serif text-lg">One-Time Invite Codes</h3>
+                  </div>
+                  <p className="mb-3 text-xs text-[var(--ink-soft)]">
+                    Share a single-use verification code so a trusted member gets their own completely
+                    isolated diary space.
+                  </p>
+
+                  <form onSubmit={handleGenerateInvite} className="flex flex-wrap gap-2">
+                    <input
+                      type="text"
+                      value={inviteLabel}
+                      onChange={(e) => setInviteLabel(e.target.value)}
+                      placeholder="Label (e.g. Sister's Diary)"
+                      className="min-w-[180px] flex-1 border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                    />
+                    <button
+                      type="submit"
+                      disabled={adminLoading}
+                      data-testid="generate-invite-btn"
+                      className="inline-flex items-center gap-1.5 bg-[var(--ink)] px-4 py-2 text-xs font-semibold tracking-wider text-[var(--paper-light)] uppercase cursor-pointer"
+                    >
+                      <UserPlus className="h-3.5 w-3.5" />
+                      <span>Generate Code</span>
+                    </button>
+                  </form>
+
+                  {freshInvite ? (
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border border-[#4e7c53]/40 bg-[#4e7c53]/10 p-3 text-xs">
+                      <div>
+                        <span className="block text-[10px] font-semibold uppercase tracking-wider text-[#3b6440]">
+                          New One-Time Verification Code ({freshInvite.label})
+                        </span>
+                        <code className="mt-0.5 block font-mono text-sm font-bold tracking-wider text-[var(--ink)]">
+                          {freshInvite.code}
+                        </code>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void copyInviteCode(freshInvite.code)}
+                        className="inline-flex items-center gap-1 border border-[var(--hairline)] bg-[var(--paper-light)] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider cursor-pointer"
+                      >
+                        {copiedCode ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                        <span>{copiedCode ? "Copied" : "Copy Code"}</span>
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {invites.length > 0 ? (
+                    <div className="mt-3 space-y-1.5">
+                      {invites.map((inv) => (
+                        <div
+                          key={inv.id}
+                          className="flex items-center justify-between border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-xs"
+                        >
+                          <span>
+                            <strong>{inv.label}</strong> · expires{" "}
+                            {new Date(inv.expiresAt).toLocaleDateString()}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void handleRevokeInvite(inv.id)}
+                            className="text-[11px] font-semibold uppercase tracking-wider text-[var(--accent)] cursor-pointer"
+                          >
+                            Revoke
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="border border-[var(--hairline)] bg-[var(--paper-light)] p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <Users className="h-4 w-4 text-[var(--accent)]" />
+                    <h3 className="m-0 font-serif text-lg">Members &amp; Verification Queue</h3>
+                  </div>
+
+                  {members.length === 0 ? (
+                    <p className="m-0 text-xs text-[var(--ink-soft)]">No members registered yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {members.map((m) => (
+                        <div
+                          key={m.id}
+                          className="flex flex-wrap items-center justify-between gap-2 border border-[var(--hairline)] bg-[var(--paper)] px-3.5 py-2.5 text-xs"
+                        >
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <strong>{m.displayName}</strong>
+                              <span className="text-[var(--ink-soft)]">@{m.username}</span>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                                  m.status === "active"
+                                    ? "bg-[#4e7c53]/15 text-[#3b6440]"
+                                    : m.status === "pending"
+                                      ? "bg-[#b87a3d]/15 text-[#8a5721]"
+                                      : "bg-[#9e3d3a]/15 text-[#9e3d3a]"
+                                }`}
+                              >
+                                {m.role === "owner" ? "Owner" : m.status}
+                              </span>
+                            </div>
+                            <div className="mt-0.5 text-[11px] text-[var(--ink-soft)]">
+                              {m.booksCount} isolated volumes · {m.memoriesCount} entries
+                            </div>
+                          </div>
+
+                          {m.role !== "owner" ? (
+                            <div className="flex items-center gap-2">
+                              {m.status !== "active" ? (
+                                <button
+                                  type="button"
+                                  disabled={adminLoading}
+                                  onClick={() => void handleToggleMemberStatus(m, "active")}
+                                  data-testid="approve-member-btn"
+                                  className="inline-flex items-center gap-1 bg-[#4e7c53] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-white cursor-pointer"
+                                >
+                                  <UserCheck className="h-3 w-3" />
+                                  <span>{m.status === "pending" ? "Verify & Approve" : "Activate"}</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={adminLoading}
+                                  onClick={() => void handleToggleMemberStatus(m, "suspended")}
+                                  className="border border-[var(--hairline)] bg-[var(--paper-light)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider cursor-pointer"
+                                >
+                                  Suspend
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                disabled={adminLoading}
+                                onClick={() => void handleRemoveMember(m)}
+                                className="inline-flex items-center gap-1 border border-[var(--hairline)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--accent)] cursor-pointer"
+                                title="Delete member and their isolated diary"
+                              >
+                                <CheckCircle2 className="hidden" />
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Hidden / Masked Custom Endpoint Override (never reveals default host URL) */}
+            <details className="border-t border-[var(--hairline)] pt-4">
+              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[var(--ink-soft)] hover:text-[var(--ink)]">
+                Archive Endpoint Override (Optional)
+              </summary>
+              <form onSubmit={handleSaveEndpointOverride} className="mt-3 space-y-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                      Archive Name
+                    </label>
+                    <input
+                      type="text"
+                      value={overrideLabel}
+                      onChange={(e) => setOverrideLabel(e.target.value)}
+                      placeholder="Private Archive"
+                      className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                      Custom Endpoint (masked)
+                    </label>
+                    <div className="vault-input-wrap">
+                      <input
+                        type={revealUrl ? "text" : "password"}
+                        value={overrideUrl}
+                        onChange={(e) => setOverrideUrl(e.target.value)}
+                        placeholder="Leave blank to keep current host"
+                        className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                      />
+                      <button
+                        type="button"
+                        className="vault-reveal-btn"
+                        onClick={() => setRevealUrl((v) => !v)}
+                        aria-label={revealUrl ? "Hide URL" : "Show URL"}
+                      >
+                        {revealUrl ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                    Setup Key (Optional)
+                  </label>
+                  <input
+                    type="password"
+                    value={overrideToken}
+                    onChange={(e) => setOverrideToken(e.target.value)}
+                    placeholder="Leave blank to keep active session"
+                    className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                  />
+                </div>
+
+                {vaultEnabled ? (
+                  <div>
+                    <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                      Vault Passphrase (required to re-seal override)
+                    </label>
+                    <input
+                      type="password"
+                      value={resealPassphrase}
+                      onChange={(e) => setResealPassphrase(e.target.value)}
+                      placeholder="Enter current vault passphrase"
+                      className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                    />
+                  </div>
+                ) : null}
+
+                {error ? (
+                  <p className="text-xs font-medium text-[var(--accent)]" role="alert">
+                    {error}
+                  </p>
+                ) : null}
+
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-2 bg-[var(--ink)] px-4 py-2 text-xs font-semibold tracking-wider text-[var(--paper-light)] uppercase cursor-pointer"
+                >
+                  <span>Apply Override &amp; Test</span>
+                </button>
+              </form>
+            </details>
           </div>
         )}
       </div>

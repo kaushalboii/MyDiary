@@ -3,6 +3,7 @@
 export const VAULT_ENVELOPE_KEY = "mydiary_vault_envelope_v1";
 export const VAULT_SESSION_KEY = "mydiary_vault_session_v1";
 export const VAULT_LOCKOUT_KEY = "mydiary_vault_lockout_v1";
+export const AUTH_SESSION_KEY = "mydiary_auth_session_v1";
 export const VAULT_STATE_EVENT = "mydiary:vault-state-changed";
 export const AUTH_REQUIRED_EVENT = "mydiary:auth-required";
 
@@ -266,6 +267,21 @@ export function touchVaultActivity(): void {
   }
 }
 
+export function updateUnlockedVaultToken(nextToken: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.sessionStorage.getItem(VAULT_SESSION_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Partial<VaultSessionPayload>;
+    if (!parsed?.secrets) return;
+    parsed.secrets.token = nextToken;
+    parsed.lastActivity = Date.now();
+    window.sessionStorage.setItem(VAULT_SESSION_KEY, JSON.stringify(parsed));
+  } catch {
+    // Ignore session update issues
+  }
+}
+
 export async function enableVaultLock(
   passphrase: string,
   secrets: VaultSecrets,
@@ -283,7 +299,7 @@ export async function enableVaultLock(
     JSON.stringify({
       token: secrets.token || "",
       serverUrl: secrets.serverUrl || "",
-      label: secrets.label || "kaushals-mini-server",
+      label: secrets.label || "Private Archive",
     }),
   );
   const cipherBuffer = await subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext);
@@ -366,7 +382,7 @@ export async function disableVaultLock(currentPassphrase: string): Promise<Vault
         ...parsed,
         serverUrl: secrets.serverUrl || parsed.serverUrl || "",
         token: secrets.token || "",
-        label: secrets.label || parsed.label || "kaushals-mini-server",
+        label: secrets.label || parsed.label || "Private Archive",
       }),
     );
   } catch {
@@ -380,6 +396,7 @@ export async function disableVaultLock(currentPassphrase: string): Promise<Vault
 export function lockVaultNow(): void {
   if (typeof window === "undefined") return;
   window.sessionStorage.removeItem(VAULT_SESSION_KEY);
+  window.sessionStorage.removeItem(AUTH_SESSION_KEY);
   window.localStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
   emitVaultStateChange();
   window.dispatchEvent(new CustomEvent("mydiary:storage-config-changed"));
@@ -389,6 +406,7 @@ export async function wipeLocalDiaryData(): Promise<void> {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(VAULT_ENVELOPE_KEY);
   window.sessionStorage.removeItem(VAULT_SESSION_KEY);
+  window.sessionStorage.removeItem(AUTH_SESSION_KEY);
   window.localStorage.removeItem(VAULT_LOCKOUT_KEY);
   window.localStorage.removeItem(STORAGE_CONFIG_KEY);
   window.localStorage.removeItem(SERVER_BOOKS_CACHE_KEY);

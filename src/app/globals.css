@@ -434,9 +434,9 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  width: 38px;
-  height: 58px;
-  margin-top: -12px;
+  width: 44px;
+  height: 98px;
+  margin-top: -16px;
   padding: 0;
   background: transparent;
   color: var(--walnut);
@@ -453,74 +453,91 @@
 }
 
 .pull-rope__cap {
-  width: 14px;
-  height: 5px;
-  border-radius: 0 0 6px 6px;
-  background: var(--walnut);
-  border: 1px solid var(--hairline);
+  width: 18px;
+  height: 6px;
+  border-radius: 0 0 8px 8px;
+  background: linear-gradient(180deg, #b8986c, var(--walnut-deep));
+  border: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);
   border-top: 0;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.22);
+}
+
+.pull-rope__pendulum {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform-origin: top center;
 }
 
 .pull-rope__track {
   display: block;
-  width: 8px;
-  height: 26px;
+  width: 14px;
+  height: 60px;
   transform-origin: top center;
-  color: var(--walnut);
-  opacity: 0.88;
+  color: #8f6b47;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.16));
 }
 
 .pull-rope__braid {
   display: block;
-  width: 8px;
-  height: 26px;
+  width: 14px;
+  height: 60px;
 }
 
 .pull-rope__knob {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: -2px;
+  margin-top: -4px;
 }
 
 .pull-rope__ferrule {
-  width: 6px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--walnut-deep);
+  width: 10px;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #7d5b35, #c9a775 50%, #7d5b35);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
 }
 
 .pull-rope__bead {
-  width: 14px;
-  height: 18px;
-  border-radius: 45% 45% 50% 50% / 38% 38% 62% 62%;
-  background: linear-gradient(145deg, var(--walnut-deep), var(--walnut));
-  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  width: 18px;
+  height: 24px;
+  border-radius: 44% 44% 52% 52% / 36% 36% 64% 64%;
+  background: radial-gradient(circle at 36% 32%, #a6784d 0%, var(--walnut-deep) 68%, #2e1d11 100%);
+  border: 1px solid color-mix(in srgb, var(--ink) 26%, transparent);
   box-shadow:
-    0 5px 12px -4px rgba(0, 0, 0, 0.34),
-    inset 0 2px 3px rgba(255, 255, 255, 0.25);
+    0 8px 16px -4px rgba(0, 0, 0, 0.4),
+    inset 0 2px 4px rgba(255, 255, 255, 0.28);
   transition: background 240ms ease, box-shadow 240ms ease, transform 200ms ease;
 }
 
+.pull-rope__tassel {
+  width: 5px;
+  height: 8px;
+  margin-top: -1px;
+  border-radius: 0 0 4px 4px;
+  background: linear-gradient(180deg, var(--walnut-deep), color-mix(in srgb, var(--walnut) 60%, transparent));
+  opacity: 0.78;
+}
+
 .pull-rope-toggle.is-dark .pull-rope__track {
-  color: #c9b59d;
+  color: #cfb796;
 }
 
 .pull-rope-toggle.is-dark .pull-rope__bead {
-  background: radial-gradient(circle at 38% 35%, #f7dc9c 0%, #d49d4b 58%, #9b6b2b 100%);
+  background: radial-gradient(circle at 38% 35%, #f9e1a4 0%, #d49d4b 56%, #946326 100%);
   box-shadow:
-    0 0 14px rgba(239, 194, 109, 0.55),
-    0 5px 12px -4px rgba(0, 0, 0, 0.5);
+    0 0 18px rgba(239, 194, 109, 0.62),
+    0 6px 14px -4px rgba(0, 0, 0, 0.52);
 }
 
 .pull-rope-toggle:hover .pull-rope__bead {
-  transform: scale(1.06);
+  transform: scale(1.07);
 }
 
 .pull-rope__tooltip {
   position: absolute;
-  top: 56px;
+  top: 94px;
   right: 0;
   padding: 3px 8px;
   border-radius: 999px;
@@ -1685,14 +1702,19 @@ html[data-vault="locked"] .vault-protected-shell {
   }
 
   .pull-rope-toggle {
-    width: 30px;
-    height: 50px;
-    margin-top: -10px;
+    width: 36px;
+    height: 78px;
+    margin-top: -12px;
+  }
+
+  .pull-rope__track,
+  .pull-rope__braid {
+    height: 46px;
   }
 
   .pull-rope__bead {
-    width: 12px;
-    height: 15px;
+    width: 15px;
+    height: 20px;
   }
 
   .header-pill-btn {

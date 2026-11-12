@@ -38,16 +38,6 @@ const inter = localFont({
   adjustFontFallback: "Arial",
 });
 
-const STORAGE_ORIGIN = (() => {
-  const raw = (process.env.NEXT_PUBLIC_STORAGE_URL || "").trim();
-  if (!raw) return null;
-  try {
-    return new URL(raw).origin;
-  } catch {
-    return null;
-  }
-})();
-
 export const metadata: Metadata = {
   title: siteConfig.title,
   description: siteConfig.description,
@@ -82,12 +72,6 @@ export default function RootLayout({
       <head>
         <meta name="referrer" content="no-referrer" />
         <meta name="robots" content="noindex, nofollow" />
-        {STORAGE_ORIGIN ? (
-          <>
-            <link rel="dns-prefetch" href={STORAGE_ORIGIN} />
-            <link rel="preconnect" href={STORAGE_ORIGIN} crossOrigin="anonymous" />
-          </>
-        ) : null}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body>
