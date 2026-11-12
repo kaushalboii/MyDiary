@@ -25,7 +25,7 @@ function loadDefaultBooks() {
   return JSON.parse(fs.readFileSync(DEFAULT_BOOKS_PATH, "utf8"));
 }
 
-const CURRENT_SCHEMA_VERSION = 6;
+const CURRENT_SCHEMA_VERSION = 7;
 
 const LEGACY_COVER_HEXES = new Set([
   // Early template seeds:
@@ -48,6 +48,10 @@ const LEGACY_COVER_HEXES = new Set([
   "#568049", "#237887", "#262b3d", "#6b4573", "#c97a2b", "#347ea3",
   "#b54865", "#e0a938", "#3f8f7b", "#6e2c40", "#2d5e43", "#7d4a6b",
   "#2f4b7c",
+  // v5/v6 dark slots #7-#19 replaced by Light & Soft Minimal in v7:
+  "#214d3a", "#0b1d26", "#161822", "#311847", "#eae4d7", "#0b4f54",
+  "#1b1e26", "#c23b2b", "#dedcd6", "#11224e", "#0f2d24", "#5e1b3a",
+  "#1e1b18",
 ]);
 
 function isLegacyDefaultShelf(books) {
@@ -55,7 +59,8 @@ function isLegacyDefaultShelf(books) {
   if (
     books.length === 19 &&
     books[0]?.id === "memories-2022" &&
-    books[18]?.id === "milestones-and-ascents"
+    books[18]?.id === "milestones-and-ascents" &&
+    books.every((book) => LEGACY_COVER_HEXES.has(String(book?.cover || "").toLowerCase()))
   ) {
     return true;
   }
@@ -451,10 +456,10 @@ app.post("/api/books", requireAuth, async (req, res) => {
       quote: "",
       quoteBy: "",
       format: "Soft Linen Hardcover",
-      cover: "#06070B",
-      secondary: "#C9D2DC",
-      accent: "#8A6BFF",
-      ink: "#C9D2DC",
+      cover: "#DCE8F5",
+      secondary: "#B4CCE3",
+      accent: "#2563EB",
+      ink: "#19263B",
       motif: "lattice",
       coverTemplate: "split-band",
       spineStyle: "banded",

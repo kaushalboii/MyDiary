@@ -3,9 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
+  ArrowLeftRight,
   ArrowRight,
+  Check,
   ImagePlus,
   Loader2,
+  Shuffle,
   Trash2,
   X,
 } from "lucide-react";
@@ -47,19 +50,52 @@ const MOTIFS: BookMotif[] = [
   "steps",
 ];
 
-const CLOTH_PRESETS = [
-  { name: "Obsidian Violet", cover: "#06070B", secondary: "#C9D2DC", accent: "#8A6BFF", ink: "#C9D2DC" },
-  { name: "Onyx Acid Lime", cover: "#030407", secondary: "#AAB0C4", accent: "#B8F23A", ink: "#AAB0C4" },
-  { name: "Ecru Tangerine", cover: "#F3ECE0", secondary: "#D9C3A5", accent: "#F26A1B", ink: "#1E1A16" },
-  { name: "Oxblood Volt", cover: "#4A1824", secondary: "#A9A6A1", accent: "#D4FF1A", ink: "#F4EFE9" },
-  { name: "Periwinkle Magenta", cover: "#6A8DD6", secondary: "#F0EDE6", accent: "#E5007E", ink: "#F0EDE6" },
-  { name: "Prussian Solar", cover: "#07518A", secondary: "#FFF0D5", accent: "#F5E500", ink: "#FFF0D5" },
-  { name: "Abyssal Cyan", cover: "#0B1D26", secondary: "#D9E4EC", accent: "#00E5FF", ink: "#EBF3F7" },
-  { name: "Matcha Coral", cover: "#214D3A", secondary: "#E6DFCC", accent: "#FF6B4A", ink: "#F6F1E7" },
-  { name: "Plum Mint", cover: "#311847", secondary: "#D7CEDE", accent: "#3BFFB0", ink: "#F3EDF7" },
-  { name: "Limestone Cobalt", cover: "#EAE4D7", secondary: "#C6B9A3", accent: "#1B5CFF", ink: "#181B22" },
-  { name: "Crimson Ice", cover: "#C23B2B", secondary: "#F6ECE0", accent: "#D8FF3D", ink: "#FFF8F2" },
-  { name: "Graphite Amber", cover: "#1B1E26", secondary: "#C5CBD6", accent: "#FFB800", ink: "#E9EDF4" },
+type ClothPreset = {
+  name: string;
+  group: "soft" | "bold";
+  cover: string;
+  secondary: string;
+  accent: string;
+  ink: string;
+};
+
+function autoContrastInk(hex: string): string {
+  const clean = hex.replace("#", "").trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(clean)) return "#1F1C18";
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luma > 0.6 ? "#1F1C18" : "#F7F3EA";
+}
+
+const CLOTH_PRESETS: ClothPreset[] = [
+  // Light, soft & minimal editorial palettes (first so changing colors is instant)
+  { name: "Ecru Tangerine", group: "soft", cover: "#F3ECE0", secondary: "#D9C3A5", accent: "#F26A1B", ink: "#1E1A16" },
+  { name: "Matcha Cream", group: "soft", cover: "#E4ECDF", secondary: "#C3D4BA", accent: "#3F7D58", ink: "#1E2E24" },
+  { name: "Skyline Mist", group: "soft", cover: "#DCE8F5", secondary: "#B4CCE3", accent: "#2563EB", ink: "#19263B" },
+  { name: "Lilac Porcelain", group: "soft", cover: "#EAE3F5", secondary: "#CEC0E6", accent: "#7C3AED", ink: "#261E38" },
+  { name: "Peach Linen", group: "soft", cover: "#F6E5D8", secondary: "#E4C2AA", accent: "#E05A2B", ink: "#362016" },
+  { name: "Oat & Cobalt", group: "soft", cover: "#F1EBE0", secondary: "#D7CBB8", accent: "#1D4ED8", ink: "#1F232B" },
+  { name: "Seafoam Glass", group: "soft", cover: "#D8ECEA", secondary: "#B0D5D1", accent: "#0F766E", ink: "#14302E" },
+  { name: "Buttercream", group: "soft", cover: "#F5ECCD", secondary: "#E2CF98", accent: "#C26D0A", ink: "#2E2411" },
+  { name: "Blush Rosemilk", group: "soft", cover: "#F5DFE4", secondary: "#E3BAC4", accent: "#C81E5A", ink: "#381823" },
+  { name: "Dove & Coral", group: "soft", cover: "#E6E8EC", secondary: "#C6CBD3", accent: "#E14454", ink: "#1E232A" },
+  { name: "Celadon Sage", group: "soft", cover: "#D6E6DD", secondary: "#B2CFC0", accent: "#1E6B52", ink: "#182E25" },
+  { name: "Periwinkle Ice", group: "soft", cover: "#DFE5F7", secondary: "#BCC8EC", accent: "#4338CA", ink: "#1B213D" },
+  { name: "Sand & Berry", group: "soft", cover: "#EFE3D9", secondary: "#D8C0AF", accent: "#9D2B5B", ink: "#301C24" },
+  { name: "Alabaster & Amber", group: "soft", cover: "#ECE9E2", secondary: "#CFC8BA", accent: "#D95F18", ink: "#23201C" },
+  // Bold & vibrant signature studio palettes
+  { name: "Obsidian Violet", group: "bold", cover: "#06070B", secondary: "#C9D2DC", accent: "#8A6BFF", ink: "#C9D2DC" },
+  { name: "Onyx Acid Lime", group: "bold", cover: "#030407", secondary: "#AAB0C4", accent: "#B8F23A", ink: "#AAB0C4" },
+  { name: "Oxblood Volt", group: "bold", cover: "#4A1824", secondary: "#A9A6A1", accent: "#D4FF1A", ink: "#F4EFE9" },
+  { name: "Periwinkle Magenta", group: "bold", cover: "#6A8DD6", secondary: "#F0EDE6", accent: "#E5007E", ink: "#F0EDE6" },
+  { name: "Prussian Solar", group: "bold", cover: "#07518A", secondary: "#FFF0D5", accent: "#F5E500", ink: "#FFF0D5" },
+  { name: "Abyssal Cyan", group: "bold", cover: "#0B1D26", secondary: "#D9E4EC", accent: "#00E5FF", ink: "#EBF3F7" },
+  { name: "Matcha Coral", group: "bold", cover: "#214D3A", secondary: "#E6DFCC", accent: "#FF6B4A", ink: "#F6F1E7" },
+  { name: "Plum Mint", group: "bold", cover: "#311847", secondary: "#D7CEDE", accent: "#3BFFB0", ink: "#F3EDF7" },
+  { name: "Crimson Ice", group: "bold", cover: "#C23B2B", secondary: "#F6ECE0", accent: "#D8FF3D", ink: "#FFF8F2" },
+  { name: "Graphite Amber", group: "bold", cover: "#1B1E26", secondary: "#C5CBD6", accent: "#FFB800", ink: "#E9EDF4" },
 ];
 
 const COVER_TEMPLATES: Array<{ id: CoverTemplate; label: string; hint: string }> = [
@@ -166,6 +202,8 @@ export function VolumeEditorModal({
     book.showCoverTextWithImage ?? true,
   );
   const [living, setLiving] = useState<boolean>(Boolean(book.living));
+  const [paletteFilter, setPaletteFilter] = useState<"soft" | "bold" | "all">("soft");
+  const [autoInkOnCover, setAutoInkOnCover] = useState<boolean>(true);
 
   // Inside Page & Size / Placement
   const [paperStyle, setPaperStyle] = useState<PaperStyle>(
@@ -309,6 +347,44 @@ export function VolumeEditorModal({
     }
   }
 
+  const applyPreset = (preset: ClothPreset) => {
+    setCover(preset.cover);
+    setSecondary(preset.secondary);
+    setAccent(preset.accent);
+    setInk(preset.ink);
+  };
+
+  const visiblePresets =
+    paletteFilter === "all"
+      ? CLOTH_PRESETS
+      : CLOTH_PRESETS.filter((p) => p.group === paletteFilter);
+
+  const handleShufflePreset = () => {
+    const pool = visiblePresets.length ? visiblePresets : CLOTH_PRESETS;
+    const currentIdx = pool.findIndex(
+      (p) =>
+        p.cover.toLowerCase() === cover.toLowerCase() &&
+        p.accent.toLowerCase() === accent.toLowerCase(),
+    );
+    const next = pool[(currentIdx + 1) % pool.length];
+    if (next) applyPreset(next);
+  };
+
+  const handleSwapCoverAndBand = () => {
+    const nextCover = secondary;
+    const nextSecondary = cover;
+    setCover(nextCover);
+    setSecondary(nextSecondary);
+    if (autoInkOnCover) setInk(autoContrastInk(nextCover));
+  };
+
+  const handleCoverHexChange = (value: string) => {
+    setCover(value);
+    if (autoInkOnCover && /^#[0-9a-fA-F]{6}$/.test(value.trim())) {
+      setInk(autoContrastInk(value));
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 sm:p-4 backdrop-blur-xs"
@@ -432,6 +508,141 @@ export function VolumeEditorModal({
                   placeholder="My Memories"
                   className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
                 />
+              </div>
+
+              {/* Easy 1-Click Colors right near the top */}
+              <div className="border border-[var(--hairline)] bg-[var(--paper)] p-3.5 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    {(
+                      [
+                        { id: "soft", label: "Light & Soft" },
+                        { id: "bold", label: "Bold & Rich" },
+                        { id: "all", label: "All 24" },
+                      ] as const
+                    ).map((grp) => (
+                      <button
+                        key={grp.id}
+                        type="button"
+                        onClick={() => setPaletteFilter(grp.id)}
+                        className={`px-2.5 py-1 text-[10px] font-semibold tracking-wider uppercase border cursor-pointer transition ${
+                          paletteFilter === grp.id
+                            ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--paper-light)]"
+                            : "border-[var(--hairline)] bg-[var(--paper-light)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                        }`}
+                      >
+                        {grp.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleShufflePreset}
+                      className="inline-flex items-center gap-1 border border-[var(--hairline)] bg-[var(--paper-light)] px-2.5 py-1 text-[10px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
+                      title="Try the next color palette"
+                    >
+                      <Shuffle className="h-3 w-3" />
+                      <span>Try Next</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSwapCoverAndBand}
+                      className="inline-flex items-center gap-1 border border-[var(--hairline)] bg-[var(--paper-light)] px-2.5 py-1 text-[10px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
+                      title="Swap Cover & Band colors"
+                    >
+                      <ArrowLeftRight className="h-3 w-3" />
+                      <span>Swap</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {visiblePresets.map((preset) => {
+                    const isActive =
+                      preset.cover.toLowerCase() === cover.toLowerCase() &&
+                      preset.accent.toLowerCase() === accent.toLowerCase();
+                    return (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        onClick={() => applyPreset(preset)}
+                        className={`flex items-center gap-1.5 border px-2.5 py-1 text-xs cursor-pointer transition ${
+                          isActive
+                            ? "border-[var(--ink)] bg-[var(--paper-light)] ring-1 ring-[var(--ink)] font-medium"
+                            : "border-[var(--hairline)] bg-[var(--paper-light)]/60 hover:border-[var(--ink)]"
+                        }`}
+                      >
+                        <span className="inline-flex items-center -space-x-1">
+                          <span
+                            className="inline-block h-3.5 w-3.5 rounded-full border border-black/20"
+                            style={{ backgroundColor: preset.cover }}
+                          />
+                          <span
+                            className="inline-block h-3.5 w-3.5 rounded-full border border-black/20"
+                            style={{ backgroundColor: preset.secondary }}
+                          />
+                          <span
+                            className="inline-block h-3.5 w-3.5 rounded-full border border-black/20"
+                            style={{ backgroundColor: preset.accent }}
+                          />
+                        </span>
+                        <span>{preset.name}</span>
+                        {isActive && <Check className="h-3 w-3 text-[var(--accent)]" />}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 border-t border-[var(--hairline)] pt-2.5">
+                  {(
+                    [
+                      { label: "Cloth Cover", val: cover, onChange: handleCoverHexChange },
+                      { label: "Band & Plaque", val: secondary, onChange: setSecondary },
+                      { label: "Trim Accent", val: accent, onChange: setAccent },
+                      { label: "Lettering Ink", val: ink, onChange: setInk },
+                    ] as const
+                  ).map((field) => (
+                    <div key={field.label} className="space-y-1">
+                      <span className="block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                        {field.label}
+                      </span>
+                      <div className="flex items-center gap-1.5 border border-[var(--hairline)] bg-[var(--paper-light)] px-1.5 py-1">
+                        <input
+                          type="color"
+                          aria-label={field.label}
+                          value={/^#[0-9a-fA-F]{6}$/.test(field.val) ? field.val : "#F3ECE0"}
+                          onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                          className="h-6 w-7 shrink-0 cursor-pointer border-0 bg-transparent p-0"
+                        />
+                        <input
+                          type="text"
+                          aria-label={`${field.label} hex`}
+                          value={field.val}
+                          maxLength={7}
+                          onChange={(e) => field.onChange(e.target.value)}
+                          className="w-full min-w-0 bg-transparent font-mono text-[11px] uppercase outline-none"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <label className="flex items-center gap-2 text-[11px] text-[var(--ink-soft)] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoInkOnCover}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setAutoInkOnCover(next);
+                      if (next && /^#[0-9a-fA-F]{6}$/.test(cover)) {
+                        setInk(autoContrastInk(cover));
+                      }
+                    }}
+                  />
+                  <span>Auto-adjust lettering contrast when cloth cover changes</span>
+                </label>
               </div>
 
               {/* Outer Cover Card Design */}
@@ -571,91 +782,6 @@ export function VolumeEditorModal({
                     ))}
                   </select>
                 </div>
-              </div>
-
-              {/* Colors */}
-              <div>
-                <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                  Unique Outer Binding Palettes
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {CLOTH_PRESETS.map((preset) => (
-                    <button
-                      key={preset.name}
-                      type="button"
-                      onClick={() => {
-                        setCover(preset.cover);
-                        setSecondary(preset.secondary);
-                        setAccent(preset.accent);
-                        setInk(preset.ink);
-                      }}
-                      className="flex items-center gap-1.5 border border-[var(--hairline)] bg-[var(--paper)] px-2.5 py-1 text-xs cursor-pointer hover:border-[var(--ink)]"
-                    >
-                      <span className="inline-flex items-center -space-x-1">
-                        <span
-                          className="inline-block h-3 w-3 rounded-full border border-black/20"
-                          style={{ backgroundColor: preset.cover }}
-                        />
-                        <span
-                          className="inline-block h-3 w-3 rounded-full border border-black/20"
-                          style={{ backgroundColor: preset.secondary }}
-                        />
-                        <span
-                          className="inline-block h-3 w-3 rounded-full border border-black/20"
-                          style={{ backgroundColor: preset.accent }}
-                        />
-                      </span>
-                      <span>{preset.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <label className="block">
-                  <span className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                    Cloth Cover
-                  </span>
-                  <input
-                    type="color"
-                    value={cover}
-                    onChange={(e) => setCover(e.target.value)}
-                    className="h-9 w-full cursor-pointer border border-[var(--hairline)] bg-transparent p-1"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                    Band & Plaque
-                  </span>
-                  <input
-                    type="color"
-                    value={secondary}
-                    onChange={(e) => setSecondary(e.target.value)}
-                    className="h-9 w-full cursor-pointer border border-[var(--hairline)] bg-transparent p-1"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                    Neon Accent
-                  </span>
-                  <input
-                    type="color"
-                    value={accent}
-                    onChange={(e) => setAccent(e.target.value)}
-                    className="h-9 w-full cursor-pointer border border-[var(--hairline)] bg-transparent p-1"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                    Lettering Ink
-                  </span>
-                  <input
-                    type="color"
-                    value={ink}
-                    onChange={(e) => setInk(e.target.value)}
-                    className="h-9 w-full cursor-pointer border border-[var(--hairline)] bg-transparent p-1"
-                  />
-                </label>
               </div>
 
               <label className="flex items-center gap-2 text-xs text-[var(--ink-soft)] cursor-pointer">

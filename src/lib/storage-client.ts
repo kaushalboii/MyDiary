@@ -180,8 +180,8 @@ async function deleteFromStore(storeName: "books" | "memories", id: string): Pro
   });
 }
 
-const OFFLINE_BOOK_ORDER_KEY = "mydiary_offline_book_order_v6";
-const SERVER_BOOKS_CACHE_KEY = "mydiary_server_books_cache_v6";
+const OFFLINE_BOOK_ORDER_KEY = "mydiary_offline_book_order_v7";
+const SERVER_BOOKS_CACHE_KEY = "mydiary_server_books_cache_v7";
 
 const LEGACY_OFFLINE_COVERS = new Set([
   // Early template seeds:
@@ -204,6 +204,10 @@ const LEGACY_OFFLINE_COVERS = new Set([
   "#568049", "#237887", "#262b3d", "#6b4573", "#c97a2b", "#347ea3",
   "#b54865", "#e0a938", "#3f8f7b", "#6e2c40", "#2d5e43", "#7d4a6b",
   "#2f4b7c",
+  // v5/v6 dark slots #7-#19 replaced by Light & Soft Minimal in v7:
+  "#214d3a", "#0b1d26", "#161822", "#311847", "#eae4d7", "#0b4f54",
+  "#1b1e26", "#c23b2b", "#dedcd6", "#11224e", "#0f2d24", "#5e1b3a",
+  "#1e1b18",
 ]);
 
 export function loadCachedServerBooks(): DiaryBook[] | null {
@@ -244,7 +248,7 @@ function isDefaultSeedSnapshot(books: DiaryBook[]): boolean {
     books.length === 19 &&
     books[0]?.id === "memories-2022" &&
     books[18]?.id === "milestones-and-ascents" &&
-    LEGACY_OFFLINE_COVERS.has(String(books[0]?.cover || "").toLowerCase())
+    books.every((b) => LEGACY_OFFLINE_COVERS.has(String(b?.cover || "").toLowerCase()))
   ) {
     return true;
   }
@@ -487,10 +491,10 @@ export async function createBook(
       quote: input.quote?.trim() || "",
       quoteBy: input.quoteBy?.trim() || "",
       format: input.format || "Soft Linen Hardcover",
-      cover: input.cover || "#06070B",
-      secondary: input.secondary || "#C9D2DC",
-      accent: input.accent || "#8A6BFF",
-      ink: input.ink || "#C9D2DC",
+      cover: input.cover || "#DCE8F5",
+      secondary: input.secondary || "#B4CCE3",
+      accent: input.accent || "#2563EB",
+      ink: input.ink || "#19263B",
       motif: input.motif || "lattice",
       coverTemplate: input.coverTemplate || "split-band",
       spineStyle: input.spineStyle || "banded",
