@@ -13,13 +13,177 @@ const __dirname = path.dirname(__filename);
 
 const PORT = Number(process.env.PORT || 4321);
 const HOST = process.env.HOST || "0.0.0.0";
-const TOKEN = (process.env.DIARY_STORAGE_TOKEN || "").trim();
 const DATA_DIR = path.resolve(__dirname, process.env.DATA_DIR || "./data");
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 const DB_FILE = path.join(DATA_DIR, "diary.json");
 const DEFAULT_BOOKS_PATH = path.join(__dirname, "default-books.json");
 
-fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+fs.mkdirSync(UPLOADS_DIR, { recursive: true, mode: 0o700 });
+
+const IS_LOOPBACK_HOST =
+  HOST === "127.0.0.1" || HOST === "localhost" || HOST === "::1";
+
+function resolveActiveToken() {
+  const configured = (process.env.DIARY_STORAGE_TOKEN || "").trim();
+  if (configured) return configured;
+  if (IS_LOOPBACK_HOST || process.env.ALLOW_INSECURE_PUBLIC === "true") {
+    return "";
+  }
+  const secretPath = path.join(DATA_DIR, ".storage-token");
+  if (fs.existsSync(secretPath)) {
+    const saved = fs.readFileSync(secretPath, "utf8").trim();
+    if (saved) return saved;
+  }
+  const generated = crypto.randomBytes(32).toString("hex");
+  fs.writeFileSync(secretPath, `${generated}\n`, { mode: 0o600 });
+  console.log(
+    `[mydiary-storage] Public bind without DIARY_STORAGE_TOKEN detected; generated secret token in ${secretPath} (mode 0600).`,
+  );
+  return generated;
+}
+
+const TOKEN = resolveActiveToken();
+const MEDIA_SIGNING_KEY = TOKEN
+  ? crypto.createHmac("sha256", "mydiary-media-ticket-v1").update(TOKEN).digest()
+  : null;
+
+function timingSafeEqualStr(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const ha = crypto.createHash("sha256").update(a).digest();
+  const hb = crypto.createHash("sha256").update(b).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
+const SAFE_ID_RE = /^[a-zA-Z0-9_-]{1,96}$/;
+const SAFE_FILENAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,120}$/;
+const ALLOWED_IMAGE_MIMES = new Map([
+  ["image/jpeg", ".jpg"],
+  ["image/png", ".png"],
+  ["image/webp", ".webp"],
+  ["image/gif", ".gif"],
+  ["image/avif", ".avif"],
+]);
+
+function hasValidImageMagicBytes(filePath) {
+  try {
+    const fd = fs.openSync(filePath, "r");
+    const buf = Buffer.alloc(16);
+    const read = fs.readSync(fd, buf, 0, 16, 0);
+    fs.closeSync(fd);
+    if (read < 4) return false;
+    // JPEG FF D8 FF
+    if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return true;
+    // PNG 89 50 4E 47 0D 0A 1A 0A
+    if (
+      read >= 8 &&
+      buf[0] === 0x89 &&
+      buf[1] === 0x50 &&
+      buf[2] === 0x4e &&
+      buf[3] === 0x47 &&
+      buf[4] === 0x0d &&
+      buf[5] === 0x0a &&
+      buf[6] === 0x1a &&
+      buf[7] === 0x0a
+    ) {
+      return true;
+    }
+    // GIF8
+    if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) {
+      return true;
+    }
+    // RIFF....WEBP
+    if (
+      read >= 12 &&
+      buf.toString("ascii", 0, 4) === "RIFF" &&
+      buf.toString("ascii", 8, 12) === "WEBP"
+    ) {
+      return true;
+    }
+    // ISO BMFF ftyp (AVIF / HEIF)
+    if (read >= 12 && buf.toString("ascii", 4, 8) === "ftyp") {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function isSafeImageUrl(raw) {
+  if (typeof raw !== "string") return false;
+  const trimmed = raw.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith("/uploads/")) {
+    const cleanName = trimmed.slice("/uploads/".length).split("?")[0];
+    return SAFE_FILENAME_RE.test(cleanName);
+  }
+  if (/^data:image\/(png|jpeg|jpg|webp|gif|avif);base64,[a-zA-Z0-9+/=]+$/i.test(trimmed)) {
+    return true;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function stripMediaSignature(url) {
+  if (typeof url !== "string") return "";
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("/uploads/")) {
+    return `/uploads/${path.basename(trimmed.split("?")[0])}`;
+  }
+  return trimmed;
+}
+
+function signMediaPath(url) {
+  if (typeof url !== "string" || !url.startsWith("/uploads/") || !MEDIA_SIGNING_KEY) {
+    return url;
+  }
+  const cleanName = path.basename(url.split("?")[0]);
+  if (!SAFE_FILENAME_RE.test(cleanName)) return url;
+  const exp = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
+  const sig = crypto
+    .createHmac("sha256", MEDIA_SIGNING_KEY)
+    .update(`${cleanName}:${exp}`)
+    .digest("hex");
+  return `/uploads/${cleanName}?exp=${exp}&sig=${sig}`;
+}
+
+function verifyMediaSignature(filename, expRaw, sigRaw) {
+  if (!MEDIA_SIGNING_KEY) return true;
+  const exp = Number(expRaw);
+  if (!Number.isFinite(exp) || exp < Math.floor(Date.now() / 1000)) return false;
+  if (typeof sigRaw !== "string" || !/^[0-9a-f]{64}$/i.test(sigRaw)) return false;
+  const expected = crypto
+    .createHmac("sha256", MEDIA_SIGNING_KEY)
+    .update(`${filename}:${exp}`)
+    .digest("hex");
+  return timingSafeEqualStr(sigRaw.toLowerCase(), expected.toLowerCase());
+}
+
+function signBookMedia(book) {
+  if (!MEDIA_SIGNING_KEY || !book?.coverImage) return book;
+  return {
+    ...book,
+    coverImage: signMediaPath(book.coverImage),
+  };
+}
+
+function signMemoryMedia(memory) {
+  if (!MEDIA_SIGNING_KEY || !memory) return memory;
+  return {
+    ...memory,
+    photos: Array.isArray(memory.photos)
+      ? memory.photos.map((p) => ({
+          ...p,
+          url: signMediaPath(p.url),
+        }))
+      : [],
+  };
+}
 
 function loadDefaultBooks() {
   return JSON.parse(fs.readFileSync(DEFAULT_BOOKS_PATH, "utf8"));
@@ -187,15 +351,17 @@ function enrichBooks(db) {
     }
     statsByBook.set(memory.bookId, prev);
   }
-  return db.books.map((book) => ({
-    ...book,
-    ...(statsByBook.get(book.id) || {
-      memoryCount: 0,
-      photoCount: 0,
-      latestMemoryDate: null,
-      latestMemoryTitle: null,
+  return db.books.map((book) =>
+    signBookMedia({
+      ...book,
+      ...(statsByBook.get(book.id) || {
+        memoryCount: 0,
+        photoCount: 0,
+        latestMemoryDate: null,
+        latestMemoryTitle: null,
+      }),
     }),
-  }));
+  );
 }
 
 function normalizeParagraphs(input) {
@@ -343,8 +509,8 @@ function applyBookPatch(current, patch) {
     coverImage:
       patch.coverImage === "" || patch.coverImage === null
         ? undefined
-        : typeof patch.coverImage === "string"
-          ? patch.coverImage
+        : typeof patch.coverImage === "string" && isSafeImageUrl(patch.coverImage)
+          ? stripMediaSignature(patch.coverImage)
           : current.coverImage,
     showCoverTextWithImage:
       typeof patch.showCoverTextWithImage === "boolean"
@@ -367,19 +533,41 @@ function applyBookPatch(current, patch) {
 }
 
 const app = express();
+app.disable("x-powered-by");
 
-const allowedOriginsRaw = (process.env.ALLOWED_ORIGINS || "*").trim();
-const allowedOrigins =
-  allowedOriginsRaw === "*"
-    ? true
-    : allowedOriginsRaw
-        .split(",")
-        .map((o) => o.trim())
-        .filter(Boolean);
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Robots-Tag", "noindex, nofollow");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  next();
+});
+
+const allowedOriginsRaw = (process.env.ALLOWED_ORIGINS || "").trim();
+const explicitAllowedOrigins = allowedOriginsRaw
+  .split(",")
+  .map((o) => o.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
+function isOriginAllowed(origin) {
+  if (!origin) return true;
+  const cleanOrigin = origin.trim().replace(/\/+$/, "");
+  if (explicitAllowedOrigins.length > 0) {
+    if (explicitAllowedOrigins.includes("*")) {
+      return process.env.ALLOW_INSECURE_PUBLIC === "true";
+    }
+    return explicitAllowedOrigins.includes(cleanOrigin);
+  }
+  if (cleanOrigin === "https://kaushalboii.github.io") return true;
+  return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(cleanOrigin);
+}
 
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      callback(null, isOriginAllowed(origin));
+    },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Diary-Token"],
   }),
@@ -387,31 +575,115 @@ app.use(
 
 app.use(express.json({ limit: "15mb" }));
 
-app.use(
-  "/uploads",
-  (req, res, next) => {
-    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    next();
-  },
-  express.static(UPLOADS_DIR),
-);
+const AUTH_WINDOW_MS = 10 * 60 * 1000;
+const AUTH_LOCKOUT_MS = 15 * 60 * 1000;
+const AUTH_MAX_FAILURES = 10;
+const failedAuthByIp = new Map();
+
+function extractRequestToken(req) {
+  const authHeader = String(req.headers.authorization || "");
+  const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  if (bearer) return bearer;
+  return String(req.headers["x-diary-token"] || "").trim();
+}
+
+function isAuthorizedRequest(req) {
+  if (!TOKEN) return true;
+  const candidate = extractRequestToken(req);
+  if (!candidate) return false;
+  return timingSafeEqualStr(candidate, TOKEN);
+}
+
+function recordAuthFailure(ipKey) {
+  const now = Date.now();
+  if (failedAuthByIp.size > 500) {
+    for (const [k, v] of failedAuthByIp.entries()) {
+      if (now - v.firstFailAt > AUTH_WINDOW_MS && v.blockedUntil < now) {
+        failedAuthByIp.delete(k);
+      }
+    }
+  }
+  const existing = failedAuthByIp.get(ipKey);
+  if (!existing || now - existing.firstFailAt > AUTH_WINDOW_MS) {
+    const entry = { count: 1, firstFailAt: now, blockedUntil: 0 };
+    failedAuthByIp.set(ipKey, entry);
+    return entry;
+  }
+  existing.count += 1;
+  if (existing.count > AUTH_MAX_FAILURES) {
+    existing.blockedUntil = now + AUTH_LOCKOUT_MS;
+  }
+  return existing;
+}
 
 function requireAuth(req, res, next) {
   if (!TOKEN) return next();
-  const authHeader = req.headers.authorization || "";
-  const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
-  const headerToken = String(req.headers["x-diary-token"] || "").trim();
-  if (bearer === TOKEN || headerToken === TOKEN) {
+  const ipKey = req.ip || req.socket?.remoteAddress || "unknown";
+  const now = Date.now();
+  const existing = failedAuthByIp.get(ipKey);
+  if (existing && existing.blockedUntil > now) {
+    const retryAfterSec = Math.max(1, Math.ceil((existing.blockedUntil - now) / 1000));
+    res.setHeader("Retry-After", String(retryAfterSec));
+    return res.status(429).json({
+      error: "Too many failed authentication attempts. Please try again later.",
+    });
+  }
+
+  if (isAuthorizedRequest(req)) {
+    if (existing) failedAuthByIp.delete(ipKey);
     return next();
+  }
+
+  const afterFail = recordAuthFailure(ipKey);
+  if (afterFail.blockedUntil > now) {
+    const retryAfterSec = Math.max(1, Math.ceil((afterFail.blockedUntil - now) / 1000));
+    res.setHeader("Retry-After", String(retryAfterSec));
+    return res.status(429).json({
+      error: "Too many failed authentication attempts. Please try again later.",
+    });
   }
   return res.status(401).json({ error: "Unauthorized: valid storage token required." });
 }
 
+app.get("/uploads/:filename", (req, res) => {
+  const rawName = String(req.params.filename || "");
+  if (!SAFE_FILENAME_RE.test(rawName)) {
+    return res.status(400).json({ error: "Invalid media filename." });
+  }
+
+  if (TOKEN) {
+    const authorizedByHeader = extractRequestToken(req)
+      ? isAuthorizedRequest(req)
+      : false;
+    const authorizedBySig = verifyMediaSignature(rawName, req.query.exp, req.query.sig);
+    if (!authorizedByHeader && !authorizedBySig) {
+      return res.status(401).json({ error: "Unauthorized media access." });
+    }
+  }
+
+  const resolved = path.resolve(UPLOADS_DIR, rawName);
+  if (!resolved.startsWith(UPLOADS_DIR + path.sep)) {
+    return res.status(400).json({ error: "Invalid media path." });
+  }
+  if (!fs.existsSync(resolved)) {
+    return res.status(404).json({ error: "Media file not found." });
+  }
+
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+  res.setHeader(
+    "Cache-Control",
+    TOKEN ? "private, max-age=3600" : "public, max-age=31536000, immutable",
+  );
+  return res.sendFile(resolved);
+});
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || ".jpg").toLowerCase().replace(/[^a-z0-9.]/g, "") || ".jpg";
+    const mime = String(file.mimetype || "").toLowerCase();
+    const ext = ALLOWED_IMAGE_MIMES.get(mime) || ".jpg";
     const stamp = Date.now();
     const rand = crypto.randomBytes(6).toString("hex");
     cb(null, `${stamp}-${rand}${ext}`);
@@ -425,8 +697,9 @@ const upload = multer({
     files: 24,
   },
   fileFilter: (_req, file, cb) => {
-    if (!file.mimetype || !file.mimetype.startsWith("image/")) {
-      cb(new Error("Only image files are allowed."));
+    const mime = String(file.mimetype || "").toLowerCase();
+    if (!ALLOWED_IMAGE_MIMES.has(mime)) {
+      cb(new Error("Only JPEG, PNG, WebP, GIF, or AVIF image files are allowed."));
       return;
     }
     cb(null, true);
@@ -434,17 +707,22 @@ const upload = multer({
 });
 
 app.get("/api/health", (req, res) => {
+  const tokenOk = isAuthorizedRequest(req);
+  if (TOKEN && !tokenOk) {
+    res.json({
+      ok: true,
+      service: "mydiary-storage",
+      authRequired: true,
+      tokenAuthorized: false,
+    });
+    return;
+  }
+
   const db = readDb();
   const photosCount = db.memories.reduce(
     (sum, m) => sum + (Array.isArray(m.photos) ? m.photos.length : 0),
     0,
   );
-  const tokenOk = !TOKEN || (() => {
-    const authHeader = req.headers.authorization || "";
-    const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
-    const headerToken = String(req.headers["x-diary-token"] || "").trim();
-    return bearer === TOKEN || headerToken === TOKEN;
-  })();
 
   res.json({
     ok: true,
@@ -472,11 +750,20 @@ app.get("/api/books", requireAuth, (_req, res) => {
 
 app.post("/api/books", requireAuth, async (req, res) => {
   const body = req.body || {};
+  const requestedId = typeof body.id === "string" ? body.id.trim() : "";
+  if (requestedId && !SAFE_ID_RE.test(requestedId)) {
+    res.status(400).json({ error: "Invalid book ID format." });
+    return;
+  }
+  if (body.coverImage && typeof body.coverImage === "string" && !isSafeImageUrl(body.coverImage)) {
+    res.status(400).json({ error: "Unsupported cover image URL." });
+    return;
+  }
   const title = typeof body.title === "string" && body.title.trim() ? body.title.trim() : "Untitled Diary";
   const result = await mutateDb((db) => {
     const baseTemplate = {
-      id: typeof body.id === "string" && body.id.trim() && !db.books.some((b) => b.id === body.id.trim())
-        ? body.id.trim()
+      id: requestedId && !db.books.some((b) => b.id === requestedId)
+        ? requestedId
         : makeBookId(title, db.books),
       title,
       shortTitle: title,
@@ -544,12 +831,20 @@ app.put("/api/books/reorder", requireAuth, async (req, res) => {
 });
 
 app.put("/api/books/:id", requireAuth, async (req, res) => {
-  const bookId = req.params.id;
+  const bookId = String(req.params.id || "");
+  if (!SAFE_ID_RE.test(bookId)) {
+    res.status(400).json({ error: "Invalid book ID format." });
+    return;
+  }
+  const patch = req.body || {};
+  if (patch.coverImage && typeof patch.coverImage === "string" && !isSafeImageUrl(patch.coverImage)) {
+    res.status(400).json({ error: "Unsupported cover image URL." });
+    return;
+  }
   const result = await mutateDb((db) => {
     const idx = db.books.findIndex((b) => b.id === bookId);
     if (idx === -1) return null;
     const current = db.books[idx];
-    const patch = req.body || {};
     const next = applyBookPatch(current, patch);
     db.books[idx] = next;
 
@@ -577,7 +872,11 @@ app.put("/api/books/:id", requireAuth, async (req, res) => {
 });
 
 app.delete("/api/books/:id", requireAuth, async (req, res) => {
-  const bookId = req.params.id;
+  const bookId = String(req.params.id || "");
+  if (!SAFE_ID_RE.test(bookId)) {
+    res.status(400).json({ error: "Invalid book ID format." });
+    return;
+  }
   const result = await mutateDb((db) => {
     if (db.books.length <= 1) {
       return { error: "Keep at least one book on the shelf." };
@@ -636,25 +935,44 @@ app.get("/api/memories", requireAuth, (req, res) => {
     return left.localeCompare(right);
   });
 
-  res.json({ memories });
+  res.json({ memories: memories.map(signMemoryMedia) });
 });
 
 app.get("/api/memories/:id", requireAuth, (req, res) => {
+  const memoryId = String(req.params.id || "");
+  if (!SAFE_ID_RE.test(memoryId)) {
+    res.status(400).json({ error: "Invalid memory ID format." });
+    return;
+  }
   const db = readDb();
-  const memory = db.memories.find((m) => m.id === req.params.id);
+  const memory = db.memories.find((m) => m.id === memoryId);
   if (!memory) {
     res.status(404).json({ error: "Memory not found." });
     return;
   }
-  res.json({ memory });
+  res.json({ memory: signMemoryMedia(memory) });
 });
 
 app.post("/api/upload", requireAuth, upload.array("photos", 24), (req, res) => {
   const files = Array.isArray(req.files) ? req.files : [];
+  for (const file of files) {
+    if (!hasValidImageMagicBytes(file.path)) {
+      for (const cleanupFile of files) {
+        try {
+          if (fs.existsSync(cleanupFile.path)) fs.unlinkSync(cleanupFile.path);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      res.status(400).json({ error: "Uploaded file failed image signature verification." });
+      return;
+    }
+  }
+
   const uploaded = files.map((file) => ({
     id: crypto.randomUUID(),
     filename: file.filename,
-    url: `/uploads/${file.filename}`,
+    url: signMediaPath(`/uploads/${file.filename}`),
     originalName: file.originalname,
     size: file.size,
     mimeType: file.mimetype,
@@ -663,13 +981,75 @@ app.post("/api/upload", requireAuth, upload.array("photos", 24), (req, res) => {
   res.status(201).json({ files: uploaded });
 });
 
+function sanitizeIncomingPhotos(rawPhotos) {
+  if (!Array.isArray(rawPhotos)) return { error: null, photos: [] };
+  const photos = [];
+  for (const photo of rawPhotos) {
+    const url = String(photo?.url || "");
+    if (!url || !isSafeImageUrl(url)) {
+      return { error: "Unsupported or unsafe photo URL." };
+    }
+    const cleanUrl = stripMediaSignature(url);
+    const rawFilename = String(photo?.filename || "");
+    const cleanFilename = rawFilename
+      ? path.basename(rawFilename)
+      : cleanUrl.startsWith("/uploads/")
+        ? path.basename(cleanUrl)
+        : "";
+    if (cleanFilename && !SAFE_FILENAME_RE.test(cleanFilename)) {
+      return { error: "Invalid photo filename." };
+    }
+    photos.push({
+      id: typeof photo?.id === "string" && SAFE_ID_RE.test(photo.id) ? photo.id : crypto.randomUUID(),
+      url: cleanUrl,
+      filename: cleanFilename,
+      originalName: String(photo?.originalName || ""),
+      caption: typeof photo?.caption === "string" ? photo.caption.trim() : "",
+      size: typeof photo?.size === "number" ? photo.size : undefined,
+      mimeType: typeof photo?.mimeType === "string" ? photo.mimeType : undefined,
+    });
+  }
+  return { error: null, photos };
+}
+
+function saveVerifiedBase64Raster(dataUrl, prefix = "") {
+  const match = String(dataUrl || "").match(
+    /^data:image\/(png|jpeg|jpg|webp|gif|avif);base64,([a-zA-Z0-9+/=\r\n]+)$/i,
+  );
+  if (!match) return null;
+  const rawExt = match[1].toLowerCase().replace("jpeg", "jpg");
+  const filename = `${prefix}${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${rawExt}`;
+  const dest = path.join(UPLOADS_DIR, filename);
+  fs.writeFileSync(dest, Buffer.from(match[2], "base64"));
+  if (!hasValidImageMagicBytes(dest)) {
+    try {
+      fs.unlinkSync(dest);
+    } catch {
+      // Ignore unlink errors
+    }
+    return null;
+  }
+  return { filename, url: `/uploads/${filename}` };
+}
+
 app.post("/api/memories", requireAuth, async (req, res) => {
   const body = req.body || {};
   const bookId = typeof body.bookId === "string" ? body.bookId.trim() : "";
+  const requestedId = typeof body.id === "string" ? body.id.trim() : "";
   const title = typeof body.title === "string" ? body.title.trim() : "";
 
   if (!bookId || !title) {
     res.status(400).json({ error: "bookId and title are required." });
+    return;
+  }
+  if (!SAFE_ID_RE.test(bookId) || (requestedId && !SAFE_ID_RE.test(requestedId))) {
+    res.status(400).json({ error: "Invalid bookId or memory id format." });
+    return;
+  }
+
+  const photoCheck = sanitizeIncomingPhotos(body.photos);
+  if (photoCheck.error) {
+    res.status(400).json({ error: photoCheck.error });
     return;
   }
 
@@ -678,20 +1058,10 @@ app.post("/api/memories", requireAuth, async (req, res) => {
       return { error: "Selected book volume does not exist." };
     }
     const now = new Date().toISOString();
-    const photos = Array.isArray(body.photos)
-      ? body.photos.map((photo) => ({
-          id: photo.id || crypto.randomUUID(),
-          url: String(photo.url || ""),
-          filename: String(photo.filename || ""),
-          originalName: String(photo.originalName || ""),
-          caption: typeof photo.caption === "string" ? photo.caption.trim() : "",
-          size: typeof photo.size === "number" ? photo.size : undefined,
-          mimeType: typeof photo.mimeType === "string" ? photo.mimeType : undefined,
-        }))
-      : [];
+    const photos = photoCheck.photos;
 
     const memory = {
-      id: body.id || crypto.randomUUID(),
+      id: requestedId || crypto.randomUUID(),
       bookId,
       title,
       date:
@@ -723,32 +1093,41 @@ app.post("/api/memories", requireAuth, async (req, res) => {
     res.status(404).json({ error: created.error });
     return;
   }
-  res.status(201).json({ memory: created.memory });
+  res.status(201).json({ memory: signMemoryMedia(created.memory) });
 });
 
 app.put("/api/memories/:id", requireAuth, async (req, res) => {
-  const memoryId = req.params.id;
+  const memoryId = String(req.params.id || "");
+  if (!SAFE_ID_RE.test(memoryId)) {
+    res.status(400).json({ error: "Invalid memory ID format." });
+    return;
+  }
   const body = req.body || {};
+  const nextBookId = typeof body.bookId === "string" ? body.bookId.trim() : "";
+  if (nextBookId && !SAFE_ID_RE.test(nextBookId)) {
+    res.status(400).json({ error: "Invalid book ID format." });
+    return;
+  }
+
+  let sanitizedPhotos = null;
+  if (body.photos !== undefined) {
+    const check = sanitizeIncomingPhotos(body.photos);
+    if (check.error) {
+      res.status(400).json({ error: check.error });
+      return;
+    }
+    sanitizedPhotos = check.photos;
+  }
 
   const result = await mutateDb((db) => {
     const idx = db.memories.findIndex((m) => m.id === memoryId);
     if (idx === -1) return null;
     const current = db.memories[idx];
-    const photos = Array.isArray(body.photos)
-      ? body.photos.map((photo) => ({
-          id: photo.id || crypto.randomUUID(),
-          url: String(photo.url || ""),
-          filename: String(photo.filename || ""),
-          originalName: String(photo.originalName || ""),
-          caption: typeof photo.caption === "string" ? photo.caption.trim() : "",
-          size: typeof photo.size === "number" ? photo.size : undefined,
-          mimeType: typeof photo.mimeType === "string" ? photo.mimeType : undefined,
-        }))
-      : current.photos;
+    const photos = sanitizedPhotos ?? current.photos;
 
     const updated = {
       ...current,
-      bookId: typeof body.bookId === "string" && body.bookId.trim() ? body.bookId.trim() : current.bookId,
+      bookId: nextBookId || current.bookId,
       title: typeof body.title === "string" && body.title.trim() ? body.title.trim() : current.title,
       date: typeof body.date === "string" && body.date.trim() ? body.date.trim() : current.date,
       location: typeof body.location === "string" ? body.location.trim() : current.location,
@@ -781,11 +1160,15 @@ app.put("/api/memories/:id", requireAuth, async (req, res) => {
     res.status(404).json({ error: "Memory not found." });
     return;
   }
-  res.json({ memory: result });
+  res.json({ memory: signMemoryMedia(result) });
 });
 
 app.delete("/api/memories/:id", requireAuth, async (req, res) => {
-  const memoryId = req.params.id;
+  const memoryId = String(req.params.id || "");
+  if (!SAFE_ID_RE.test(memoryId)) {
+    res.status(400).json({ error: "Invalid memory ID format." });
+    return;
+  }
   const deleted = await mutateDb((db) => {
     const idx = db.memories.findIndex((m) => m.id === memoryId);
     if (idx === -1) return false;
@@ -808,18 +1191,20 @@ app.post("/api/sync", requireAuth, async (req, res) => {
     let addedMemories = 0;
 
     for (const incomingBook of Array.isArray(books) ? books : []) {
-      if (!incomingBook?.id) continue;
+      const incomingId = typeof incomingBook?.id === "string" ? incomingBook.id.trim() : "";
+      if (!incomingId || !SAFE_ID_RE.test(incomingId)) continue;
+
       let normalizedCoverImage = incomingBook.coverImage;
-      if (typeof normalizedCoverImage === "string" && normalizedCoverImage.startsWith("data:image/")) {
-        const match = normalizedCoverImage.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
-        if (match) {
-          const rawExt = match[1].toLowerCase().replace("jpeg", "jpg").replace(/[^a-z0-9]/g, "");
-          const filename = `cover-${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${rawExt || "jpg"}`;
-          fs.writeFileSync(path.join(UPLOADS_DIR, filename), Buffer.from(match[2], "base64"));
-          normalizedCoverImage = `/uploads/${filename}`;
-        }
+      if (typeof normalizedCoverImage === "string" && normalizedCoverImage.startsWith("data:")) {
+        const saved = saveVerifiedBase64Raster(normalizedCoverImage, "cover-");
+        normalizedCoverImage = saved ? saved.url : undefined;
+      } else if (typeof normalizedCoverImage === "string" && normalizedCoverImage) {
+        normalizedCoverImage = isSafeImageUrl(normalizedCoverImage)
+          ? stripMediaSignature(normalizedCoverImage)
+          : undefined;
       }
-      const idx = db.books.findIndex((b) => b.id === incomingBook.id);
+
+      const idx = db.books.findIndex((b) => b.id === incomingId);
       if (idx !== -1) {
         db.books[idx] = applyBookPatch(db.books[idx], {
           ...incomingBook,
@@ -827,36 +1212,46 @@ app.post("/api/sync", requireAuth, async (req, res) => {
         });
         updatedBooks += 1;
       } else {
-        db.books.push(applyBookPatch(incomingBook, { coverImage: normalizedCoverImage }));
+        db.books.push(applyBookPatch({ ...incomingBook, id: incomingId }, { coverImage: normalizedCoverImage }));
         updatedBooks += 1;
       }
     }
 
     const existingIds = new Set(db.memories.map((m) => m.id));
     for (const incomingMemory of Array.isArray(memories) ? memories : []) {
-      if (!incomingMemory?.id || existingIds.has(incomingMemory.id)) continue;
+      const memId = typeof incomingMemory?.id === "string" ? incomingMemory.id.trim() : "";
+      const bookId = typeof incomingMemory?.bookId === "string" ? incomingMemory.bookId.trim() : "";
+      if (!memId || !SAFE_ID_RE.test(memId) || !bookId || !SAFE_ID_RE.test(bookId) || existingIds.has(memId)) {
+        continue;
+      }
 
       const photos = [];
       for (const photo of incomingMemory.photos || []) {
-        if (typeof photo.url === "string" && photo.url.startsWith("data:image/")) {
-          const match = photo.url.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
-          if (match) {
-            const rawExt = match[1].toLowerCase().replace("jpeg", "jpg").replace(/[^a-z0-9]/g, "");
-            const filename = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${rawExt || "jpg"}`;
-            fs.writeFileSync(path.join(UPLOADS_DIR, filename), Buffer.from(match[2], "base64"));
+        const rawUrl = String(photo?.url || "");
+        if (rawUrl.startsWith("data:")) {
+          const saved = saveVerifiedBase64Raster(rawUrl);
+          if (saved) {
             photos.push({
               ...photo,
-              filename,
-              url: `/uploads/${filename}`,
+              id: typeof photo?.id === "string" && SAFE_ID_RE.test(photo.id) ? photo.id : crypto.randomUUID(),
+              filename: saved.filename,
+              url: saved.url,
             });
-            continue;
           }
+          continue;
         }
-        photos.push(photo);
+        if (isSafeImageUrl(rawUrl)) {
+          photos.push({
+            ...photo,
+            id: typeof photo?.id === "string" && SAFE_ID_RE.test(photo.id) ? photo.id : crypto.randomUUID(),
+            url: stripMediaSignature(rawUrl),
+            filename: photo?.filename ? path.basename(String(photo.filename)) : "",
+          });
+        }
       }
 
-      db.memories.push({ ...incomingMemory, photos });
-      existingIds.add(incomingMemory.id);
+      db.memories.push({ ...incomingMemory, id: memId, bookId, photos });
+      existingIds.add(memId);
       addedMemories += 1;
     }
 

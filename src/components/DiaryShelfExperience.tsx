@@ -11,6 +11,7 @@ import {
   deleteBook,
   fetchBooks,
   fetchMemories,
+  isStorageAuthError,
   loadCachedServerBooks,
   resolveMediaUrl,
   updateBook,
@@ -19,15 +20,12 @@ import {
 import type { DiaryBook, MemoryAlbum } from "@/lib/types";
 import type { ShelfEngine as ShelfEngineType, ShelfMode } from "@/three/ShelfEngine";
 import { siteConfig } from "@/three/site-config";
+import { ExpandableDock } from "./ExpandableDock";
 import { ThemeToggle } from "./ThemeToggle";
 import { readDomTheme, useThemeMode } from "@/lib/theme";
 
 const VolumeEditorModal = dynamic(
   () => import("./VolumeEditorModal").then((m) => m.VolumeEditorModal),
-  { ssr: false },
-);
-const StorageSettingsModal = dynamic(
-  () => import("./StorageSettingsModal").then((m) => m.StorageSettingsModal),
   { ssr: false },
 );
 
@@ -86,21 +84,21 @@ function ShelfExperienceInner() {
     { mode: "edit"; book: DiaryBook } | { mode: "create" } | null
   >(null);
   const [storageOpen, setStorageOpen] = useState(false);
-  const [hasOpenedStorage, setHasOpenedStorage] = useState(false);
-
-  useEffect(() => {
-    if (storageOpen) setHasOpenedStorage(true);
-  }, [storageOpen]);
 
   const booksRef = useRef(books);
   booksRef.current = books;
   const initialFetchRef = useRef<Promise<void> | null>(null);
 
   const refreshBooks = useCallback(async () => {
-    const res = await fetchBooks();
-    booksRef.current = res.books;
-    setBooks(res.books);
-    engineRef.current?.syncBooks(res.books);
+    try {
+      const res = await fetchBooks();
+      booksRef.current = res.books;
+      setBooks(res.books);
+      engineRef.current?.syncBooks(res.books);
+    } catch (err) {
+      if (isStorageAuthError(err)) return;
+      throw err;
+    }
   }, []);
 
   useEffect(() => {
@@ -159,6 +157,11 @@ function ShelfExperienceInner() {
     void fetchMemories({ bookId: selectedBook.id })
       .then((res) => {
         if (!cancelled) setSelectedMemories(res.memories);
+      })
+      .catch((err) => {
+        if (!isStorageAuthError(err) && !cancelled) {
+          setSelectedMemories([]);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoadingMemories(false);
@@ -337,7 +340,12 @@ function ShelfExperienceInner() {
         </div>
 
         <div className="header-controls-cluster">
-          <nav className="top-dock" aria-label="Diary shelf controls">
+          <ExpandableDock
+            ariaLabel="Diary shelf controls"
+            securityOpen={storageOpen}
+            onSecurityOpenChange={setStorageOpen}
+            onStorageConnected={() => void refreshBooks()}
+          >
             <Link
               href={`/book?id=${encodeURIComponent(activeBook.id)}`}
               data-testid="open-active"
@@ -358,7 +366,7 @@ function ShelfExperienceInner() {
               title={`Inspect ${activeBook.title}`}
             >
               <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="hidden sm:inline">Inspect</span>
+              <span>Inspect</span>
             </button>
 
             <button
@@ -371,7 +379,7 @@ function ShelfExperienceInner() {
               title={`Customize ${activeBook.title}`}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="hidden md:inline">Customize</span>
+              <span>Customize</span>
             </button>
 
             <button
@@ -383,7 +391,7 @@ function ShelfExperienceInner() {
               title="Add Book"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="hidden sm:inline">Add Book</span>
+              <span>Add Book</span>
             </button>
 
             <span className="top-dock__divider" aria-hidden="true" />
@@ -395,10 +403,9 @@ function ShelfExperienceInner() {
               aria-label="Write Memory"
             >
               <PenLine className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="hidden sm:inline">Write Memory</span>
-              <span className="sm:hidden">Write</span>
+              <span>Write Memory</span>
             </Link>
-          </nav>
+          </ExpandableDock>
 
           <ThemeToggle />
         </div>
@@ -666,14 +673,6 @@ function ShelfExperienceInner() {
           onClose={() => setEditorState(null)}
           onSave={handleSaveVolume}
           onDelete={handleDeleteVolume}
-        />
-      )}
-
-      {(storageOpen || hasOpenedStorage) && (
-        <StorageSettingsModal
-          open={storageOpen}
-          onClose={() => setStorageOpen(false)}
-          onConnected={() => void refreshBooks()}
         />
       )}
 

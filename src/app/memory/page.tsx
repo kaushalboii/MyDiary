@@ -17,13 +17,14 @@ import {
   X,
 } from "lucide-react";
 import { BookMotifPreview } from "@/components/BookMotifPreview";
-import { BookOpeningReveal } from "@/components/BookOpeningReveal";
+import { ExpandableDock } from "@/components/ExpandableDock";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { defaultBooks } from "@/lib/default-books";
 import {
   deleteMemory,
   fetchBooks,
   fetchMemory,
+  isStorageAuthError,
   resolveMediaUrl,
 } from "@/lib/storage-client";
 import type { DiaryBook, MemoryAlbum } from "@/lib/types";
@@ -49,7 +50,6 @@ function MemoryAlbumContent() {
       return;
     }
     setLoading(true);
-    const startedAt = Date.now();
     try {
       const [booksRes, memRes] = await Promise.all([
         fetchBooks(),
@@ -57,10 +57,9 @@ function MemoryAlbumContent() {
       ]);
       setBooks(booksRes.books);
       setMemory(memRes.memory);
-      const elapsed = Date.now() - startedAt;
-      if (elapsed < 560) {
-        await new Promise((resolve) => setTimeout(resolve, 560 - elapsed));
-      }
+    } catch (err) {
+      if (isStorageAuthError(err)) return;
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -114,7 +113,10 @@ function MemoryAlbumContent() {
         </div>
 
         <div className="header-controls-cluster">
-          <nav className="top-dock" aria-label="Memory navigation">
+          <ExpandableDock
+            ariaLabel="Memory navigation"
+            onStorageConnected={() => void loadData()}
+          >
             <Link
               href={`/book?id=${encodeURIComponent(book.id)}`}
               className="top-dock__btn top-dock__btn--soft"
@@ -138,8 +140,7 @@ function MemoryAlbumContent() {
                   className="top-dock__btn"
                 >
                   <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span className="hidden sm:inline">Edit Album</span>
-                  <span className="sm:hidden">Edit</span>
+                  <span>Edit Album</span>
                 </Link>
                 <button
                   type="button"
@@ -152,7 +153,7 @@ function MemoryAlbumContent() {
                 </button>
               </>
             )}
-          </nav>
+          </ExpandableDock>
 
           <ThemeToggle />
         </div>
@@ -160,10 +161,25 @@ function MemoryAlbumContent() {
 
       <main className="diary-container">
         {loading ? (
-          <BookOpeningReveal
-            book={book}
-            statusLabel="Opening your memory album..."
-          />
+          <div
+            className="stationery-card min-h-[440px] p-8 sm:p-12 flex flex-col justify-between"
+            aria-busy="true"
+            aria-label="Opening your memory album"
+          >
+            <div className="space-y-4">
+              <div className="h-3 w-36 rounded-full bg-[var(--hairline)] animate-pulse" />
+              <div className="h-10 w-3/4 max-w-md rounded bg-[var(--hairline)] animate-pulse" />
+              <div className="h-4 w-56 rounded bg-[var(--hairline)] animate-pulse opacity-70" />
+            </div>
+            <div className="my-8 space-y-3">
+              <div className="h-3.5 w-full rounded bg-[var(--hairline)] animate-pulse opacity-65" />
+              <div className="h-3.5 w-11/12 rounded bg-[var(--hairline)] animate-pulse opacity-65" />
+              <div className="h-3.5 w-4/5 rounded bg-[var(--hairline)] animate-pulse opacity-65" />
+            </div>
+            <p className="text-xs tracking-[0.16em] uppercase text-[var(--ink-soft)]">
+              Opening your memory album...
+            </p>
+          </div>
         ) : !memory ? (
           <div className="stationery-card p-12 text-center">
             <h1

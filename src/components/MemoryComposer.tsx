@@ -17,12 +17,14 @@ import {
   Trash2,
 } from "lucide-react";
 import { BookMotifPreview } from "@/components/BookMotifPreview";
+import { ExpandableDock } from "@/components/ExpandableDock";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { defaultBooks } from "@/lib/default-books";
 import {
   createMemory,
   fetchBooks,
   fetchMemory,
+  isStorageAuthError,
   resolveMediaUrl,
   updateMemory,
   uploadPhotos,
@@ -98,11 +100,16 @@ export function MemoryComposer({
   const [error, setError] = useState<string | null>(null);
 
   const loadBooks = useCallback(async () => {
-    const res = await fetchBooks();
-    setBooks(res.books);
-    setBookId((prev) =>
-      res.books.some((b) => b.id === prev) ? prev : res.books[0]?.id || prev,
-    );
+    try {
+      const res = await fetchBooks();
+      setBooks(res.books);
+      setBookId((prev) =>
+        res.books.some((b) => b.id === prev) ? prev : res.books[0]?.id || prev,
+      );
+    } catch (err) {
+      if (isStorageAuthError(err)) return;
+      throw err;
+    }
   }, []);
 
   useEffect(() => {
@@ -141,6 +148,11 @@ export function MemoryComposer({
         setPhotos(m.photos);
         setCoverPhotoId(m.coverPhotoId);
         setAlbumStyle(m.albumStyle);
+      })
+      .catch((err) => {
+        if (!isStorageAuthError(err) && !cancelled) {
+          setEditMissing(true);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoadingExisting(false);
@@ -270,7 +282,10 @@ export function MemoryComposer({
         </div>
 
         <div className="header-controls-cluster">
-          <nav className="top-dock" aria-label="Composer navigation">
+          <ExpandableDock
+            ariaLabel="Composer navigation"
+            onStorageConnected={() => void loadBooks()}
+          >
             <Link
               href={`/book?id=${encodeURIComponent(bookId)}`}
               className="top-dock__btn top-dock__btn--soft"
@@ -287,7 +302,7 @@ export function MemoryComposer({
             >
               <span>3D Shelf</span>
             </Link>
-          </nav>
+          </ExpandableDock>
 
           <ThemeToggle />
         </div>

@@ -136,13 +136,13 @@ export type StorageHealth = {
   ok: boolean;
   service: string;
   schemaVersion?: number;
-  hostname: string;
-  platform: string;
-  uptimeSeconds: number;
+  hostname?: string;
+  platform?: string;
+  uptimeSeconds?: number;
   authRequired: boolean;
   tokenAuthorized: boolean;
-  dataDir: string;
-  stats: {
+  dataDir?: string;
+  stats?: {
     booksCount: number;
     memoriesCount: number;
     photosCount: number;

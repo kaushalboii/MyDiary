@@ -18,7 +18,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { BookOpeningReveal } from "@/components/BookOpeningReveal";
+import { ExpandableDock } from "@/components/ExpandableDock";
 import { FlipBookReader, type BookSpread } from "@/components/FlipBookReader";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { VolumeEditorModal } from "@/components/VolumeEditorModal";
@@ -28,6 +28,7 @@ import {
   deleteMemory,
   fetchBooks,
   fetchMemories,
+  isStorageAuthError,
   resolveMediaUrl,
   updateBook,
   type BookPatchInput,
@@ -63,7 +64,6 @@ function BookMemoriesContent() {
   const loadData = useCallback(
     async (preserveSpread = false) => {
       setLoading(true);
-      const startedAt = Date.now();
       try {
         const booksRes = await fetchBooks();
         setBooks(booksRes.books);
@@ -86,11 +86,10 @@ function BookMemoriesContent() {
           } else {
             setActiveSpreadIndex(0);
           }
-          const elapsed = Date.now() - startedAt;
-          if (elapsed < 820) {
-            await new Promise((resolve) => setTimeout(resolve, 820 - elapsed));
-          }
         }
+      } catch (err) {
+        if (isStorageAuthError(err)) return;
+        throw err;
       } finally {
         setLoading(false);
       }
@@ -530,14 +529,17 @@ function BookMemoriesContent() {
         </div>
 
         <div className="header-controls-cluster">
-          <nav className="top-dock" aria-label="Book controls">
+          <ExpandableDock
+            ariaLabel="Book controls"
+            onStorageConnected={() => void loadData(true)}
+          >
             <Link
               href={`/?book=${encodeURIComponent(book.id)}`}
               className="top-dock__btn top-dock__btn--soft"
               aria-label="Back to 3D Shelf"
             >
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="hidden sm:inline">Shelf</span>
+              <span>Shelf</span>
             </Link>
 
             <select
@@ -566,7 +568,7 @@ function BookMemoriesContent() {
               title="Customize Book"
             >
               <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="hidden sm:inline">Customize</span>
+              <span>Customize</span>
             </button>
 
             <Link
@@ -575,29 +577,22 @@ function BookMemoriesContent() {
               aria-label="Write Memory"
             >
               <PenLine className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="hidden sm:inline">Write Memory</span>
-              <span className="sm:hidden">Write</span>
+              <span>Write Memory</span>
             </Link>
-          </nav>
+          </ExpandableDock>
 
           <ThemeToggle />
         </div>
       </header>
 
       <main className="diary-container">
-        {loading ? (
-          <BookOpeningReveal
-            book={book}
-            statusLabel={`Opening ${book.title}...`}
-          />
-        ) : (
-          <FlipBookReader
-            book={book}
-            spreads={spreads}
-            activeIndex={safeSpreadIndex}
-            onChangeIndex={setActiveSpreadIndex}
-          />
-        )}
+        <FlipBookReader
+          book={book}
+          spreads={spreads}
+          activeIndex={safeSpreadIndex}
+          onChangeIndex={setActiveSpreadIndex}
+          opening={loading}
+        />
       </main>
 
       {lightboxState && lightboxState.memory.photos[lightboxState.index] && (

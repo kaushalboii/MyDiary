@@ -8,6 +8,33 @@ import type {
   StorageHealth,
   StorageMode,
 } from "./types";
+import {
+  AUTH_REQUIRED_EVENT,
+  getUnlockedVaultSecrets,
+  hasVaultEnvelope,
+  isVaultUnlocked,
+  scrubPlaintextConfigToken,
+  touchVaultActivity,
+} from "./vault-security";
+
+export class StorageAuthError extends Error {
+  status: number;
+
+  constructor(message: string, status = 401) {
+    super(message);
+    this.name = "StorageAuthError";
+    this.status = status;
+  }
+}
+
+export function isStorageAuthError(err: unknown): err is StorageAuthError {
+  return (
+    err instanceof StorageAuthError ||
+    (typeof err === "object" &&
+      err !== null &&
+      (err as { name?: string }).name === "StorageAuthError")
+  );
+}
 
 const CONFIG_KEY = "mydiary_storage_config_v1";
 const IDB_NAME = "mydiary_offline_fallback_v1";
@@ -45,30 +72,61 @@ export function normalizeServerUrl(url: string): string {
 export function loadStorageConfig(): StorageConfig {
   const defaults = getDefaultStorageConfig();
   if (typeof window === "undefined") return defaults;
+
+  const vaultEnabled = hasVaultEnvelope();
+  if (vaultEnabled) {
+    scrubPlaintextConfigToken();
+  }
+
+  let baseUrl = defaults.serverUrl;
+  let label = defaults.label;
+  let plainToken = defaults.token;
+
   try {
     const raw = window.localStorage.getItem(CONFIG_KEY);
-    if (!raw) return defaults;
-    const parsed = JSON.parse(raw) as Partial<StorageConfig>;
-    const candidate = normalizeServerUrl(parsed.serverUrl || defaults.serverUrl);
-    const serverUrl =
-      !isLocalBrowserHost() && isLoopbackUrl(candidate)
-        ? defaults.serverUrl
-        : candidate;
-    return {
-      serverUrl,
-      token: typeof parsed.token === "string" ? parsed.token : defaults.token,
-      label: typeof parsed.label === "string" && parsed.label.trim() ? parsed.label.trim() : defaults.label,
-    };
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<StorageConfig>;
+      const candidate = normalizeServerUrl(parsed.serverUrl || defaults.serverUrl);
+      baseUrl =
+        !isLocalBrowserHost() && isLoopbackUrl(candidate)
+          ? defaults.serverUrl
+          : candidate;
+      if (typeof parsed.label === "string" && parsed.label.trim()) {
+        label = parsed.label.trim();
+      }
+      if (!vaultEnabled && typeof parsed.token === "string") {
+        plainToken = parsed.token;
+      }
+    }
   } catch {
-    return defaults;
+    // Use defaults on malformed config
   }
+
+  if (vaultEnabled) {
+    const unlocked = getUnlockedVaultSecrets();
+    if (!unlocked) {
+      return { serverUrl: baseUrl, token: "", label };
+    }
+    const unlockedUrl = unlocked.serverUrl ? normalizeServerUrl(unlocked.serverUrl) : baseUrl;
+    return {
+      serverUrl:
+        !isLocalBrowserHost() && isLoopbackUrl(unlockedUrl)
+          ? defaults.serverUrl
+          : unlockedUrl || baseUrl,
+      token: unlocked.token || "",
+      label: unlocked.label?.trim() || label,
+    };
+  }
+
+  return { serverUrl: baseUrl, token: plainToken, label };
 }
 
 export function saveStorageConfig(config: StorageConfig) {
   if (typeof window === "undefined") return;
+  const vaultEnabled = hasVaultEnvelope();
   const normalized: StorageConfig = {
     serverUrl: normalizeServerUrl(config.serverUrl),
-    token: config.token.trim(),
+    token: vaultEnabled ? "" : config.token.trim(),
     label: config.label.trim() || "kaushals-mini-server",
   };
   window.localStorage.setItem(CONFIG_KEY, JSON.stringify(normalized));
@@ -76,14 +134,37 @@ export function saveStorageConfig(config: StorageConfig) {
   window.dispatchEvent(new CustomEvent("mydiary:storage-config-changed", { detail: normalized }));
 }
 
+export function sanitizeMediaUrl(url: string): string {
+  if (typeof url !== "string") return "";
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("blob:")) return trimmed;
+  if (/^data:image\/(png|jpeg|jpg|webp|gif|avif);base64,[a-zA-Z0-9+/=\s]+$/i.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^\/(?!\/)/.test(trimmed)) {
+    return trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+      return parsed.toString();
+    }
+  } catch {
+    // Reject malformed URLs
+  }
+  return "";
+}
+
 export function resolveMediaUrl(url: string, config = loadStorageConfig()): string {
-  if (!url) return "";
-  if (url.startsWith("data:") || url.startsWith("blob:") || /^https?:\/\//i.test(url)) {
-    return url;
+  const safe = sanitizeMediaUrl(url);
+  if (!safe) return "";
+  if (safe.startsWith("data:") || safe.startsWith("blob:") || /^https?:\/\//i.test(safe)) {
+    return safe;
   }
   const base = normalizeServerUrl(config.serverUrl);
-  if (!base) return url;
-  return `${base}${url.startsWith("/") ? "" : "/"}${url}`;
+  if (!base) return safe;
+  return `${base}${safe.startsWith("/") ? "" : "/"}${safe}`;
 }
 
 function authHeaders(config: StorageConfig): HeadersInit {
@@ -98,8 +179,15 @@ function authHeaders(config: StorageConfig): HeadersInit {
 async function serverFetch<T>(
   path: string,
   init: RequestInit = {},
-  config = loadStorageConfig(),
+  customConfig?: StorageConfig,
 ): Promise<T> {
+  if (!customConfig && hasVaultEnvelope()) {
+    if (!isVaultUnlocked()) {
+      throw new StorageAuthError("Owner Vault is locked.", 401);
+    }
+    touchVaultActivity();
+  }
+  const config = customConfig ?? loadStorageConfig();
   const base = normalizeServerUrl(config.serverUrl);
   if (!base) throw new Error("No storage server URL configured");
 
@@ -121,6 +209,16 @@ async function serverFetch<T>(
         if (body?.error) message = body.error;
       } catch {
         // Ignore parse failure
+      }
+      if (response.status === 401 || response.status === 403) {
+        if (!customConfig && typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent(AUTH_REQUIRED_EVENT, {
+              detail: { message, status: response.status, serverUrl: base },
+            }),
+          );
+        }
+        throw new StorageAuthError(message, response.status);
       }
       throw new Error(message);
     }
@@ -222,6 +320,7 @@ const LEGACY_OFFLINE_COVERS = new Set([
 
 export function loadCachedServerBooks(): DiaryBook[] | null {
   if (typeof window === "undefined") return null;
+  if (hasVaultEnvelope() && !isVaultUnlocked()) return null;
   try {
     const raw = window.localStorage.getItem(SERVER_BOOKS_CACHE_KEY);
     if (!raw) return null;
@@ -458,6 +557,9 @@ export async function fetchBooks(): Promise<{
   mode: StorageMode;
   hostname?: string;
 }> {
+  if (hasVaultEnvelope() && !isVaultUnlocked()) {
+    throw new StorageAuthError("Owner Vault is locked.", 401);
+  }
   const config = loadStorageConfig();
   try {
     const [booksData, health] = await Promise.all([
@@ -474,7 +576,8 @@ export async function fetchBooks(): Promise<{
       mode: "server",
       hostname: health?.hostname,
     };
-  } catch {
+  } catch (err) {
+    if (isStorageAuthError(err)) throw err;
     const books = await getOfflineBooks();
     return { books, mode: "offline-fallback" };
   }
@@ -493,7 +596,8 @@ export async function createBook(
     });
     saveCachedServerBooks(res.books);
     return { book: res.book, books: res.books, mode: "server" };
-  } catch {
+  } catch (err) {
+    if (isStorageAuthError(err)) throw err;
     const books = await getOfflineBooks();
     const baseTitle = (input.title || "Untitled Diary").trim() || "Untitled Diary";
     const slugBase =
@@ -573,7 +677,8 @@ export async function updateBook(
     const list = res.books ?? (await fetchBooks()).books;
     saveCachedServerBooks(list);
     return { book: res.book, books: list, mode: "server" };
-  } catch {
+  } catch (err) {
+    if (isStorageAuthError(err)) throw err;
     await seedOfflineBooksIfEmpty();
     const books = await getOfflineBooks();
     const currentIdx = books.findIndex((b) => b.id === bookId);
@@ -613,7 +718,8 @@ export async function reorderBooks(
     });
     saveCachedServerBooks(res.books);
     return { books: res.books, mode: "server" };
-  } catch {
+  } catch (err) {
+    if (isStorageAuthError(err)) throw err;
     await seedOfflineBooksIfEmpty();
     saveOfflineOrder(orderedIds);
     const books = await getOfflineBooks();
@@ -630,7 +736,8 @@ export async function deleteBook(
     });
     saveCachedServerBooks(res.books);
     return { books: res.books, mode: "server" };
-  } catch {
+  } catch (err) {
+    if (isStorageAuthError(err)) throw err;
     await seedOfflineBooksIfEmpty();
     const books = await getOfflineBooks();
     if (books.length <= 1) {
@@ -664,7 +771,8 @@ export async function fetchMemories(params?: {
   try {
     const res = await serverFetch<{ memories: MemoryAlbum[] }>(`/api/memories${query}`);
     return { memories: res.memories, mode: "server" };
-  } catch {
+  } catch (err) {
+    if (isStorageAuthError(err)) throw err;
     let list = await getAllFromStore<MemoryAlbum>("memories");
     if (params?.bookId) list = list.filter((m) => m.bookId === params.bookId);
     if (params?.mood && params.mood !== "All") list = list.filter((m) => m.mood === params.mood);
@@ -690,7 +798,8 @@ export async function fetchMemory(
       `/api/memories/${encodeURIComponent(memoryId)}`,
     );
     return { memory: res.memory, mode: "server" };
-  } catch {
+  } catch (err) {
+    if (isStorageAuthError(err)) throw err;
     const list = await getAllFromStore<MemoryAlbum>("memories");
     return {
       memory: list.find((m) => m.id === memoryId) || null,
@@ -703,6 +812,12 @@ export async function uploadPhotos(
   files: File[],
 ): Promise<{ files: AlbumPhoto[]; mode: StorageMode }> {
   if (!files.length) return { files: [], mode: "server" };
+  if (hasVaultEnvelope()) {
+    if (!isVaultUnlocked()) {
+      throw new StorageAuthError("Owner Vault is locked.", 401);
+    }
+    touchVaultActivity();
+  }
   const config = loadStorageConfig();
   const base = normalizeServerUrl(config.serverUrl);
 
@@ -718,11 +833,23 @@ export async function uploadPhotos(
     });
     if (!response.ok) {
       const err = (await response.json().catch(() => ({}))) as { error?: string };
-      throw new Error(err.error || `Upload failed (${response.status})`);
+      const msg = err.error || `Upload failed (${response.status})`;
+      if (response.status === 401 || response.status === 403) {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent(AUTH_REQUIRED_EVENT, {
+              detail: { message: msg, status: response.status, serverUrl: base },
+            }),
+          );
+        }
+        throw new StorageAuthError(msg, response.status);
+      }
+      throw new Error(msg);
     }
     const json = (await response.json()) as { files: AlbumPhoto[] };
     return { files: json.files, mode: "server" };
-  } catch {
+  } catch (err) {
+    if (isStorageAuthError(err)) throw err;
     const fallbackFiles: AlbumPhoto[] = await Promise.all(
       files.map(async (file) => ({
         id: crypto.randomUUID(),
@@ -763,7 +890,8 @@ export async function createMemory(
     });
     clearCachedServerBooks();
     return { memory: res.memory, mode: "server" };
-  } catch {
+  } catch (err) {
+    if (isStorageAuthError(err)) throw err;
     const now = new Date().toISOString();
     const memory: MemoryAlbum = {
       ...input,
@@ -791,7 +919,8 @@ export async function updateMemory(
     );
     clearCachedServerBooks();
     return { memory: res.memory, mode: "server" };
-  } catch {
+  } catch (err) {
+    if (isStorageAuthError(err)) throw err;
     const list = await getAllFromStore<MemoryAlbum>("memories");
     const existing = list.find((m) => m.id === memoryId);
     if (!existing) throw new Error("Memory not found");
@@ -812,7 +941,8 @@ export async function deleteMemory(memoryId: string): Promise<{ mode: StorageMod
     });
     clearCachedServerBooks();
     return { mode: "server" };
-  } catch {
+  } catch (err) {
+    if (isStorageAuthError(err)) throw err;
     await deleteFromStore("memories", memoryId);
     return { mode: "offline-fallback" };
   }

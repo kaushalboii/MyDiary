@@ -225,7 +225,15 @@
   pointer-events: auto;
 }
 
-/* Unified single soft capsule dock across all pages */
+/* Unified single soft expandable capsule dock across all pages */
+.top-dock-shell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  pointer-events: auto;
+  z-index: 40;
+}
+
 .top-dock {
   display: inline-flex;
   align-items: center;
@@ -237,6 +245,67 @@
   backdrop-filter: blur(14px);
   box-shadow: 0 10px 28px -18px var(--card-shadow);
   pointer-events: auto;
+  transition: box-shadow 200ms ease, border-color 200ms ease;
+}
+
+.top-dock--open {
+  box-shadow: 0 16px 36px -18px var(--card-shadow);
+}
+
+.top-dock__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 32px;
+  min-height: 30px;
+  padding: 6px 13px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.top-dock__toggle:hover {
+  background: var(--accent-soft);
+}
+
+.top-dock__toggle--open {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.top-dock__shield-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #4e7c53;
+  flex-shrink: 0;
+}
+
+.top-dock__tray {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  animation: dockUnfold 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes dockUnfold {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .top-dock__divider {
@@ -1155,172 +1224,233 @@
   text-transform: uppercase;
 }
 
-/* Interactive Book-Opening Loading Reveal (/book & /memory) */
-.book-reveal-stage {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 440px;
-  padding: 28px 16px;
+/* Owner Vault Lock & Private Auth Gate */
+html[data-vault="locked"] .vault-protected-shell {
+  display: none !important;
 }
 
-.book-reveal-scene {
-  position: relative;
-  perspective: 1500px;
-  padding-left: 72px;
+.vault-gate-backdrop {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background:
+    radial-gradient(circle at 20% 15%, var(--ambient-glow), transparent 48%),
+    var(--paper);
+  color: var(--ink);
 }
 
-.book-reveal-shadow {
-  position: absolute;
-  left: 50%;
-  bottom: -14px;
-  width: 240px;
-  height: 22px;
-  transform: translateX(-46%);
-  border-radius: 50%;
-  background: radial-gradient(ellipse at center, var(--card-shadow), transparent 72%);
-  opacity: 0.7;
-  pointer-events: none;
-}
-
-.book-reveal-book {
-  position: relative;
-  width: min(252px, 66vw);
-  height: min(344px, 88vw);
-  transform-style: preserve-3d;
-}
-
-.book-reveal-page {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  padding: 20px 20px 18px 24px;
-  background-color: var(--page-bg);
+.vault-gate-card {
+  width: min(440px, 100%);
+  background: var(--paper-light);
   border: 1px solid var(--hairline);
-  border-radius: 4px 12px 12px 4px;
-  box-shadow:
-    inset 14px 0 22px -18px rgba(38, 34, 30, 0.32),
-    4px 0 0 var(--page-edge-a),
-    7px 1px 0 var(--page-edge-b),
-    0 22px 44px -26px var(--card-shadow);
-  overflow: hidden;
+  border-radius: 20px;
+  padding: clamp(24px, 5vw, 34px);
+  box-shadow: 0 28px 64px -32px var(--card-shadow);
 }
 
-.book-reveal-leaf {
-  position: absolute;
-  inset: 4px 6px 4px 2px;
-  border-radius: 3px 10px 10px 3px;
-  background: linear-gradient(90deg, var(--page-edge-a), var(--page-bg));
+.vault-gate-emblem {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 14px;
   border: 1px solid var(--hairline);
-  transform-origin: left center;
-  backface-visibility: hidden;
-  animation: bookRevealLeafTurn 1.65s cubic-bezier(0.28, 0.8, 0.25, 1) infinite;
+  background: var(--paper);
+  color: var(--accent);
 }
 
-.book-reveal-cover {
-  position: absolute;
-  inset: -2px 0 -2px -2px;
-  border-radius: 5px 12px 12px 5px;
-  transform-origin: left center;
-  transform-style: preserve-3d;
-  border: 1px solid rgba(38, 34, 30, 0.16);
-  box-shadow: 0 20px 40px -24px var(--card-shadow);
-  animation: bookRevealCoverOpen 1.65s cubic-bezier(0.28, 0.8, 0.25, 1) infinite;
-}
-
-.book-reveal-cover__front,
-.book-reveal-cover__inside {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  backface-visibility: hidden;
-  overflow: hidden;
-}
-
-.book-reveal-cover__front {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  padding: 22px 18px 20px 24px;
-}
-
-.book-reveal-cover__spine {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 7px;
-  opacity: 0.92;
-}
-
-.book-reveal-cover__band {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 36%;
-  opacity: 0.82;
-}
-
-.book-reveal-cover__copy {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.book-reveal-cover__eyebrow {
-  font-size: 9px;
+.vault-gate-card .diary-kicker {
+  margin: 0 0 6px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  opacity: 0.72;
+  color: var(--ink-soft);
 }
 
-.book-reveal-cover__title {
+.vault-gate-title {
+  margin: 0;
   font-family: var(--serif);
-  font-size: 21px;
-  line-height: 1.08;
-  font-weight: 500;
+  font-size: clamp(26px, 5vw, 32px);
+  font-weight: 400;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
 }
 
-.book-reveal-cover__inside {
-  transform: rotateY(180deg);
-  border-right: 1px solid var(--hairline);
-  box-shadow: inset -12px 0 24px -18px rgba(0, 0, 0, 0.24);
+.vault-gate-subtitle {
+  margin: 8px 0 20px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-soft);
 }
 
-@keyframes bookRevealCoverOpen {
-  0%,
-  4% {
-    transform: rotateY(-10deg);
-  }
-  52%,
-  84% {
-    transform: rotateY(-154deg);
-  }
-  100% {
-    transform: rotateY(-10deg);
-  }
+.vault-gate-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-@keyframes bookRevealLeafTurn {
-  0%,
-  8% {
-    transform: rotateY(-3deg);
-    opacity: 0.96;
-  }
-  58%,
-  86% {
-    transform: rotateY(-142deg);
-    opacity: 0.14;
-  }
-  100% {
-    transform: rotateY(-3deg);
-    opacity: 0.96;
-  }
+.vault-gate-card .field-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vault-gate-card .field-block > span {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.vault-gate-card input {
+  width: 100%;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 160ms ease;
+}
+
+.vault-gate-card input:focus {
+  border-color: var(--ink);
+}
+
+.vault-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.vault-input-wrap input {
+  padding-right: 40px;
+}
+
+.vault-reveal-btn {
+  position: absolute;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.vault-reveal-btn:hover {
+  color: var(--ink);
+  background: var(--accent-soft);
+}
+
+.vault-gate-card .notice-banner.error {
+  border: 1px solid rgba(158, 61, 58, 0.35);
+  background: rgba(158, 61, 58, 0.08);
+  color: var(--accent);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.vault-submit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 2px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper-light);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 180ms ease;
+}
+
+.vault-submit-btn:hover:not(:disabled) {
+  background: var(--walnut-deep);
+}
+
+.vault-submit-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.vault-gate-footer {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+}
+
+.vault-wipe-trigger {
+  font-size: 12px;
+  color: var(--ink-soft);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  background: transparent;
+}
+
+.vault-wipe-trigger:hover {
+  color: var(--accent);
+}
+
+.vault-wipe-confirm-box {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.vault-wipe-confirm-box p {
+  margin: 0 0 10px;
+}
+
+.modal-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.ghost-pill {
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.danger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #9e3d3a;
+  color: #ffffff;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
 }
 
 .diary-page {
@@ -1470,6 +1600,56 @@
   }
 }
 
+@media (max-width: 960px) {
+  .top-dock__tray {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 45;
+    min-width: 224px;
+    max-width: calc(100vw - 24px);
+    padding: 8px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    border: 1px solid var(--hairline);
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--paper-light) 95%, transparent);
+    backdrop-filter: blur(18px);
+    box-shadow: 0 22px 46px -22px var(--card-shadow);
+  }
+
+  .top-dock__tray .top-dock__btn {
+    width: 100%;
+    justify-content: flex-start;
+    min-height: 36px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+
+  .top-dock__tray .top-dock__divider {
+    width: 100%;
+    height: 1px;
+    margin: 3px 0;
+  }
+
+  .top-dock__tray .top-dock__divider--desktop {
+    display: none;
+  }
+
+  .top-dock__tray .top-dock__select {
+    width: 100%;
+    max-width: none;
+    min-height: 36px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--ink) 5%, transparent);
+    font-size: 12px;
+  }
+}
+
 @media (max-width: 760px) {
   .site-header {
     padding: 8px 12px 6px;
@@ -1496,17 +1676,12 @@
     gap: 1px;
   }
 
-  .top-dock__btn {
-    padding: 5px 8px;
+  .top-dock__toggle {
+    min-height: 30px;
+    padding: 5px 10px;
     font-size: 9px;
-    gap: 4px;
-    letter-spacing: 0.06em;
-  }
-
-  .top-dock__select {
-    max-width: 112px;
-    padding: 5px 6px;
-    font-size: 10px;
+    gap: 5px;
+    letter-spacing: 0.08em;
   }
 
   .pull-rope-toggle {
@@ -1533,10 +1708,6 @@
 
   .wordmark__divider {
     width: 10px;
-  }
-
-  .book-reveal-scene {
-    padding-left: 36px;
   }
 
   .edition-mark {

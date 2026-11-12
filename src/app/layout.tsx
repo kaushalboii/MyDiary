@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { KeepAliveBeacon } from "@/components/KeepAliveBeacon";
+import { VaultLockGate } from "@/components/VaultLockGate";
 import { siteConfig } from "@/three/site-config";
 
 const newsreader = localFont({
@@ -64,7 +65,7 @@ export const viewport: Viewport = {
   colorScheme: "light dark",
 };
 
-const THEME_INIT_SCRIPT = `(function(){try{var k="mydiary_theme_v1";var v=localStorage.getItem(k);var t=(v==="dark"||v==="light")?v:"light";document.documentElement.dataset.theme=t;document.documentElement.style.colorScheme=t;}catch(e){}})();`;
+const THEME_INIT_SCRIPT = `(function(){try{var k="mydiary_theme_v1";var v=localStorage.getItem(k);var t=(v==="dark"||v==="light")?v:"light";document.documentElement.dataset.theme=t;document.documentElement.style.colorScheme=t;var ve=localStorage.getItem("mydiary_vault_envelope_v1");var vs=sessionStorage.getItem("mydiary_vault_session_v1");if(ve&&!vs){document.documentElement.dataset.vault="locked";}}catch(e){}})();`;
 
 export default function RootLayout({
   children,
@@ -79,6 +80,8 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
+        <meta name="referrer" content="no-referrer" />
+        <meta name="robots" content="noindex, nofollow" />
         {STORAGE_ORIGIN ? (
           <>
             <link rel="dns-prefetch" href={STORAGE_ORIGIN} />
@@ -89,7 +92,7 @@ export default function RootLayout({
       </head>
       <body>
         <KeepAliveBeacon />
-        {children}
+        <VaultLockGate>{children}</VaultLockGate>
       </body>
     </html>
   );
