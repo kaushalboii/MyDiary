@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Check,
   Copy,
@@ -50,6 +51,16 @@ function formatBytes(bytes: number): string {
 const SERVER_SETUP_SNIPPET = `# On your private host (binds 0.0.0.0 with automatic fail-closed secret token):
 cd MyDiary/storage-server && bash setup-mini-server.sh`;
 
+function isLoopbackServerUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url.trim());
+    const host = parsed.hostname.toLowerCase();
+    return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
 type ModalTab = "vault" | "server";
 
 export function StorageSettingsModal({
@@ -63,6 +74,7 @@ export function StorageSettingsModal({
   onConnected?: () => void;
   initialTab?: ModalTab;
 }) {
+  const [mounted, setMounted] = useState(false);
   const [tab, setTab] = useState<ModalTab>(initialTab);
   const [config, setConfig] = useState<StorageConfig>(() => loadStorageConfig());
   const [health, setHealth] = useState<StorageHealth | null>(null);
@@ -84,6 +96,19 @@ export function StorageSettingsModal({
   const [vaultBusy, setVaultBusy] = useState(false);
   const [confirmWipe, setConfirmWipe] = useState(false);
   const [resealPassphrase, setResealPassphrase] = useState("");
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [open, onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -279,14 +304,15 @@ export function StorageSettingsModal({
     setTimeout(() => setCopiedCmd(false), 1800);
   }
 
-  if (!open) return null;
+  if (!open || !mounted || typeof document === "undefined") return null;
 
   const tokenConfigured = Boolean(config.token.trim());
   const serverProtected = Boolean(health?.authRequired);
+  const loopbackServer = isLoopbackServerUrl(config.serverUrl);
 
-  return (
+  const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4 backdrop-blur-xs"
+      className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-6 backdrop-blur-xs"
       role="dialog"
       aria-modal="true"
       aria-label="Owner security and storage settings"
@@ -295,7 +321,7 @@ export function StorageSettingsModal({
       }}
     >
       <div
-        className="stationery-card relative max-h-[90dvh] w-full max-w-2xl overflow-y-auto p-6 sm:p-8"
+        className="stationery-card relative my-auto max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] w-full max-w-2xl overflow-y-auto p-6 sm:p-8"
         data-testid="security-storage-modal"
       >
         <button
@@ -400,8 +426,10 @@ export function StorageSettingsModal({
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  {serverProtected && health?.tokenAuthorized ? (
+                  {health && serverProtected && health.tokenAuthorized ? (
                     <ShieldCheck className="h-3.5 w-3.5 text-[#4e7c53]" />
+                  ) : health && (!serverProtected && !loopbackServer) ? (
+                    <ShieldAlert className="h-3.5 w-3.5 text-[#b87a3d]" />
                   ) : (
                     <KeyRound className="h-3.5 w-3.5 text-[var(--ink-soft)]" />
                   )}
@@ -413,8 +441,12 @@ export function StorageSettingsModal({
                           ? health.tokenAuthorized
                             ? "Verified"
                             : "Token Required"
-                          : "Loopback Open"
-                        : "Checking"}
+                          : loopbackServer
+                            ? "Loopback Open"
+                            : "Unprotected Remote"
+                        : testing
+                          ? "Checking"
+                          : "Offline"}
                     </strong>
                   </span>
                 </div>
@@ -787,4 +819,6 @@ export function StorageSettingsModal({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

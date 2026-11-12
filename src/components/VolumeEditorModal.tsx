@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   ArrowLeftRight,
@@ -233,8 +234,13 @@ export function VolumeEditorModal({
 
   const [uploadingCover, setUploadingCover] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -245,7 +251,7 @@ export function VolumeEditorModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted || typeof document === "undefined") return null;
 
   const totalSlots =
     mode === "create" ? shelfBooks.length + 1 : Math.max(1, shelfBooks.length);
@@ -399,9 +405,9 @@ export function VolumeEditorModal({
     }
   };
 
-  return (
+  const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 sm:p-4 backdrop-blur-xs"
+      className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/40 p-3 sm:p-6 backdrop-blur-xs"
       role="dialog"
       aria-modal="true"
       aria-label={mode === "create" ? "Add new book" : `Customize ${book.title}`}
@@ -409,7 +415,7 @@ export function VolumeEditorModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="stationery-card relative max-h-[92dvh] w-full max-w-2xl overflow-y-auto p-5 sm:p-7">
+      <div className="stationery-card relative my-auto max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] w-full max-w-2xl overflow-y-auto p-5 sm:p-7">
         <button
           type="button"
           onClick={onClose}
@@ -1229,4 +1235,6 @@ export function VolumeEditorModal({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }
