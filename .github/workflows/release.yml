@@ -29,9 +29,11 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Sync GitHub Releases for all version tags (v1..vN)
+      - name: Sync GitHub Releases and auto-tag new main updates
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
         run: |
           node - <<'EOF'
           const { execFileSync } = require("node:child_process");
@@ -47,9 +49,66 @@ jobs:
             return execFileSync("gh", args, { encoding: "utf8" }).trim();
           }
 
+          function getSortedVersionTags() {
+            const tagsRaw = git(["tag", "-l", "v[0-9]*", "--sort=version:refname"]);
+            return tagsRaw ? tagsRaw.split(/\r?\n/).filter(Boolean) : [];
+          }
+
+          function formatDownloadSection(tag) {
+            return [
+              "### Download & Work on This Version",
+              `- **Download ZIP:** Open [\`Source code (zip)\`](https://github.com/${process.env.GITHUB_REPOSITORY}/archive/refs/tags/${tag}.zip) under **Assets**, extract it, and run:`,
+              "```bash",
+              "npm install",
+              "npm run dev:all   # starts frontend + local storage server together",
+              "```",
+              `- **Switch via Git:** \`git fetch --tags && git checkout -b work-${tag} ${tag}\``,
+            ].join("\n");
+          }
+
           git(["fetch", "--tags", "--force"]);
-          const tagsRaw = git(["tag", "-l", "v[0-9]*", "--sort=version:refname"]);
-          const tags = tagsRaw ? tagsRaw.split(/\r?\n/).filter(Boolean) : [];
+          let tags = getSortedVersionTags();
+          const repo = process.env.GITHUB_REPOSITORY;
+
+          // If an update was pushed directly to main without an explicit vN tag on HEAD,
+          // automatically cut the next sequential annotated tag (v{N+1}) before publishing.
+          if (process.env.EVENT_NAME === "push" && process.env.GITHUB_REF === "refs/heads/main") {
+            const headTags = git(["tag", "--points-at", "HEAD", "v[0-9]*"])
+              .split(/\r?\n/)
+              .filter(Boolean);
+            const headSubject = git(["log", "-1", "--format=%s", "HEAD"]);
+            if (headTags.length === 0 && !/\[skip release\]/i.test(headSubject)) {
+              const prevTag = tags[tags.length - 1] || null;
+              const prevNum = prevTag ? Number.parseInt(prevTag.replace(/^v/i, ""), 10) || 0 : 0;
+              const nextTag = `v${prevNum + 1}`;
+              const commitRange = prevTag ? `${prevTag}..HEAD` : "HEAD";
+              const commitLines = git(["log", "--no-merges", "--format=- %s (`%h`)", commitRange]);
+              const diffStat = prevTag ? git(["diff", "--stat", `${prevTag}..HEAD`]) : "";
+              const cleanTitle = `${nextTag} — ${headSubject.slice(0, 72)}`;
+
+              const tagMessage = [
+                cleanTitle,
+                "",
+                "### What Changed",
+                commitLines || `- ${headSubject}`,
+                ...(diffStat
+                  ? ["", "### Files Changed Summary", "```text", diffStat, "```"]
+                  : []),
+                "",
+                formatDownloadSection(nextTag),
+              ].join("\n");
+
+              const msgFile = path.join(os.tmpdir(), `tag-msg-${nextTag}.txt`);
+              fs.writeFileSync(msgFile, `${tagMessage}\n`, "utf8");
+              git(["config", "user.name", "github-actions[bot]"]);
+              git(["config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"]);
+              git(["tag", "-a", nextTag, "-F", msgFile, "HEAD"]);
+              git(["push", "origin", nextTag]);
+              console.log(`Auto-tagged ${nextTag} at HEAD (${headSubject}).`);
+              tags = getSortedVersionTags();
+            }
+          }
+
           if (tags.length === 0) {
             console.log("No version tags matching v[0-9]* found.");
             process.exit(0);
@@ -58,7 +117,6 @@ jobs:
           const existingJson = gh(["release", "list", "--limit", "100", "--json", "tagName"]);
           const existing = new Set(JSON.parse(existingJson || "[]").map((r) => r.tagName));
           const latestTag = tags[tags.length - 1];
-          const repo = process.env.GITHUB_REPOSITORY;
           let createdCount = 0;
 
           for (let i = 0; i < tags.length; i += 1) {
@@ -76,7 +134,13 @@ jobs:
               ? `**Full Changelog**: https://github.com/${repo}/compare/${prevTag}...${tag}`
               : `**Commit**: https://github.com/${repo}/commit/${commitSha}`;
 
-            const notes = [body.trim(), compareLine].filter(Boolean).join("\n\n");
+            const notesParts = [body.trim()];
+            if (!body.includes("Download & Work on This Version")) {
+              notesParts.push(formatDownloadSection(tag));
+            }
+            notesParts.push(compareLine);
+
+            const notes = notesParts.filter(Boolean).join("\n\n");
             const notesFile = path.join(os.tmpdir(), `release-notes-${tag}.md`);
             fs.writeFileSync(notesFile, `${notes}\n`, "utf8");
 
