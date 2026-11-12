@@ -1,0 +1,102 @@
+name: Publish GitHub Releases
+
+on:
+  push:
+    branches: ["main"]
+    tags:
+      - "v[0-9]*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: "github-releases"
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository with full tag history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Sync GitHub Releases for all version tags (v1..vN)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node - <<'EOF'
+          const { execFileSync } = require("node:child_process");
+          const fs = require("node:fs");
+          const os = require("node:os");
+          const path = require("node:path");
+
+          function git(args) {
+            return execFileSync("git", args, { encoding: "utf8" }).trim();
+          }
+
+          function gh(args) {
+            return execFileSync("gh", args, { encoding: "utf8" }).trim();
+          }
+
+          git(["fetch", "--tags", "--force"]);
+          const tagsRaw = git(["tag", "-l", "v[0-9]*", "--sort=version:refname"]);
+          const tags = tagsRaw ? tagsRaw.split(/\r?\n/).filter(Boolean) : [];
+          if (tags.length === 0) {
+            console.log("No version tags matching v[0-9]* found.");
+            process.exit(0);
+          }
+
+          const existingJson = gh(["release", "list", "--limit", "100", "--json", "tagName"]);
+          const existing = new Set(JSON.parse(existingJson || "[]").map((r) => r.tagName));
+          const latestTag = tags[tags.length - 1];
+          const repo = process.env.GITHUB_REPOSITORY;
+          let createdCount = 0;
+
+          for (let i = 0; i < tags.length; i += 1) {
+            const tag = tags[i];
+            const prevTag = i > 0 ? tags[i - 1] : null;
+            if (existing.has(tag)) {
+              console.log(`Release ${tag} already exists, skipping.`);
+              continue;
+            }
+
+            const subject = git(["for-each-ref", `refs/tags/${tag}`, "--format=%(contents:subject)"]) || tag;
+            const body = git(["for-each-ref", `refs/tags/${tag}`, "--format=%(contents:body)"]) || "";
+            const commitSha = git(["rev-list", "-n", "1", tag]);
+            const compareLine = prevTag
+              ? `**Full Changelog**: https://github.com/${repo}/compare/${prevTag}...${tag}`
+              : `**Commit**: https://github.com/${repo}/commit/${commitSha}`;
+
+            const notes = [body.trim(), compareLine].filter(Boolean).join("\n\n");
+            const notesFile = path.join(os.tmpdir(), `release-notes-${tag}.md`);
+            fs.writeFileSync(notesFile, `${notes}\n`, "utf8");
+
+            const args = [
+              "release",
+              "create",
+              tag,
+              "--verify-tag",
+              "--title",
+              subject,
+              "--notes-file",
+              notesFile,
+              tag === latestTag ? "--latest" : "--latest=false",
+            ];
+            console.log(`Creating release ${tag} (latest=${tag === latestTag})...`);
+            gh(args);
+            createdCount += 1;
+          }
+
+          if (createdCount === 0) {
+            console.log("All version tags already have GitHub Releases.");
+          }
+          EOF
