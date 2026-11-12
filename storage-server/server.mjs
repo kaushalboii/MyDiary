@@ -25,13 +25,25 @@ function loadDefaultBooks() {
   return JSON.parse(fs.readFileSync(DEFAULT_BOOKS_PATH, "utf8"));
 }
 
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 6;
 
 const LEGACY_COVER_HEXES = new Set([
+  // Early template seeds:
   "#8c3f3d", "#2c5a4b", "#b68036", "#233a5c", "#523a46", "#314c63",
   "#475e48", "#2d5168", "#1f2430", "#4d3556", "#8c5938", "#3a637c",
   "#6e404d", "#a6853c", "#4b695e", "#5b323d", "#335443", "#644459",
   "#263b5c", "#9e3d3a", "#c97458", "#c88d3a", "#265a7b",
+  // dd8eeb5 / 2b50152 default shelf:
+  "#6f2130", "#4d746d", "#e8ddc6", "#162c55", "#262421", "#d36e5d",
+  "#626a49", "#76a9c5", "#25282a", "#4c3970", "#1d4fa8", "#bd5a34",
+  "#d8bd8c", "#e6bc39", "#d7d8d4", "#e7e1d3", "#365943", "#9a8ab8",
+  "#1c304b",
+  // 199015c soft minimalism shelf:
+  "#7f5256", "#7d9489", "#ebe3d4", "#536678", "#45403b", "#c68c7b",
+  "#8f977f", "#a3bcc9", "#585a5c", "#837991", "#607793", "#dfd3bd",
+  "#b98c86", "#e7dbb9", "#d4d0c7", "#eae3d5", "#657f70", "#a99db3",
+  "#4b5d73",
+  // 5037200 vibrant soft shelf:
   "#a63a3e", "#246b5b", "#d99326", "#26538d", "#c85a3b", "#db6f57",
   "#568049", "#237887", "#262b3d", "#6b4573", "#c97a2b", "#347ea3",
   "#b54865", "#e0a938", "#3f8f7b", "#6e2c40", "#2d5e43", "#7d4a6b",
@@ -398,6 +410,7 @@ app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     service: "mydiary-storage",
+    schemaVersion: db.schemaVersion ?? CURRENT_SCHEMA_VERSION,
     hostname: os.hostname(),
     platform: os.platform(),
     uptimeSeconds: Math.round(process.uptime()),

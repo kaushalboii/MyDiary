@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <clipPath id="bookBody">
+      <rect x="8.5" y="5.5" width="47" height="53" rx="6" />
+    </clipPath>
+  </defs>
+  <g clip-path="url(#bookBody)">
+    <rect x="8.5" y="5.5" width="47" height="53" fill="#06070B" />
+    <rect x="8.5" y="5.5" width="12.5" height="53" fill="#8A6BFF" />
+    <rect x="48.5" y="8" width="5" height="48" rx="1.8" fill="#F3ECE0" />
+    <rect x="25.5" y="13.5" width="18.5" height="3" rx="1.5" fill="#C9D2DC" />
+    <rect x="25.5" y="47.5" width="18.5" height="3" rx="1.5" fill="#8A6BFF" />
+    <path d="M26 40V23.5H29.8L34.75 32.6L39.7 23.5H43.5V40H39.85V29.8L35.6 37.6H33.9L29.65 29.8V40H26Z" fill="#F3ECE0" />
+  </g>
+  <rect x="7.5" y="4.5" width="49" height="55" rx="7" stroke="#C9D2DC" stroke-width="2.5" />
+</svg>

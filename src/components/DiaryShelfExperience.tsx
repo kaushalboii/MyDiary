@@ -10,6 +10,7 @@ import {
   deleteBook,
   fetchBooks,
   fetchMemories,
+  loadCachedServerBooks,
   resolveMediaUrl,
   updateBook,
   type BookPatchInput,
@@ -65,15 +66,22 @@ function ShelfExperienceInner() {
 
   const booksRef = useRef(books);
   booksRef.current = books;
+  const initialFetchRef = useRef<Promise<void> | null>(null);
 
   const refreshBooks = useCallback(async () => {
     const res = await fetchBooks();
+    booksRef.current = res.books;
     setBooks(res.books);
     engineRef.current?.syncBooks(res.books);
   }, []);
 
   useEffect(() => {
-    void refreshBooks();
+    const cached = loadCachedServerBooks();
+    if (cached && cached.length > 0) {
+      booksRef.current = cached;
+      setBooks(cached);
+    }
+    initialFetchRef.current = refreshBooks();
     const handler = () => {
       void refreshBooks();
     };
@@ -137,7 +145,17 @@ function ShelfExperienceInner() {
 
     async function start() {
       if (!canvasRef.current) return;
-      await document.fonts.ready;
+      const hasCached = Boolean(loadCachedServerBooks()?.length);
+      const waitBudgetMs = hasCached ? 250 : 900;
+      await Promise.all([
+        document.fonts.ready,
+        Promise.race([
+          initialFetchRef.current ?? Promise.resolve(),
+          new Promise<void>((resolve) => {
+            window.setTimeout(resolve, waitBudgetMs);
+          }),
+        ]),
+      ]);
       if (cancelled || !canvasRef.current) return;
 
       const urlBook =

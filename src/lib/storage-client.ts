@@ -72,6 +72,7 @@ export function saveStorageConfig(config: StorageConfig) {
     label: config.label.trim() || "kaushals-mini-server",
   };
   window.localStorage.setItem(CONFIG_KEY, JSON.stringify(normalized));
+  clearCachedServerBooks();
   window.dispatchEvent(new CustomEvent("mydiary:storage-config-changed", { detail: normalized }));
 }
 
@@ -179,18 +180,61 @@ async function deleteFromStore(storeName: "books" | "memories", id: string): Pro
   });
 }
 
-const OFFLINE_BOOK_ORDER_KEY = "mydiary_offline_book_order_v5";
+const OFFLINE_BOOK_ORDER_KEY = "mydiary_offline_book_order_v6";
+const SERVER_BOOKS_CACHE_KEY = "mydiary_server_books_cache_v6";
 
 const LEGACY_OFFLINE_COVERS = new Set([
+  // Early template seeds:
   "#8c3f3d", "#2c5a4b", "#b68036", "#233a5c", "#523a46", "#314c63",
   "#475e48", "#2d5168", "#1f2430", "#4d3556", "#8c5938", "#3a637c",
   "#6e404d", "#a6853c", "#4b695e", "#5b323d", "#335443", "#644459",
   "#263b5c", "#9e3d3a", "#c97458", "#c88d3a", "#265a7b",
+  // dd8eeb5 / 2b50152 default shelf:
+  "#6f2130", "#4d746d", "#e8ddc6", "#162c55", "#262421", "#d36e5d",
+  "#626a49", "#76a9c5", "#25282a", "#4c3970", "#1d4fa8", "#bd5a34",
+  "#d8bd8c", "#e6bc39", "#d7d8d4", "#e7e1d3", "#365943", "#9a8ab8",
+  "#1c304b",
+  // 199015c soft minimalism shelf:
+  "#7f5256", "#7d9489", "#ebe3d4", "#536678", "#45403b", "#c68c7b",
+  "#8f977f", "#a3bcc9", "#585a5c", "#837991", "#607793", "#dfd3bd",
+  "#b98c86", "#e7dbb9", "#d4d0c7", "#eae3d5", "#657f70", "#a99db3",
+  "#4b5d73",
+  // 5037200 vibrant soft shelf:
   "#a63a3e", "#246b5b", "#d99326", "#26538d", "#c85a3b", "#db6f57",
   "#568049", "#237887", "#262b3d", "#6b4573", "#c97a2b", "#347ea3",
   "#b54865", "#e0a938", "#3f8f7b", "#6e2c40", "#2d5e43", "#7d4a6b",
   "#2f4b7c",
 ]);
+
+export function loadCachedServerBooks(): DiaryBook[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(SERVER_BOOKS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? (parsed as DiaryBook[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedServerBooks(books: DiaryBook[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SERVER_BOOKS_CACHE_KEY, JSON.stringify(books));
+  } catch {
+    // Ignore storage quota issues
+  }
+}
+
+function clearCachedServerBooks() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
+  } catch {
+    // Ignore storage issues
+  }
+}
 
 function isDefaultSeedSnapshot(books: DiaryBook[]): boolean {
   if (books.length === 4 && books[0]?.id === "memories-2022" && books[1]?.id === "pocket-notes") {
@@ -386,6 +430,7 @@ export async function fetchBooks(): Promise<{
       serverFetch<{ books: DiaryBook[] }>("/api/books", {}, config),
       checkStorageHealth(config).catch(() => null),
     ]);
+    saveCachedServerBooks(booksData.books);
     return {
       books: booksData.books,
       mode: "server",
@@ -408,6 +453,7 @@ export async function createBook(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     });
+    saveCachedServerBooks(res.books);
     return { book: res.book, books: res.books, mode: "server" };
   } catch {
     const books = await getOfflineBooks();
@@ -487,6 +533,7 @@ export async function updateBook(
       },
     );
     const list = res.books ?? (await fetchBooks()).books;
+    saveCachedServerBooks(list);
     return { book: res.book, books: list, mode: "server" };
   } catch {
     await seedOfflineBooksIfEmpty();
@@ -526,6 +573,7 @@ export async function reorderBooks(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orderedIds }),
     });
+    saveCachedServerBooks(res.books);
     return { books: res.books, mode: "server" };
   } catch {
     await seedOfflineBooksIfEmpty();
@@ -542,6 +590,7 @@ export async function deleteBook(
     const res = await serverFetch<{ books: DiaryBook[] }>(`/api/books/${encodeURIComponent(bookId)}`, {
       method: "DELETE",
     });
+    saveCachedServerBooks(res.books);
     return { books: res.books, mode: "server" };
   } catch {
     await seedOfflineBooksIfEmpty();
@@ -674,6 +723,7 @@ export async function createMemory(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     });
+    clearCachedServerBooks();
     return { memory: res.memory, mode: "server" };
   } catch {
     const now = new Date().toISOString();
@@ -701,6 +751,7 @@ export async function updateMemory(
         body: JSON.stringify(input),
       },
     );
+    clearCachedServerBooks();
     return { memory: res.memory, mode: "server" };
   } catch {
     const list = await getAllFromStore<MemoryAlbum>("memories");
@@ -721,6 +772,7 @@ export async function deleteMemory(memoryId: string): Promise<{ mode: StorageMod
     await serverFetch<{ ok: boolean }>(`/api/memories/${encodeURIComponent(memoryId)}`, {
       method: "DELETE",
     });
+    clearCachedServerBooks();
     return { mode: "server" };
   } catch {
     await deleteFromStore("memories", memoryId);
