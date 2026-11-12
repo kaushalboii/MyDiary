@@ -49,6 +49,7 @@ export type DiaryBook = {
   cover: string;
   accent: string;
   ink: string;
+  secondary?: string;
   motif: BookMotif;
   coverTemplate?: CoverTemplate;
   spineStyle?: SpineStyle;

@@ -48,16 +48,18 @@ const MOTIFS: BookMotif[] = [
 ];
 
 const CLOTH_PRESETS = [
-  { name: "Ruby Cloth", cover: "#a63a3e", accent: "#f1d6a7", ink: "#fbf7ef" },
-  { name: "Botanical Emerald", cover: "#246b5b", accent: "#e9d5b0", ink: "#f9f6ee" },
-  { name: "Ultramarine", cover: "#26538d", accent: "#f2c6a0", ink: "#f8f6f0" },
-  { name: "Terracotta", cover: "#c85a3b", accent: "#f5ead8", ink: "#fbf7f0" },
-  { name: "Sunlit Marigold", cover: "#d99326", accent: "#1f1d1a", ink: "#24211d" },
-  { name: "Mediterranean Teal", cover: "#237887", accent: "#ecd6b4", ink: "#f9f6ef" },
-  { name: "Rich Plum", cover: "#6b4573", accent: "#cde0d5", ink: "#faf6ef" },
-  { name: "Matcha Leaf", cover: "#568049", accent: "#efe2c4", ink: "#faf7ef" },
-  { name: "Berry Rose", cover: "#b54865", accent: "#f5e8dc", ink: "#fcf8f2" },
-  { name: "Obsidian Indigo", cover: "#262b3d", accent: "#e5b98e", ink: "#f5f0e6" },
+  { name: "Obsidian Violet", cover: "#06070B", secondary: "#C9D2DC", accent: "#8A6BFF", ink: "#C9D2DC" },
+  { name: "Onyx Acid Lime", cover: "#030407", secondary: "#AAB0C4", accent: "#B8F23A", ink: "#AAB0C4" },
+  { name: "Ecru Tangerine", cover: "#F3ECE0", secondary: "#D9C3A5", accent: "#F26A1B", ink: "#1E1A16" },
+  { name: "Oxblood Volt", cover: "#4A1824", secondary: "#A9A6A1", accent: "#D4FF1A", ink: "#F4EFE9" },
+  { name: "Periwinkle Magenta", cover: "#6A8DD6", secondary: "#F0EDE6", accent: "#E5007E", ink: "#F0EDE6" },
+  { name: "Prussian Solar", cover: "#07518A", secondary: "#FFF0D5", accent: "#F5E500", ink: "#FFF0D5" },
+  { name: "Abyssal Cyan", cover: "#0B1D26", secondary: "#D9E4EC", accent: "#00E5FF", ink: "#EBF3F7" },
+  { name: "Matcha Coral", cover: "#214D3A", secondary: "#E6DFCC", accent: "#FF6B4A", ink: "#F6F1E7" },
+  { name: "Plum Mint", cover: "#311847", secondary: "#D7CEDE", accent: "#3BFFB0", ink: "#F3EDF7" },
+  { name: "Limestone Cobalt", cover: "#EAE4D7", secondary: "#C6B9A3", accent: "#1B5CFF", ink: "#181B22" },
+  { name: "Crimson Ice", cover: "#C23B2B", secondary: "#F6ECE0", accent: "#D8FF3D", ink: "#FFF8F2" },
+  { name: "Graphite Amber", cover: "#1B1E26", secondary: "#C5CBD6", accent: "#FFB800", ink: "#E9EDF4" },
 ];
 
 const COVER_TEMPLATES: Array<{ id: CoverTemplate; label: string; hint: string }> = [
@@ -149,6 +151,7 @@ export function VolumeEditorModal({
 
   // Outer Cover Look
   const [cover, setCover] = useState(book.cover);
+  const [secondary, setSecondary] = useState(book.secondary || book.accent);
   const [accent, setAccent] = useState(book.accent);
   const [ink, setInk] = useState(book.ink);
   const [motif, setMotif] = useState<BookMotif>(book.motif);
@@ -209,6 +212,7 @@ export function VolumeEditorModal({
     quote,
     quoteBy,
     cover,
+    secondary,
     accent,
     ink,
     motif,
@@ -267,6 +271,7 @@ export function VolumeEditorModal({
         quote: quote.trim(),
         quoteBy: quoteBy.trim(),
         cover,
+        secondary,
         accent,
         ink,
         motif,
@@ -571,7 +576,7 @@ export function VolumeEditorModal({
               {/* Colors */}
               <div>
                 <label className="mb-1.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                  Cloth Binding Palette
+                  Unique Outer Binding Palettes
                 </label>
                 <div className="flex flex-wrap gap-1.5">
                   {CLOTH_PRESETS.map((preset) => (
@@ -580,25 +585,36 @@ export function VolumeEditorModal({
                       type="button"
                       onClick={() => {
                         setCover(preset.cover);
+                        setSecondary(preset.secondary);
                         setAccent(preset.accent);
                         setInk(preset.ink);
                       }}
                       className="flex items-center gap-1.5 border border-[var(--hairline)] bg-[var(--paper)] px-2.5 py-1 text-xs cursor-pointer hover:border-[var(--ink)]"
                     >
-                      <span
-                        className="inline-block h-3 w-3 rounded-full border border-black/15"
-                        style={{ backgroundColor: preset.cover }}
-                      />
+                      <span className="inline-flex items-center -space-x-1">
+                        <span
+                          className="inline-block h-3 w-3 rounded-full border border-black/20"
+                          style={{ backgroundColor: preset.cover }}
+                        />
+                        <span
+                          className="inline-block h-3 w-3 rounded-full border border-black/20"
+                          style={{ backgroundColor: preset.secondary }}
+                        />
+                        <span
+                          className="inline-block h-3 w-3 rounded-full border border-black/20"
+                          style={{ backgroundColor: preset.accent }}
+                        />
+                      </span>
                       <span>{preset.name}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <label className="block">
                   <span className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                    Cloth Color
+                    Cloth Cover
                   </span>
                   <input
                     type="color"
@@ -609,7 +625,18 @@ export function VolumeEditorModal({
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                    Band & Foil Accent
+                    Band & Plaque
+                  </span>
+                  <input
+                    type="color"
+                    value={secondary}
+                    onChange={(e) => setSecondary(e.target.value)}
+                    className="h-9 w-full cursor-pointer border border-[var(--hairline)] bg-transparent p-1"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                    Neon Accent
                   </span>
                   <input
                     type="color"

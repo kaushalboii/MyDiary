@@ -179,13 +179,29 @@ async function deleteFromStore(storeName: "books" | "memories", id: string): Pro
   });
 }
 
-const OFFLINE_BOOK_ORDER_KEY = "mydiary_offline_book_order_v4";
+const OFFLINE_BOOK_ORDER_KEY = "mydiary_offline_book_order_v5";
+
+const LEGACY_OFFLINE_COVERS = new Set([
+  "#8c3f3d", "#2c5a4b", "#b68036", "#233a5c", "#523a46", "#314c63",
+  "#475e48", "#2d5168", "#1f2430", "#4d3556", "#8c5938", "#3a637c",
+  "#6e404d", "#a6853c", "#4b695e", "#5b323d", "#335443", "#644459",
+  "#263b5c", "#9e3d3a", "#c97458", "#c88d3a", "#265a7b",
+  "#a63a3e", "#246b5b", "#d99326", "#26538d", "#c85a3b", "#db6f57",
+  "#568049", "#237887", "#262b3d", "#6b4573", "#c97a2b", "#347ea3",
+  "#b54865", "#e0a938", "#3f8f7b", "#6e2c40", "#2d5e43", "#7d4a6b",
+  "#2f4b7c",
+]);
 
 function isDefaultSeedSnapshot(books: DiaryBook[]): boolean {
   if (books.length === 4 && books[0]?.id === "memories-2022" && books[1]?.id === "pocket-notes") {
     return true;
   }
-  if (books.length === 19 && books[0]?.id === "memories-2022" && books[18]?.id === "milestones-and-ascents") {
+  if (
+    books.length === 19 &&
+    books[0]?.id === "memories-2022" &&
+    books[18]?.id === "milestones-and-ascents" &&
+    LEGACY_OFFLINE_COVERS.has(String(books[0]?.cover || "").toLowerCase())
+  ) {
     return true;
   }
   return false;
@@ -244,6 +260,31 @@ async function getOfflineBooks(): Promise<DiaryBook[]> {
     saveOfflineOrder(seededIds);
     storedBooks = defaultBooks.map((b) => ({ ...b }));
     order = seededIds;
+  } else if (!order && storedBooks.length > 0) {
+    const byId = new Map(defaultBooks.map((b) => [b.id, b]));
+    const upgraded: DiaryBook[] = [];
+    for (const b of storedBooks) {
+      const nextDefault = byId.get(b.id);
+      if (nextDefault && LEGACY_OFFLINE_COVERS.has(String(b.cover || "").toLowerCase())) {
+        const merged: DiaryBook = {
+          ...b,
+          cover: nextDefault.cover,
+          secondary: nextDefault.secondary,
+          accent: nextDefault.accent,
+          ink: nextDefault.ink,
+          coverTemplate: nextDefault.coverTemplate,
+          spineStyle: nextDefault.spineStyle,
+          motif: nextDefault.motif,
+        };
+        await putInStore("books", merged);
+        upgraded.push(merged);
+      } else {
+        upgraded.push(b);
+      }
+    }
+    storedBooks = upgraded;
+    order = storedBooks.map((b) => b.id);
+    saveOfflineOrder(order);
   }
 
   if (storedBooks.length === 0 && !order) {
@@ -400,12 +441,13 @@ export async function createBook(
       quote: input.quote?.trim() || "",
       quoteBy: input.quoteBy?.trim() || "",
       format: input.format || "Soft Linen Hardcover",
-      cover: input.cover || "#246b5b",
-      accent: input.accent || "#e9d5b0",
-      ink: input.ink || "#f9f6ee",
+      cover: input.cover || "#06070B",
+      secondary: input.secondary || "#C9D2DC",
+      accent: input.accent || "#8A6BFF",
+      ink: input.ink || "#C9D2DC",
       motif: input.motif || "lattice",
-      coverTemplate: input.coverTemplate || "clean-minimal",
-      spineStyle: input.spineStyle || "minimal",
+      coverTemplate: input.coverTemplate || "split-band",
+      spineStyle: input.spineStyle || "banded",
       paperStyle: input.paperStyle || "cream",
       fontStyle: input.fontStyle || "serif",
       height: input.height ?? 2.12,

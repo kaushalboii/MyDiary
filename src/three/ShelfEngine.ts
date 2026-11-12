@@ -40,32 +40,32 @@ const THEME_PALETTES = {
     ground: "#eae3d6",
     shelf: "#735a47",
     shelfEdge: "#5f4837",
-    hemiSky: "#fffaf2",
-    hemiGround: "#8d7969",
-    hemiIntensity: 2.65,
-    keyColor: "#fff9f0",
-    keyIntensity: 4.25,
-    rimColor: "#dce6f0",
-    rimIntensity: 1.9,
-    bounceColor: "#e5c2a8",
-    bounceIntensity: 0.95,
-    exposure: 1.04,
+    hemiSky: "#ffffff",
+    hemiGround: "#c8c6c2",
+    hemiIntensity: 2.3,
+    keyColor: "#ffffff",
+    keyIntensity: 3.35,
+    rimColor: "#f7f9fc",
+    rimIntensity: 1.5,
+    bounceColor: "#f5f4f0",
+    bounceIntensity: 0.68,
+    exposure: 1.0,
   },
   dark: {
     bg: "#171513",
     ground: "#12100e",
     shelf: "#4c3a2c",
     shelfEdge: "#3b2c21",
-    hemiSky: "#ece0d2",
-    hemiGround: "#3b3029",
-    hemiIntensity: 1.95,
-    keyColor: "#fff5e8",
-    keyIntensity: 3.85,
-    rimColor: "#93b4d4",
-    rimIntensity: 2.15,
-    bounceColor: "#e08e68",
-    bounceIntensity: 1.15,
-    exposure: 1.1,
+    hemiSky: "#ffffff",
+    hemiGround: "#c8c6c2",
+    hemiIntensity: 2.3,
+    keyColor: "#ffffff",
+    keyIntensity: 3.35,
+    rimColor: "#f7f9fc",
+    rimIntensity: 1.5,
+    bounceColor: "#f5f4f0",
+    bounceIntensity: 0.68,
+    exposure: 1.0,
   },
 } as const;
 
@@ -153,6 +153,7 @@ function bookVisualSignature(book: DiaryBook) {
     book.cover,
     book.accent,
     book.ink,
+    book.secondary ?? "",
     book.motif,
     book.coverTemplate ?? "classic",
     book.spineStyle ?? "classic",
@@ -319,8 +320,8 @@ export class ShelfEngine {
       powerPreference: "high-performance",
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.03;
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
@@ -489,7 +490,8 @@ export class ShelfEngine {
       runtime.signature = nextSig;
 
       runtime.boardMaterial.color.set(nextBook.cover);
-      runtime.boardMaterial.sheenColor.set(nextBook.ink);
+      runtime.boardMaterial.sheenColor.set(nextBook.cover);
+      runtime.boardMaterial.sheen = 0.14;
       runtime.boardMaterial.clearcoat = 0.02;
       runtime.boardMaterial.needsUpdate = true;
 
@@ -763,12 +765,12 @@ export class ShelfEngine {
 
     const boardMaterial = new THREE.MeshPhysicalMaterial({
       color: book.cover,
-      roughness: 0.78,
+      roughness: 0.72,
       metalness: 0,
-      sheen: 0.34,
-      sheenColor: new THREE.Color(book.ink),
-      sheenRoughness: 0.82,
-      clearcoat: 0.03,
+      sheen: 0.14,
+      sheenColor: new THREE.Color(book.cover),
+      sheenRoughness: 0.78,
+      clearcoat: 0.02,
       clearcoatRoughness: 0.74,
     });
     const paperMaterial = new THREE.MeshStandardMaterial({
@@ -857,10 +859,9 @@ export class ShelfEngine {
       new THREE.PlaneGeometry(width - 0.065, height - 0.065),
       new THREE.MeshPhysicalMaterial({
         map: frontTexture,
-        roughness: 0.76,
-        metalness: 0.01,
-        clearcoat: 0.03,
-        clearcoatRoughness: 0.68,
+        roughness: 0.84,
+        metalness: 0,
+        clearcoat: 0,
       }),
     );
     frontSurface.name = "frontArtwork";
@@ -887,7 +888,8 @@ export class ShelfEngine {
       new THREE.PlaneGeometry(width - 0.065, height - 0.065),
       new THREE.MeshStandardMaterial({
         map: backTexture,
-        roughness: 0.72,
+        roughness: 0.84,
+        metalness: 0,
       }),
     );
     backSurface.name = "backArtwork";
@@ -899,8 +901,8 @@ export class ShelfEngine {
       new THREE.PlaneGeometry(Math.max(0.06, depth - 0.015), height - 0.04),
       new THREE.MeshPhysicalMaterial({
         map: spineTexture,
-        roughness: 0.68,
-        metalness: 0.015,
+        roughness: 0.8,
+        metalness: 0,
       }),
     );
     spineSurface.name = "spineArtwork";

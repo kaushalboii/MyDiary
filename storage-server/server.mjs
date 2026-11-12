@@ -25,7 +25,18 @@ function loadDefaultBooks() {
   return JSON.parse(fs.readFileSync(DEFAULT_BOOKS_PATH, "utf8"));
 }
 
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
+
+const LEGACY_COVER_HEXES = new Set([
+  "#8c3f3d", "#2c5a4b", "#b68036", "#233a5c", "#523a46", "#314c63",
+  "#475e48", "#2d5168", "#1f2430", "#4d3556", "#8c5938", "#3a637c",
+  "#6e404d", "#a6853c", "#4b695e", "#5b323d", "#335443", "#644459",
+  "#263b5c", "#9e3d3a", "#c97458", "#c88d3a", "#265a7b",
+  "#a63a3e", "#246b5b", "#d99326", "#26538d", "#c85a3b", "#db6f57",
+  "#568049", "#237887", "#262b3d", "#6b4573", "#c97a2b", "#347ea3",
+  "#b54865", "#e0a938", "#3f8f7b", "#6e2c40", "#2d5e43", "#7d4a6b",
+  "#2f4b7c",
+]);
 
 function isLegacyDefaultShelf(books) {
   if (!Array.isArray(books)) return false;
@@ -67,12 +78,29 @@ function readDb() {
   if (!Array.isArray(parsed.books) || parsed.books.length === 0) {
     parsed.books = loadDefaultBooks();
   }
-  if (
-    (parsed.schemaVersion ?? 1) < CURRENT_SCHEMA_VERSION &&
-    parsed.memories.length === 0 &&
-    isLegacyDefaultShelf(parsed.books)
-  ) {
-    parsed.books = loadDefaultBooks();
+  if ((parsed.schemaVersion ?? 1) < CURRENT_SCHEMA_VERSION) {
+    const freshDefaults = loadDefaultBooks();
+    if (parsed.memories.length === 0 && isLegacyDefaultShelf(parsed.books)) {
+      parsed.books = freshDefaults;
+    } else {
+      const byId = new Map(freshDefaults.map((b) => [b.id, b]));
+      parsed.books = parsed.books.map((book) => {
+        const nextDefault = byId.get(book.id);
+        if (nextDefault && LEGACY_COVER_HEXES.has(String(book.cover || "").toLowerCase())) {
+          return {
+            ...book,
+            cover: nextDefault.cover,
+            secondary: nextDefault.secondary,
+            accent: nextDefault.accent,
+            ink: nextDefault.ink,
+            coverTemplate: nextDefault.coverTemplate,
+            spineStyle: nextDefault.spineStyle,
+            motif: nextDefault.motif,
+          };
+        }
+        return book;
+      });
+    }
     parsed.schemaVersion = CURRENT_SCHEMA_VERSION;
     writeDbSync(parsed);
   }
@@ -240,6 +268,8 @@ function applyBookPatch(current, patch) {
     quoteBy: typeof patch.quoteBy === "string" ? patch.quoteBy.trim() : current.quoteBy,
     format: typeof patch.format === "string" && patch.format.trim() ? patch.format.trim() : current.format,
     cover: typeof patch.cover === "string" && patch.cover ? patch.cover : current.cover,
+    secondary:
+      typeof patch.secondary === "string" && patch.secondary ? patch.secondary : current.secondary,
     accent: typeof patch.accent === "string" && patch.accent ? patch.accent : current.accent,
     ink: typeof patch.ink === "string" && patch.ink ? patch.ink : current.ink,
     motif: typeof patch.motif === "string" && patch.motif ? patch.motif : current.motif,
@@ -408,12 +438,13 @@ app.post("/api/books", requireAuth, async (req, res) => {
       quote: "",
       quoteBy: "",
       format: "Soft Linen Hardcover",
-      cover: "#246b5b",
-      accent: "#e9d5b0",
-      ink: "#f9f6ee",
+      cover: "#06070B",
+      secondary: "#C9D2DC",
+      accent: "#8A6BFF",
+      ink: "#C9D2DC",
       motif: "lattice",
-      coverTemplate: "clean-minimal",
-      spineStyle: "minimal",
+      coverTemplate: "split-band",
+      spineStyle: "banded",
       paperStyle: "cream",
       fontStyle: "serif",
       height: 2.12,

@@ -727,6 +727,7 @@ export function createFrontCover(
   }
 
   if (template === "classic") {
+    const secondary = book.secondary || book.accent;
     drawMotif(ctx, book, logicalWidth, logicalHeight);
     addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
     if (customCoverImg) {
@@ -738,14 +739,14 @@ export function createFrontCover(
       ctx.restore();
       ctx.save();
       ctx.strokeStyle = book.accent;
-      ctx.lineWidth = 5;
+      ctx.lineWidth = 6;
       roundedRect(ctx, 140, 560, logicalWidth - 280, 680, 12);
       ctx.stroke();
       ctx.restore();
     }
     ctx.save();
-    ctx.globalAlpha = 0.26;
-    ctx.strokeStyle = book.ink;
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = secondary;
     ctx.lineWidth = 4;
     ctx.strokeRect(22, 22, logicalWidth - 44, logicalHeight - 44);
     ctx.restore();
@@ -754,13 +755,18 @@ export function createFrontCover(
   }
 
   if (template === "clean-minimal") {
+    const secondary = book.secondary || book.ink;
     addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
-    // Soft minimalist blind-debossed border & centered hairline accent
     ctx.save();
-    ctx.globalAlpha = 0.22;
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = secondary;
+    ctx.lineWidth = 3;
+    roundedRect(ctx, 56, 56, logicalWidth - 112, logicalHeight - 112, 12);
+    ctx.stroke();
+    ctx.globalAlpha = 0.85;
     ctx.strokeStyle = book.accent;
-    ctx.lineWidth = 2.5;
-    roundedRect(ctx, 68, 68, logicalWidth - 136, logicalHeight - 136, 12);
+    ctx.lineWidth = 3;
+    roundedRect(ctx, 74, 74, logicalWidth - 148, logicalHeight - 148, 8);
     ctx.stroke();
     ctx.restore();
 
@@ -774,16 +780,16 @@ export function createFrontCover(
     } else {
       ctx.save();
       ctx.strokeStyle = book.accent;
-      ctx.lineWidth = 3;
-      ctx.globalAlpha = 0.65;
+      ctx.lineWidth = 5;
+      ctx.globalAlpha = 0.95;
       ctx.beginPath();
-      ctx.moveTo(logicalWidth * 0.5 - 56, 860);
-      ctx.lineTo(logicalWidth * 0.5 + 56, 860);
+      ctx.moveTo(logicalWidth * 0.5 - 64, 860);
+      ctx.lineTo(logicalWidth * 0.5 + 64, 860);
       ctx.stroke();
-      ctx.translate(logicalWidth * 0.5, 920);
+      ctx.translate(logicalWidth * 0.5, 924);
       ctx.rotate(Math.PI / 4);
       ctx.fillStyle = book.accent;
-      ctx.fillRect(-7, -7, 14, 14);
+      ctx.fillRect(-10, -10, 20, 20);
       ctx.restore();
     }
 
@@ -792,12 +798,13 @@ export function createFrontCover(
   }
 
   if (template === "bordered-plaque") {
+    const plaqueBg = book.secondary || "#faf7f0";
+    const plaqueInk = contrastInkForHex(plaqueBg);
     addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
-    // Soft subtle frame + rounded archival ivory plaque
     ctx.save();
-    ctx.globalAlpha = 0.32;
+    ctx.globalAlpha = 0.85;
     ctx.strokeStyle = book.accent;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 5;
     roundedRect(ctx, 48, 48, logicalWidth - 96, logicalHeight - 96, 14);
     ctx.stroke();
     ctx.restore();
@@ -808,18 +815,18 @@ export function createFrontCover(
     const plaqueH = customCoverImg ? 510 : 620;
 
     ctx.save();
-    ctx.fillStyle = "#faf7f0";
+    ctx.fillStyle = plaqueBg;
     roundedRect(ctx, plaqueX, plaqueY, plaqueW, plaqueH, 16);
     ctx.fill();
     ctx.strokeStyle = book.accent;
-    ctx.globalAlpha = 0.72;
-    ctx.lineWidth = 3.5;
+    ctx.globalAlpha = 0.92;
+    ctx.lineWidth = 4.5;
     roundedRect(ctx, plaqueX + 18, plaqueY + 18, plaqueW - 36, plaqueH - 36, 10);
     ctx.stroke();
     ctx.restore();
 
     ctx.save();
-    ctx.fillStyle = "#25231f";
+    ctx.fillStyle = plaqueInk;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     const imprint =
@@ -850,13 +857,14 @@ export function createFrontCover(
       ctx.fillText(entry, logicalWidth * 0.5, startY + idx * titleSize * 0.96);
     });
     if (book.subtitle) {
-      ctx.fillStyle = "#6e6559";
+      ctx.globalAlpha = 0.78;
       ctx.font = `500 28px ${sans}`;
       ctx.fillText(
         book.subtitle,
         logicalWidth * 0.5,
         startY + Math.min(lines.length, 4) * titleSize * 0.96 + 30,
       );
+      ctx.globalAlpha = 1;
     }
     ctx.restore();
 
@@ -871,7 +879,7 @@ export function createFrontCover(
 
     ctx.save();
     ctx.fillStyle = book.ink;
-    ctx.globalAlpha = 0.72;
+    ctx.globalAlpha = 0.76;
     ctx.font = `500 20px ${sans}`;
     ctx.letterSpacing = "3px";
     ctx.textAlign = "center";
@@ -887,16 +895,17 @@ export function createFrontCover(
     return canvas;
   }
 
-  // "split-band": two-tone lower horizontal cloth/accent band
+  // "split-band": two-tone lower horizontal cloth/secondary band + crisp vibrant seam
   addPaperGrain(ctx, logicalWidth, logicalHeight, book.id);
   const bandTop = Math.round(logicalHeight * 0.58);
-  const bandInk = contrastInkForHex(book.accent);
+  const bandColor = book.secondary || book.accent;
+  const bandInk = contrastInkForHex(bandColor);
   ctx.save();
-  ctx.fillStyle = book.accent;
+  ctx.fillStyle = bandColor;
   ctx.fillRect(0, bandTop, logicalWidth, logicalHeight - bandTop);
-  ctx.fillStyle = bandInk;
-  ctx.globalAlpha = 0.16;
-  ctx.fillRect(0, bandTop, logicalWidth, 3);
+  ctx.fillStyle = book.accent;
+  ctx.fillRect(0, bandTop - 7, logicalWidth, 14);
+  ctx.fillRect(0, 0, 20, logicalHeight);
   ctx.restore();
 
   if (customCoverImg) {
@@ -916,8 +925,8 @@ export function createFrontCover(
   } else {
     ctx.save();
     ctx.fillStyle = bandInk;
-    ctx.globalAlpha = 0.78;
-    ctx.font = `500 30px ${serif}`;
+    ctx.globalAlpha = 0.85;
+    ctx.font = `520 32px ${serif}`;
     ctx.fillText(book.yearLabel || "", 82, bandTop + 74);
     ctx.restore();
   }
@@ -951,6 +960,7 @@ export function createSpineCover(book: DiaryBook) {
   ctx.scale(0.5, 0.5);
 
   const spineStyle = book.spineStyle || "classic";
+  const secondary = book.secondary || book.ink;
 
   ctx.fillStyle = book.cover;
   ctx.fillRect(0, 0, logicalWidth, logicalHeight);
@@ -959,24 +969,43 @@ export function createSpineCover(book: DiaryBook) {
   if (spineStyle === "banded") {
     ctx.save();
     ctx.fillStyle = book.accent;
-    ctx.globalAlpha = 0.72;
-    ctx.fillRect(0, 156, logicalWidth, 16);
-    ctx.fillRect(0, 194, logicalWidth, 8);
-    ctx.fillRect(0, logicalHeight - 222, logicalWidth, 8);
-    ctx.fillRect(0, logicalHeight - 194, logicalWidth, 16);
+    ctx.globalAlpha = 0.94;
+    ctx.fillRect(0, 136, logicalWidth, 38);
+    ctx.fillRect(0, logicalHeight - 196, logicalWidth, 38);
+    ctx.fillStyle = secondary;
+    ctx.globalAlpha = 0.85;
+    ctx.fillRect(0, 186, logicalWidth, 10);
+    ctx.fillRect(0, logicalHeight - 218, logicalWidth, 10);
     ctx.restore();
   } else if (spineStyle === "bordered") {
     ctx.save();
     ctx.strokeStyle = book.accent;
-    ctx.globalAlpha = 0.65;
-    ctx.lineWidth = isThin ? 4 : 5;
-    ctx.strokeRect(30, 88, logicalWidth - 60, logicalHeight - 176);
+    ctx.globalAlpha = 0.92;
+    ctx.lineWidth = isThin ? 6 : 8;
+    ctx.strokeRect(26, 78, logicalWidth - 52, logicalHeight - 156);
+    ctx.fillStyle = secondary;
+    ctx.globalAlpha = 0.85;
+    ctx.fillRect(48, 102, logicalWidth - 96, 8);
+    ctx.fillRect(48, logicalHeight - 110, logicalWidth - 96, 8);
     ctx.restore();
   } else if (spineStyle === "classic") {
     ctx.save();
     ctx.fillStyle = book.accent;
-    ctx.globalAlpha = 0.72;
-    ctx.fillRect(20, 24, isThin ? 10 : 7, logicalHeight - 48);
+    ctx.globalAlpha = 0.94;
+    ctx.fillRect(14, 28, isThin ? 22 : 18, logicalHeight - 56);
+    ctx.fillStyle = secondary;
+    ctx.globalAlpha = 0.78;
+    ctx.fillRect(42, 64, 5, logicalHeight - 128);
+    ctx.restore();
+  } else {
+    ctx.save();
+    ctx.fillStyle = book.accent;
+    ctx.globalAlpha = 0.92;
+    ctx.fillRect(logicalWidth * 0.5 - 42, 132, 84, 14);
+    ctx.fillRect(logicalWidth * 0.5 - 42, logicalHeight - 178, 84, 14);
+    ctx.fillStyle = secondary;
+    ctx.globalAlpha = 0.75;
+    ctx.fillRect(logicalWidth * 0.5 - 24, 158, 48, 5);
     ctx.restore();
   }
 

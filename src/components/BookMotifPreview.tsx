@@ -22,6 +22,8 @@ export function BookMotifPreview({
   const w = Math.round(baseDims.w * widthRatio);
   const h = Math.round(baseDims.h * heightRatio);
   const template = book.coverTemplate || (book.coverImage ? "photo-card" : "classic");
+  const secondary = book.secondary || book.accent;
+  const plaqueBg = book.secondary || "#faf7f0";
   const coverSrc = book.coverImage ? resolveMediaUrl(book.coverImage) : "";
   const showOverlayText = template !== "photo-card" || (book.showCoverTextWithImage ?? true);
 
@@ -67,9 +69,9 @@ export function BookMotifPreview({
             left: 0,
             right: 0,
             bottom: 0,
-            height: "40%",
-            backgroundColor: book.accent,
-            borderTop: `1px solid ${book.ink}`,
+            height: "42%",
+            backgroundColor: secondary,
+            borderTop: `2px solid ${book.accent}`,
           }}
         />
       )}
@@ -83,7 +85,7 @@ export function BookMotifPreview({
             right: size === "sm" ? 7 : 11,
             top: "22%",
             height: coverSrc ? "34%" : "44%",
-            backgroundColor: "#faf7f0",
+            backgroundColor: plaqueBg,
             border: `1.5px solid ${book.accent}`,
             borderRadius: 5,
           }}
@@ -189,7 +191,17 @@ export function BookMotifPreview({
               : "pl-1.5"
           }`}
           style={{
-            color: template === "bordered-plaque" ? "#25231f" : book.ink,
+            color:
+              template === "bordered-plaque"
+                ? /^#[0-9a-fA-F]{6}$/.test(plaqueBg) &&
+                  (0.299 * parseInt(plaqueBg.slice(1, 3), 16) +
+                    0.587 * parseInt(plaqueBg.slice(3, 5), 16) +
+                    0.114 * parseInt(plaqueBg.slice(5, 7), 16)) /
+                    255 <
+                    0.52
+                  ? "#f9f6ef"
+                  : "#1e1b17"
+                : book.ink,
           }}
         >
           <div style={{ marginTop: template === "bordered-plaque" ? "18%" : 0 }}>
