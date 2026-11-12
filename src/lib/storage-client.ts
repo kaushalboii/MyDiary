@@ -43,6 +43,25 @@ export function isStorageAuthError(err: unknown): err is StorageAuthError {
   );
 }
 
+export class StorageClientError extends Error {
+  status: number;
+
+  constructor(message: string, status = 400) {
+    super(message);
+    this.name = "StorageClientError";
+    this.status = status;
+  }
+}
+
+export function isStorageClientError(err: unknown): err is StorageClientError {
+  return (
+    err instanceof StorageClientError ||
+    (typeof err === "object" &&
+      err !== null &&
+      (err as { name?: string }).name === "StorageClientError")
+  );
+}
+
 const CONFIG_KEY = "mydiary_storage_config_v1";
 const IDB_NAME = "mydiary_offline_fallback_v1";
 const IDB_VERSION = 1;
@@ -113,7 +132,7 @@ export function loadStorageConfig(): StorageConfig {
   let baseUrl = defaults.serverUrl;
   let label = defaults.label;
   let plainToken = defaults.token;
-  const sessionToken = getSessionToken();
+  let sessionToken = getSessionToken();
 
   try {
     const raw = window.localStorage.getItem(CONFIG_KEY);
@@ -128,8 +147,17 @@ export function loadStorageConfig(): StorageConfig {
         const cleanedLabel = parsed.label.trim();
         label = cleanedLabel.includes("mini-server") ? "Private Archive" : cleanedLabel;
       }
-      if (!vaultEnabled && typeof parsed.token === "string") {
-        plainToken = parsed.token;
+      if (typeof parsed.token === "string" && parsed.token.trim()) {
+        const legacyToken = parsed.token.trim();
+        if (!vaultEnabled && !sessionToken) {
+          saveSessionToken(legacyToken);
+          sessionToken = legacyToken;
+        }
+        // Scrub any legacy plaintext token persisted in localStorage
+        window.localStorage.setItem(
+          CONFIG_KEY,
+          JSON.stringify({ serverUrl: baseUrl, token: "", label }),
+        );
       }
     }
   } catch {
@@ -161,9 +189,14 @@ export function loadStorageConfig(): StorageConfig {
 export function saveStorageConfig(config: StorageConfig) {
   if (typeof window === "undefined") return;
   const vaultEnabled = hasVaultEnvelope();
+  const trimmedToken = config.token.trim();
+  if (!vaultEnabled && trimmedToken) {
+    saveSessionToken(trimmedToken);
+  }
   const normalized: StorageConfig = {
     serverUrl: normalizeServerUrl(config.serverUrl),
-    token: vaultEnabled ? "" : config.token.trim(),
+    // Never write bearer/session tokens into persistent localStorage
+    token: "",
     label: config.label.trim() || "Private Archive",
   };
   window.localStorage.setItem(CONFIG_KEY, JSON.stringify(normalized));
@@ -256,6 +289,9 @@ async function serverFetch<T>(
           );
         }
         throw new StorageAuthError(message, response.status);
+      }
+      if (response.status >= 400 && response.status < 500) {
+        throw new StorageClientError(message, response.status);
       }
       throw new Error(message);
     }
@@ -359,7 +395,9 @@ export function loadCachedServerBooks(): DiaryBook[] | null {
   if (typeof window === "undefined") return null;
   if (hasVaultEnvelope() && !isVaultUnlocked()) return null;
   try {
-    const raw = window.localStorage.getItem(SERVER_BOOKS_CACHE_KEY);
+    // Scrub any legacy persistent copy from localStorage
+    window.localStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
+    const raw = window.sessionStorage.getItem(SERVER_BOOKS_CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) && parsed.length > 0 ? (parsed as DiaryBook[]) : null;
@@ -371,7 +409,7 @@ export function loadCachedServerBooks(): DiaryBook[] | null {
 function saveCachedServerBooks(books: DiaryBook[]) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(SERVER_BOOKS_CACHE_KEY, JSON.stringify(books));
+    window.sessionStorage.setItem(SERVER_BOOKS_CACHE_KEY, JSON.stringify(books));
   } catch {
     // Ignore storage quota issues
   }
@@ -380,6 +418,7 @@ function saveCachedServerBooks(books: DiaryBook[]) {
 function clearCachedServerBooks() {
   if (typeof window === "undefined") return;
   try {
+    window.sessionStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
     window.localStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
   } catch {
     // Ignore storage issues
@@ -883,12 +922,15 @@ export async function uploadPhotos(
         }
         throw new StorageAuthError(msg, response.status);
       }
+      if (response.status >= 400 && response.status < 500) {
+        throw new StorageClientError(msg, response.status);
+      }
       throw new Error(msg);
     }
     const json = (await response.json()) as { files: AlbumPhoto[] };
     return { files: json.files, mode: "server" };
   } catch (err) {
-    if (isStorageAuthError(err)) throw err;
+    if (isStorageAuthError(err) || isStorageClientError(err)) throw err;
     const fallbackFiles: AlbumPhoto[] = await Promise.all(
       files.map(async (file) => ({
         id: crypto.randomUUID(),
@@ -931,7 +973,7 @@ export async function createMemory(
     clearCachedServerBooks();
     return { memory: res.memory, mode: "server" };
   } catch (err) {
-    if (isStorageAuthError(err)) throw err;
+    if (isStorageAuthError(err) || isStorageClientError(err)) throw err;
     const now = new Date().toISOString();
     const memory: MemoryAlbum = {
       ...input,
@@ -960,7 +1002,7 @@ export async function updateMemory(
     clearCachedServerBooks();
     return { memory: res.memory, mode: "server" };
   } catch (err) {
-    if (isStorageAuthError(err)) throw err;
+    if (isStorageAuthError(err) || isStorageClientError(err)) throw err;
     const list = await getAllFromStore<MemoryAlbum>("memories");
     const existing = list.find((m) => m.id === memoryId);
     if (!existing) throw new Error("Memory not found");

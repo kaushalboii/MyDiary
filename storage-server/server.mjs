@@ -20,7 +20,7 @@ const USERS_FILE = path.join(DATA_DIR, "users.json");
 const INVITES_FILE = path.join(DATA_DIR, "invites.json");
 const REVOKED_FILE = path.join(DATA_DIR, "revoked-sessions.json");
 const DEFAULT_BOOKS_PATH = path.join(__dirname, "default-books.json");
-const ALLOW_ACCESS_REQUESTS = process.env.ALLOW_ACCESS_REQUESTS !== "false";
+const ALLOW_ACCESS_REQUESTS = process.env.ALLOW_ACCESS_REQUESTS === "true";
 
 fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
 fs.mkdirSync(LEGACY_UPLOADS_DIR, { recursive: true, mode: 0o700 });
@@ -262,9 +262,37 @@ function getScopePaths(scopeId = LEGACY_SCOPE_ID) {
 
 function migrateLegacyDataToOwner(ownerId) {
   const { dbFile: ownerDbFile, uploadsDir: ownerUploadsDir } = getScopePaths(ownerId);
-  if (fs.existsSync(ownerDbFile) || !fs.existsSync(LEGACY_DB_FILE)) return;
+  const legacySourceFile = fs.existsSync(LEGACY_DB_FILE)
+    ? LEGACY_DB_FILE
+    : path.join(DATA_DIR, "diary.legacy.migrated.json");
+
+  let existingOwnerHasMemories = false;
+  if (fs.existsSync(ownerDbFile)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(ownerDbFile, "utf8"));
+      existingOwnerHasMemories = Array.isArray(existing.memories) && existing.memories.length > 0;
+    } catch {
+      existingOwnerHasMemories = false;
+    }
+  }
+
+  // Always copy any missing legacy upload files to the owner's upload folder so existing photos remain accessible
+  if (fs.existsSync(LEGACY_UPLOADS_DIR)) {
+    for (const file of fs.readdirSync(LEGACY_UPLOADS_DIR)) {
+      const src = path.join(LEGACY_UPLOADS_DIR, file);
+      const dst = path.join(ownerUploadsDir, file);
+      if (fs.statSync(src).isFile() && !fs.existsSync(dst)) {
+        fs.copyFileSync(src, dst);
+      }
+    }
+  }
+
+  if (existingOwnerHasMemories || !fs.existsSync(legacySourceFile)) return;
   try {
-    const parsed = JSON.parse(fs.readFileSync(LEGACY_DB_FILE, "utf8"));
+    const parsed = JSON.parse(fs.readFileSync(legacySourceFile, "utf8"));
+    const legacyMemories = Array.isArray(parsed.memories) ? parsed.memories : [];
+    if (fs.existsSync(ownerDbFile) && legacyMemories.length === 0) return;
+
     const rewriteUploadUrl = (u) => {
       if (typeof u !== "string" || !u.startsWith("/uploads/")) return u;
       const cleanName = path.basename(u.split("?")[0]);
@@ -274,28 +302,31 @@ function migrateLegacyDataToOwner(ownerId) {
       ...b,
       coverImage: b.coverImage ? rewriteUploadUrl(b.coverImage) : undefined,
     }));
-    const memories = (Array.isArray(parsed.memories) ? parsed.memories : []).map((m) => ({
+    const memories = legacyMemories.map((m) => ({
       ...m,
       photos: Array.isArray(m.photos)
-        ? m.photos.map((p) => ({ ...p, url: rewriteUploadUrl(p.url) }))
+        ? m.photos.map((p) => {
+            const url = rewriteUploadUrl(p.url);
+            const filename =
+              (typeof p.filename === "string" && p.filename.trim()
+                ? path.basename(p.filename.trim())
+                : "") ||
+              (typeof url === "string" && url.includes("/uploads/")
+                ? path.basename(url.split("?")[0])
+                : "");
+            return { ...p, url, filename };
+          })
         : [],
     }));
-    if (fs.existsSync(LEGACY_UPLOADS_DIR)) {
-      for (const file of fs.readdirSync(LEGACY_UPLOADS_DIR)) {
-        const src = path.join(LEGACY_UPLOADS_DIR, file);
-        const dst = path.join(ownerUploadsDir, file);
-        if (fs.statSync(src).isFile() && !fs.existsSync(dst)) {
-          fs.copyFileSync(src, dst);
-        }
-      }
-    }
     writeJsonAtomic(ownerDbFile, {
       schemaVersion: CURRENT_SCHEMA_VERSION,
       books: books.length > 0 ? books : loadDefaultBooks(),
       memories,
       updatedAt: new Date().toISOString(),
     });
-    fs.renameSync(LEGACY_DB_FILE, path.join(DATA_DIR, "diary.legacy.migrated.json"));
+    if (legacySourceFile === LEGACY_DB_FILE && fs.existsSync(LEGACY_DB_FILE)) {
+      fs.renameSync(LEGACY_DB_FILE, path.join(DATA_DIR, "diary.legacy.migrated.json"));
+    }
   } catch {
     // Fallback gracefully if legacy file could not be read
   }
@@ -654,6 +685,10 @@ function cleanupOrphanedUploads(db, scopeId = LEGACY_SCOPE_ID) {
   for (const memory of db.memories) {
     for (const photo of memory.photos || []) {
       if (photo.filename) referenced.add(path.basename(photo.filename));
+      if (typeof photo.url === "string" && photo.url.includes("/uploads/")) {
+        const cleanName = path.basename(photo.url.split("?")[0]);
+        if (cleanName) referenced.add(cleanName);
+      }
     }
   }
   for (const book of db.books || []) {
@@ -838,12 +873,16 @@ function applyBookPatch(current, patch, scopeId = LEGACY_SCOPE_ID) {
 const app = express();
 app.disable("x-powered-by");
 
-app.use((_req, res, next) => {
+app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("X-Robots-Tag", "noindex, nofollow");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  if (req.path.startsWith("/api/")) {
+    res.setHeader("Cache-Control", "no-store, private");
+    res.setHeader("Pragma", "no-cache");
+  }
   next();
 });
 
@@ -890,18 +929,36 @@ function extractRequestToken(req) {
   return String(req.headers["x-diary-token"] || "").trim();
 }
 
-function getClientIpKey(req) {
-  return req.ip || req.socket?.remoteAddress || "unknown";
+function getClientIpKey(req, bucket = "") {
+  const fwdRaw = String(req.headers["x-forwarded-for"] || "");
+  const fwdParts = fwdRaw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const ip =
+    (fwdParts.length > 0 ? fwdParts[0] : "") ||
+    String(req.headers["cf-connecting-ip"] || "").trim() ||
+    String(req.headers["x-real-ip"] || "").trim() ||
+    req.ip ||
+    req.socket?.remoteAddress ||
+    "unknown";
+  return bucket ? `${ip}::${bucket}` : ip;
 }
 
 function isLoopbackReq(req) {
-  const addr = String(req.socket?.remoteAddress || "");
-  return (
-    IS_LOOPBACK_HOST ||
-    addr === "127.0.0.1" ||
-    addr === "::1" ||
-    addr === "::ffff:127.0.0.1"
+  const hasProxyHeaders = Boolean(
+    req.headers["x-forwarded-for"] ||
+      req.headers["x-real-ip"] ||
+      req.headers["forwarded"] ||
+      req.headers["cf-connecting-ip"] ||
+      req.headers["x-forwarded-host"],
   );
+  if (hasProxyHeaders) return false;
+  const addr = String(req.socket?.remoteAddress || "");
+  const isLoopbackAddr = addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  if (!isLoopbackAddr) return false;
+  const hostHeader = String(req.headers.host || "").split(":")[0].toLowerCase();
+  return !hostHeader || hostHeader === "127.0.0.1" || hostHeader === "localhost" || hostHeader === "[::1]";
 }
 
 function authenticateRequest(req) {
@@ -935,7 +992,7 @@ function authenticateRequest(req) {
     return { authorized: false, kind: "invalid-token", scopeId: LEGACY_SCOPE_ID, isOwner: false };
   }
 
-  if (!TOKEN && !hasAccounts) {
+  if (!TOKEN && !hasAccounts && isLoopbackReq(req)) {
     return {
       authorized: true,
       kind: "loopback-open",
@@ -949,8 +1006,8 @@ function authenticateRequest(req) {
   return { authorized: false, kind: "missing", scopeId: LEGACY_SCOPE_ID, isOwner: false };
 }
 
-function checkRateLimitBlocked(req, res) {
-  const ipKey = getClientIpKey(req);
+function checkRateLimitBlocked(req, res, bucket = "") {
+  const ipKey = getClientIpKey(req, bucket);
   const now = Date.now();
   const existing = failedAuthByIp.get(ipKey);
   if (existing && existing.blockedUntil > now) {
@@ -986,13 +1043,13 @@ function recordAuthFailure(ipKey) {
   return existing;
 }
 
-function clearAuthFailures(req) {
-  failedAuthByIp.delete(getClientIpKey(req));
+function clearAuthFailures(req, bucket = "") {
+  failedAuthByIp.delete(getClientIpKey(req, bucket));
 }
 
-function failAuthWithRateLimit(req, res, statusCode, message) {
+function failAuthWithRateLimit(req, res, statusCode, message, bucket = "") {
   const now = Date.now();
-  const afterFail = recordAuthFailure(getClientIpKey(req));
+  const afterFail = recordAuthFailure(getClientIpKey(req, bucket));
   if (afterFail.blockedUntil > now) {
     const retryAfterSec = Math.max(1, Math.ceil((afterFail.blockedUntil - now) / 1000));
     res.setHeader("Retry-After", String(retryAfterSec));
@@ -1055,6 +1112,37 @@ function serveScopedUpload(scopeId, rawName, req, res) {
   const resolved = path.resolve(uploadsDir, rawName);
   if (!resolved.startsWith(uploadsDir + path.sep)) {
     return res.status(400).json({ error: "Invalid media path." });
+  }
+  if (!fs.existsSync(resolved) && scopeId !== LEGACY_SCOPE_ID) {
+    // Recover legacy upload for owner account if the filename exists in LEGACY_UPLOADS_DIR and is referenced in owner's DB
+    const { users } = readUsersStore();
+    const ownerUser = users.find((u) => u.id === scopeId && u.role === "owner");
+    const legacyCandidate = path.resolve(LEGACY_UPLOADS_DIR, rawName);
+    if (
+      ownerUser &&
+      legacyCandidate.startsWith(LEGACY_UPLOADS_DIR + path.sep) &&
+      fs.existsSync(legacyCandidate)
+    ) {
+      try {
+        const db = readDb(scopeId);
+        const isReferenced =
+          db.memories.some((m) =>
+            (m.photos || []).some(
+              (p) =>
+                path.basename(String(p.filename || "")) === rawName ||
+                path.basename(String(p.url || "").split("?")[0]) === rawName,
+            ),
+          ) ||
+          db.books.some(
+            (b) => b.coverImage && path.basename(String(b.coverImage).split("?")[0]) === rawName,
+          );
+        if (isReferenced) {
+          fs.copyFileSync(legacyCandidate, resolved);
+        }
+      } catch {
+        // Ignore recovery failure and return 404 below
+      }
+    }
   }
   if (!fs.existsSync(resolved)) {
     return res.status(404).json({ error: "Media file not found." });
@@ -1138,6 +1226,15 @@ app.post("/api/auth/bootstrap-owner", (req, res) => {
       ? body.setupToken.trim()
       : extractRequestToken(req);
 
+  if (!TOKEN && !isLoopbackReq(req) && process.env.ALLOW_INSECURE_PUBLIC !== "true") {
+    return failAuthWithRateLimit(
+      req,
+      res,
+      403,
+      "Remote owner bootstrap requires DIARY_STORAGE_TOKEN or direct localhost access.",
+    );
+  }
+
   if (TOKEN && !isLoopbackReq(req) && !timingSafeEqualStr(providedSetup, TOKEN)) {
     return failAuthWithRateLimit(
       req,
@@ -1156,8 +1253,8 @@ app.post("/api/auth/bootstrap-owner", (req, res) => {
       error: "Username must be 3–32 characters (lowercase letters, numbers, '.', '_', '-').",
     });
   }
-  if (password.length < 8) {
-    return res.status(400).json({ error: "Password must be at least 8 characters." });
+  if (password.length < 8 || password.length > 128) {
+    return res.status(400).json({ error: "Password must be 8–128 characters." });
   }
 
   const owner = {
@@ -1185,20 +1282,20 @@ app.post("/api/auth/bootstrap-owner", (req, res) => {
 });
 
 app.post("/api/auth/login", (req, res) => {
-  if (checkRateLimitBlocked(req, res)) return;
-
   const body = req.body || {};
   const username = normalizeUsername(body.username);
   const password = typeof body.password === "string" ? body.password : "";
+  const rateBucket = `login:${username || "*"}`;
+  if (checkRateLimitBlocked(req, res, rateBucket)) return;
 
-  if (!username || !password) {
-    return res.status(400).json({ error: "Username and password are required." });
+  if (!username || !password || password.length > 128) {
+    return res.status(400).json({ error: "Username and valid password are required." });
   }
 
   const store = readUsersStore();
   const user = store.users.find((u) => u.username === username);
   if (!user || !verifyPassword(password, user.passwordHash)) {
-    return failAuthWithRateLimit(req, res, 401, "Invalid username or password.");
+    return failAuthWithRateLimit(req, res, 401, "Invalid username or password.", rateBucket);
   }
 
   if (user.status === "pending") {
@@ -1212,7 +1309,7 @@ app.post("/api/auth/login", (req, res) => {
 
   user.lastLoginAt = new Date().toISOString();
   writeUsersStore(store);
-  clearAuthFailures(req);
+  clearAuthFailures(req, rateBucket);
 
   const sessionToken = signSessionToken(user);
   res.json({
@@ -1222,7 +1319,7 @@ app.post("/api/auth/login", (req, res) => {
 });
 
 app.post("/api/auth/register", (req, res) => {
-  if (checkRateLimitBlocked(req, res)) return;
+  if (checkRateLimitBlocked(req, res, "register")) return;
 
   const store = readUsersStore();
   if (store.users.length === 0) {
@@ -1242,8 +1339,8 @@ app.post("/api/auth/register", (req, res) => {
       error: "Username must be 3–32 characters (lowercase letters, numbers, '.', '_', '-').",
     });
   }
-  if (password.length < 8) {
-    return res.status(400).json({ error: "Password must be at least 8 characters." });
+  if (password.length < 8 || password.length > 128) {
+    return res.status(400).json({ error: "Password must be 8–128 characters." });
   }
   if (store.users.some((u) => u.username === username)) {
     return res.status(409).json({ error: "That username is already registered." });
@@ -1260,7 +1357,7 @@ app.post("/api/auth/register", (req, res) => {
         timingSafeEqualStr(inv.codeHash, codeHash),
     );
     if (!invite) {
-      return failAuthWithRateLimit(req, res, 401, "Invalid or expired invite verification code.");
+      return failAuthWithRateLimit(req, res, 401, "Invalid or expired invite verification code.", "register");
     }
 
     const member = {
@@ -1283,7 +1380,7 @@ app.post("/api/auth/register", (req, res) => {
     store.users.push(member);
     writeUsersStore(store);
     readDb(member.id);
-    clearAuthFailures(req);
+    clearAuthFailures(req, "register");
 
     const sessionToken = signSessionToken(member);
     res.status(201).json({
@@ -1295,9 +1392,13 @@ app.post("/api/auth/register", (req, res) => {
   }
 
   if (!ALLOW_ACCESS_REQUESTS) {
-    return res.status(403).json({
-      error: "A valid owner invite code is required to register.",
-    });
+    return failAuthWithRateLimit(
+      req,
+      res,
+      403,
+      "A valid owner invite code is required to register.",
+      "register",
+    );
   }
 
   const pendingCount = store.users.filter((u) => u.status === "pending").length;
@@ -1307,6 +1408,7 @@ app.post("/api/auth/register", (req, res) => {
     });
   }
 
+  recordAuthFailure(getClientIpKey(req, "register"));
   const pendingMember = {
     id: `usr_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`,
     username,
@@ -1741,11 +1843,14 @@ function saveVerifiedBase64Raster(dataUrl, scopeId = LEGACY_SCOPE_ID, prefix = "
     /^data:image\/(png|jpeg|jpg|webp|gif|avif);base64,([a-zA-Z0-9+/=\r\n]+)$/i,
   );
   if (!match) return null;
+  if (match[2].length > 22 * 1024 * 1024) return null;
+  const decoded = Buffer.from(match[2], "base64");
+  if (decoded.length === 0 || decoded.length > 16 * 1024 * 1024) return null;
   const { uploadsDir, uploadPrefix } = getScopePaths(scopeId);
   const rawExt = match[1].toLowerCase().replace("jpeg", "jpg");
   const filename = `${prefix}${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${rawExt}`;
   const dest = path.join(uploadsDir, filename);
-  fs.writeFileSync(dest, Buffer.from(match[2], "base64"));
+  fs.writeFileSync(dest, decoded);
   if (!hasValidImageMagicBytes(dest)) {
     try {
       fs.unlinkSync(dest);
@@ -2055,12 +2160,46 @@ app.post("/api/sync", requireAuth, async (req, res) => {
       }
 
       const syncedBlocks = sanitizeLayoutBlocks(incomingMemory.layoutBlocks);
+      const syncTitle =
+        typeof incomingMemory.title === "string" ? incomingMemory.title.trim().slice(0, 240) : "";
+      const syncNote =
+        typeof incomingMemory.note === "string" ? incomingMemory.note.trim().slice(0, 2000) : "";
+      const syncParagraphs = normalizeParagraphs(incomingMemory.paragraphs);
+      if (!syncTitle && !syncNote && syncParagraphs.length === 0 && photos.length === 0) {
+        continue;
+      }
+      const nowIso = new Date().toISOString();
       db.memories.push({
-        ...incomingMemory,
         id: memId,
         bookId,
+        title: syncTitle,
+        date:
+          typeof incomingMemory.date === "string" && incomingMemory.date.trim()
+            ? incomingMemory.date.trim().slice(0, 32)
+            : nowIso.slice(0, 10),
+        location:
+          typeof incomingMemory.location === "string" ? incomingMemory.location.trim().slice(0, 160) : "",
+        mood:
+          typeof incomingMemory.mood === "string" && incomingMemory.mood.trim()
+            ? incomingMemory.mood.trim().slice(0, 64)
+            : "Nostalgic",
+        note: syncNote,
+        paragraphs: syncParagraphs,
         photos,
-        ...(syncedBlocks && syncedBlocks.length > 0 ? { layoutBlocks: syncedBlocks } : { layoutBlocks: undefined }),
+        coverPhotoId:
+          typeof incomingMemory.coverPhotoId === "string" && SAFE_ID_RE.test(incomingMemory.coverPhotoId)
+            ? incomingMemory.coverPhotoId
+            : photos[0]?.id || null,
+        albumStyle:
+          incomingMemory.albumStyle === "grid" || incomingMemory.albumStyle === "filmstrip"
+            ? incomingMemory.albumStyle
+            : "polaroid",
+        ...(syncedBlocks && syncedBlocks.length > 0 ? { layoutBlocks: syncedBlocks } : {}),
+        createdAt:
+          typeof incomingMemory.createdAt === "string" && incomingMemory.createdAt
+            ? incomingMemory.createdAt
+            : nowIso,
+        updatedAt: nowIso,
       });
       existingIds.add(memId);
       addedMemories += 1;

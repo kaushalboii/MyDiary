@@ -18,6 +18,7 @@ import {
   loadStorageConfig,
   loginAccount,
   registerAccount,
+  saveSessionToken,
   saveStorageConfig,
 } from "@/lib/storage-client";
 import type { AuthStatusResponse } from "@/lib/types";
@@ -38,7 +39,11 @@ type GateMode = "none" | "vault-locked" | "server-auth";
 type ServerAuthTab = "signin" | "register" | "setup-key";
 
 export function VaultLockGate({ children }: { children: ReactNode }) {
-  const [mode, setMode] = useState<GateMode>("none");
+  const [mode, setMode] = useState<GateMode>(() =>
+    typeof window !== "undefined" && hasVaultEnvelope() && !isVaultUnlocked()
+      ? "vault-locked"
+      : "none",
+  );
   const [passphrase, setPassphrase] = useState("");
   const [showSecret, setShowSecret] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -384,9 +389,10 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
           15,
         );
       } else {
+        saveSessionToken(trimmedToken);
         saveStorageConfig({
           serverUrl: targetCfg.serverUrl,
-          token: trimmedToken,
+          token: "",
           label: targetCfg.label,
         });
       }
@@ -631,7 +637,7 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
                   autoFocus
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="e.g. kaushal"
+                  placeholder="e.g. owner"
                   data-testid="auth-username-input"
                   required
                 />

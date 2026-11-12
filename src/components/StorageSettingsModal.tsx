@@ -36,6 +36,7 @@ import {
   registerAccount,
   removeMemberAccount,
   revokeMemberInvite,
+  saveSessionToken,
   saveStorageConfig,
   setMemberStatus,
   syncOfflineToServer,
@@ -465,9 +466,15 @@ export function StorageSettingsModal({
         setError(err instanceof Error ? err.message : "Incorrect vault passphrase.");
         return;
       }
+    } else if (nextConfig.token) {
+      saveSessionToken(nextConfig.token);
     }
 
-    saveStorageConfig(nextConfig);
+    saveStorageConfig({
+      serverUrl: nextConfig.serverUrl,
+      token: "",
+      label: nextConfig.label,
+    });
     setConfig(nextConfig);
     setOverrideUrl("");
     setOverrideToken("");

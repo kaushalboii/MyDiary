@@ -537,23 +537,17 @@ export function FlipBookReader({
   const leftBoardReveal =
     coverDone || isMobileSingle
       ? 1
-      : coverProgress < 0.38
+      : coverProgress < 0.72
         ? 0
-        : Math.min(1, (coverProgress - 0.38) / 0.28);
+        : Math.min(1, (coverProgress - 0.72) / 0.16);
   const coverFadeOutDesktop =
-    coverProgress > 0.86 ? Math.max(0, 1 - (coverProgress - 0.86) / 0.14) : 1;
+    coverProgress > 0.90 ? Math.max(0, 1 - (coverProgress - 0.90) / 0.1) : 1;
   const coverFadeOutMobile =
-    coverProgress > 0.64 ? Math.max(0, 1 - (coverProgress - 0.64) / 0.36) : 1;
+    coverProgress > 0.68 ? Math.max(0, 1 - (coverProgress - 0.68) / 0.32) : 1;
 
   const activeStageShadow =
-    !isMobileSingle && !coverDone && coverProgress < 0.45
-      ? Array.from({ length: thicknessLayers })
-          .map((_, i) => {
-            const offset = (i + 1) * 2;
-            const color = i % 2 === 0 ? "var(--page-edge-a)" : "var(--page-edge-b)";
-            return `${offset}px ${offset * 0.35}px 0 0 ${color}`;
-          })
-          .join(", ")
+    !isMobileSingle && !coverDone && coverProgress < 0.72
+      ? undefined
       : pageEdgeShadow;
 
   const finishCoverNow = () => {
@@ -565,9 +559,9 @@ export function FlipBookReader({
 
   return (
     <div className="space-y-4 overflow-x-clip">
-      {/* Clothbound Hardcover Frame — constant full width & fixed locked stage height */}
+      {/* Clothbound Hardcover Frame — constant full width & frame-locked shift during opening */}
       <div
-        className="relative w-full rounded-2xl p-2.5 sm:p-4 lg:p-5 transition-[transform] duration-75 will-change-transform"
+        className="flipbook-hardcover-frame relative w-full rounded-2xl will-change-transform"
         style={{
           backgroundColor: coverDone || isMobileSingle ? book.cover : "transparent",
           boxShadow:
@@ -681,12 +675,16 @@ export function FlipBookReader({
                 <div
                   data-testid="flipbook-cover-opening"
                   onClick={finishCoverNow}
-                  className="absolute inset-0 z-30 cursor-pointer overflow-hidden rounded-lg"
+                  className="pointer-events-auto absolute z-30 cursor-pointer overflow-hidden rounded-2xl"
                   style={{
+                    top: "calc(-1 * var(--flip-pad))",
+                    right: "calc(-1 * var(--flip-pad))",
+                    bottom: "calc(-1 * var(--flip-pad))",
+                    left: "calc(-1 * var(--flip-pad))",
                     transformOrigin: "left center",
                     transformStyle: "preserve-3d",
                     willChange: "transform, opacity",
-                    transform: `translate3d(0, 0, 4px) rotateY(${coverAngleMobile}deg)`,
+                    transform: `translate3d(0, 0, 6px) rotateY(${coverAngleMobile}deg)`,
                     opacity: coverFadeOutMobile,
                     boxShadow:
                       "inset 10px 0 18px -8px rgba(255,255,255,0.22), 14px 16px 34px -10px rgba(0,0,0,0.42)",
@@ -880,8 +878,11 @@ export function FlipBookReader({
               <div
                 data-testid="flipbook-cover-opening"
                 onClick={finishCoverNow}
-                className="absolute top-0 bottom-0 left-1/2 z-30 w-1/2 cursor-pointer"
+                className="pointer-events-auto absolute left-1/2 z-30 cursor-pointer"
                 style={{
+                  top: "calc(-1 * var(--flip-pad))",
+                  bottom: "calc(-1 * var(--flip-pad))",
+                  width: "calc(50% + var(--flip-pad))",
                   transformOrigin: "left center",
                   transformStyle: "preserve-3d",
                   willChange: "transform, opacity",
@@ -891,7 +892,7 @@ export function FlipBookReader({
               >
                 {/* Outer Clothbound Artwork Face */}
                 <div
-                  className="absolute inset-0 overflow-hidden rounded-r-xl"
+                  className="absolute inset-0 overflow-hidden rounded-r-2xl"
                   style={{
                     backfaceVisibility: "hidden",
                     WebkitBackfaceVisibility: "hidden",
@@ -916,8 +917,9 @@ export function FlipBookReader({
 
                 {/* Inside Hardcover Endpaper */}
                 <div
-                  className="absolute inset-0 flex flex-col justify-between overflow-hidden rounded-l-xl p-10"
+                  className="absolute inset-0 flex flex-col justify-between overflow-hidden rounded-l-2xl"
                   style={{
+                    padding: "var(--flip-pad)",
                     backfaceVisibility: "hidden",
                     WebkitBackfaceVisibility: "hidden",
                     transform: "rotateY(180deg)",
@@ -927,7 +929,7 @@ export function FlipBookReader({
                   }}
                 >
                   <div
-                    className="flex h-full w-full flex-col justify-between border p-8"
+                    className="flex h-full w-full flex-col justify-between rounded-l-lg border p-8 lg:p-10"
                     style={{
                       backgroundColor: paperCss.backgroundColor,
                       borderColor: pageAccent,

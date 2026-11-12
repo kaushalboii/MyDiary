@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Setting up MyDiary secure storage server on $(hostname)..."
+echo "Setting up MyDiary secure storage service..."
 npm install --omit=dev
 
 if [ ! -f .env ]; then

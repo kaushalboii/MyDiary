@@ -36,7 +36,9 @@ jobs:
       - name: Build static site for GitHub Pages
         env:
           NEXT_PUBLIC_BASE_PATH: "/${{ github.event.repository.name }}"
-          NEXT_PUBLIC_STORAGE_URL: "${{ vars.MYDIARY_STORAGE_URL || secrets.MYDIARY_STORAGE_URL || '' }}"
+          # Never bake a private backend URL into the public GitHub Pages bundle.
+          # Connect your private archive per browser via Menu -> Security & Members.
+          NEXT_PUBLIC_STORAGE_URL: ""
         run: npm run build
 
       - name: Upload artifact

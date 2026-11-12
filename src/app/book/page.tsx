@@ -18,6 +18,7 @@ import {
   SlidersHorizontal,
   StickyNote,
   Trash2,
+  UploadCloud,
   X,
 } from "lucide-react";
 import { ExpandableDock } from "@/components/ExpandableDock";
@@ -39,14 +40,22 @@ import {
   deleteMemory,
   fetchBooks,
   fetchMemories,
+  getOfflineDraftCount,
   isStorageAuthError,
   loadCachedServerBooks,
   resolveMediaUrl,
+  syncOfflineToServer,
   updateBook,
   updateMemory,
   type BookPatchInput,
 } from "@/lib/storage-client";
-import type { AlbumPhoto, DiaryBook, MemoryAlbum, MemoryLayoutBlock } from "@/lib/types";
+import type {
+  AlbumPhoto,
+  DiaryBook,
+  MemoryAlbum,
+  MemoryLayoutBlock,
+  StorageMode,
+} from "@/lib/types";
 
 const POLAROID_TILTS = ["-1.4deg", "1.1deg", "-0.8deg", "1.5deg", "-1.1deg", "0.7deg"];
 
@@ -58,6 +67,10 @@ function BookMemoriesContent() {
 
   const [books, setBooks] = useState<DiaryBook[]>(() => loadCachedServerBooks() || defaultBooks);
   const [memories, setMemories] = useState<MemoryAlbum[]>([]);
+  const [storageMode, setStorageMode] = useState<StorageMode>("offline-fallback");
+  const [offlineDraftCount, setOfflineDraftCount] = useState(0);
+  const [restoringDrafts, setRestoringDrafts] = useState(false);
+  const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
   const [editingVolume, setEditingVolume] = useState(false);
@@ -89,16 +102,20 @@ function BookMemoriesContent() {
           requestedBookId ? fetchMemories({ bookId: requestedBookId }) : Promise.resolve(null),
         ]);
         setBooks(booksRes.books);
+        setStorageMode(booksRes.mode);
         const targetId =
           requestedBookId && booksRes.books.some((b) => b.id === requestedBookId)
             ? requestedBookId
             : booksRes.books[0]?.id || "memories-2022";
 
-        const memRes =
+        const [memRes, draftCount] = await Promise.all([
           initialMemRes && targetId === requestedBookId
-            ? initialMemRes
-            : await fetchMemories({ bookId: targetId });
+            ? Promise.resolve(initialMemRes)
+            : fetchMemories({ bookId: targetId }),
+          getOfflineDraftCount(),
+        ]);
         setMemories(memRes.memories);
+        setOfflineDraftCount(draftCount);
 
         if (!preserveSpread) {
           if (requestedMemoryId) {
@@ -887,6 +904,58 @@ function BookMemoriesContent() {
       </header>
 
       <main className="diary-container">
+        {((storageMode === "server" && offlineDraftCount > 0) || draftNotice) && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-full border border-[var(--hairline)] bg-[var(--pill-bg)] px-4 py-2 text-xs text-[var(--ink)] shadow-sm">
+            {draftNotice ? (
+              <span>{draftNotice}</span>
+            ) : (
+              <span>
+                {offlineDraftCount} offline browser {offlineDraftCount === 1 ? "draft" : "drafts"}{" "}
+                found in local cache
+              </span>
+            )}
+            <div className="flex items-center gap-2">
+              {storageMode === "server" && offlineDraftCount > 0 && (
+                <button
+                  type="button"
+                  disabled={restoringDrafts}
+                  onClick={async () => {
+                    setRestoringDrafts(true);
+                    setDraftNotice(null);
+                    try {
+                      const res = await syncOfflineToServer();
+                      setDraftNotice(
+                        `Restored ${res.addedMemories} memories and ${res.updatedBooks} volume updates to your archive.`,
+                      );
+                      await loadData(true);
+                    } catch (err) {
+                      setDraftNotice(
+                        err instanceof Error
+                          ? err.message
+                          : "Could not restore offline drafts right now.",
+                      );
+                    } finally {
+                      setRestoringDrafts(false);
+                    }
+                  }}
+                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-[var(--ink)] px-3 py-1 text-[10px] font-semibold tracking-wider text-[var(--paper-light)] uppercase hover:bg-[var(--walnut-deep)] disabled:opacity-50"
+                >
+                  <UploadCloud className="h-3 w-3" aria-hidden="true" />
+                  <span>{restoringDrafts ? "Restoring…" : "Restore to Archive"}</span>
+                </button>
+              )}
+              {draftNotice && (
+                <button
+                  type="button"
+                  onClick={() => setDraftNotice(null)}
+                  className="cursor-pointer rounded-full px-2 py-0.5 text-[10px] uppercase opacity-70 hover:opacity-100"
+                >
+                  Dismiss
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         <FlipBookReader
           book={book}
           spreads={spreads}

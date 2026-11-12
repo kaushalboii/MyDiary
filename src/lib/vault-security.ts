@@ -397,6 +397,7 @@ export function lockVaultNow(): void {
   if (typeof window === "undefined") return;
   window.sessionStorage.removeItem(VAULT_SESSION_KEY);
   window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+  window.sessionStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
   window.localStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
   emitVaultStateChange();
   window.dispatchEvent(new CustomEvent("mydiary:storage-config-changed"));
@@ -407,6 +408,7 @@ export async function wipeLocalDiaryData(): Promise<void> {
   window.localStorage.removeItem(VAULT_ENVELOPE_KEY);
   window.sessionStorage.removeItem(VAULT_SESSION_KEY);
   window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+  window.sessionStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
   window.localStorage.removeItem(VAULT_LOCKOUT_KEY);
   window.localStorage.removeItem(STORAGE_CONFIG_KEY);
   window.localStorage.removeItem(SERVER_BOOKS_CACHE_KEY);

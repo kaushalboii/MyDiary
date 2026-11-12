@@ -74,6 +74,7 @@
     min-height: 100%;
     margin: 0;
     background: var(--paper);
+    overflow-x: clip;
   }
 
   body {
@@ -458,11 +459,14 @@
   z-index: 40;
 }
 
+.pull-rope-toggle.is-dragging,
 .pull-rope-toggle:active {
   cursor: grabbing;
 }
 
 .pull-rope__cap {
+  position: relative;
+  z-index: 2;
   width: 18px;
   height: 6px;
   border-radius: 0 0 8px 8px;
@@ -472,77 +476,15 @@
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.22);
 }
 
-.pull-rope__pendulum {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  transform-origin: top center;
-}
-
-.pull-rope__track {
-  display: block;
-  width: 14px;
-  height: 60px;
-  transform-origin: top center;
-  color: #8f6b47;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.16));
-}
-
-.pull-rope__braid {
-  display: block;
-  width: 14px;
-  height: 60px;
-}
-
-.pull-rope__knob {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-top: -4px;
-}
-
-.pull-rope__ferrule {
-  width: 10px;
-  height: 6px;
-  border-radius: 3px;
-  background: linear-gradient(90deg, #7d5b35, #c9a775 50%, #7d5b35);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
-}
-
-.pull-rope__bead {
-  width: 18px;
-  height: 24px;
-  border-radius: 44% 44% 52% 52% / 36% 36% 64% 64%;
-  background: radial-gradient(circle at 36% 32%, #a6784d 0%, var(--walnut-deep) 68%, #2e1d11 100%);
-  border: 1px solid color-mix(in srgb, var(--ink) 26%, transparent);
-  box-shadow:
-    0 8px 16px -4px rgba(0, 0, 0, 0.4),
-    inset 0 2px 4px rgba(255, 255, 255, 0.28);
-  transition: background 240ms ease, box-shadow 240ms ease, transform 200ms ease;
-}
-
-.pull-rope__tassel {
-  width: 5px;
-  height: 8px;
-  margin-top: -1px;
-  border-radius: 0 0 4px 4px;
-  background: linear-gradient(180deg, var(--walnut-deep), color-mix(in srgb, var(--walnut) 60%, transparent));
-  opacity: 0.78;
-}
-
-.pull-rope-toggle.is-dark .pull-rope__track {
-  color: #cfb796;
-}
-
-.pull-rope-toggle.is-dark .pull-rope__bead {
-  background: radial-gradient(circle at 38% 35%, #f9e1a4 0%, #d49d4b 56%, #946326 100%);
-  box-shadow:
-    0 0 18px rgba(239, 194, 109, 0.62),
-    0 6px 14px -4px rgba(0, 0, 0, 0.52);
-}
-
-.pull-rope-toggle:hover .pull-rope__bead {
-  transform: scale(1.07);
+.pull-rope__svg {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 152px;
+  height: 146px;
+  transform: translateX(-50%);
+  overflow: visible;
+  pointer-events: none;
 }
 
 .pull-rope__tooltip {
@@ -569,6 +511,10 @@
 .pull-rope-toggle:focus-visible .pull-rope__tooltip {
   opacity: 1;
   transform: translateY(0);
+}
+
+.pull-rope-toggle.is-dragging .pull-rope__tooltip {
+  opacity: 0;
 }
 
 .browse-caption {
@@ -1482,6 +1428,7 @@ html[data-vault="locked"] .vault-protected-shell {
 
 .diary-page {
   min-height: 100dvh;
+  overflow-x: clip;
   background:
     radial-gradient(circle at 18% 8%, var(--ambient-glow), transparent 44%),
     var(--paper);
@@ -1717,14 +1664,9 @@ html[data-vault="locked"] .vault-protected-shell {
     margin-top: -12px;
   }
 
-  .pull-rope__track,
-  .pull-rope__braid {
-    height: 46px;
-  }
-
-  .pull-rope__bead {
-    width: 15px;
-    height: 20px;
+  .pull-rope__svg {
+    width: 128px;
+    height: 124px;
   }
 
   .header-pill-btn {
@@ -1878,6 +1820,23 @@ html[data-vault="locked"] .vault-protected-shell {
 }
 
 /* ---------------- FREEFORM MEMORY PAGE CANVAS ---------------- */
+
+.flipbook-hardcover-frame {
+  --flip-pad: 0.625rem;
+  padding: var(--flip-pad);
+}
+
+@media (min-width: 640px) {
+  .flipbook-hardcover-frame {
+    --flip-pad: 1rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .flipbook-hardcover-frame {
+    --flip-pad: 1.25rem;
+  }
+}
 
 .freeform-canvas-page {
   position: relative;

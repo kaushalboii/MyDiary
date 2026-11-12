@@ -3,12 +3,10 @@
 import { useState } from "react";
 import { HardDrive } from "lucide-react";
 import type { StorageMode } from "@/lib/types";
-import { loadStorageConfig } from "@/lib/storage-client";
 import { StorageSettingsModal } from "./StorageSettingsModal";
 
 export function StorageStatusPill({
   mode,
-  hostname,
   onConfigUpdated,
 }: {
   mode: StorageMode;
@@ -16,12 +14,8 @@ export function StorageStatusPill({
   onConfigUpdated?: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const config = loadStorageConfig();
 
-  const label =
-    mode === "server"
-      ? hostname || config.label || "Private Archive"
-      : "Offline Fallback";
+  const label = mode === "server" ? "Private Archive" : "Offline Archive";
 
   return (
     <>

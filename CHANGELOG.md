@@ -33,6 +33,13 @@ git checkout -b work-from-v11 v11
 
 ## Release History
 
+### `v14` — Security Audit Hardening, Upload Retention, Flush Cover Opening, Verlet Rope & Full Docs
+- **Image & Draft Retention:** Fixed `cleanupOrphanedUploads` in `storage-server/server.mjs` so uploaded photos referenced via `url` are never deleted during edits even if `filename` metadata is omitted; improved legacy owner file recovery (`migrateLegacyDataToOwner` + `/uploads` fallback recovery); added one-click **Restore to Archive** banner in `/book` for cached IndexedDB drafts; surfaced `4xx` validation errors (`StorageClientError`) instead of silently falling back offline.
+- **Zero-Leak Frontend & Security Hardening:** Updated `.github/workflows/deploy.yml` so public GitHub Pages builds bake `NEXT_PUBLIC_STORAGE_URL=""` (no backend endpoints, no unauthenticated backend calls, only starter template volumes live publicly); moved tokens & book caches exclusively into `sessionStorage`; rejected proxied forwarding headers (`X-Forwarded-For`, etc.) from `isLoopbackReq`; defaulted `ALLOW_ACCESS_REQUESTS=false`; added scrypt password length cap, per-IP+username auth rate limiting, `/api/sync` field allowlisting, base64 decoded byte cap, and `Cache-Control: no-store, private` on API responses; removed personal placeholders and unused manifest files.
+- **Flush 3D Cover Opening (`FlipBookReader`):** Aligned `[data-testid="flipbook-cover-opening"]` pixel-for-pixel with the outer `.flipbook-hardcover-frame` padding (`--flip-pad`), removed `duration-75` transform lag, and synchronized `leftBoardReveal` past vertical `-90deg`.
+- **Free-Swinging Verlet Rope (`ThemeToggle`):** Rewrote the hanging dark/light switch with a 6-node Verlet pendulum + pointer brush impulse + 360° free drag/throw simulation.
+- **Documentation & Showcase (`README.md`):** Added professional developer/AI architecture guide with verified desktop & mobile light/dark screenshots (`docs/screenshots/`).
+
 ### `v13` — Automatic Release Versioning & Full Changelog
 - Updated [`.github/workflows/release.yml`](.github/workflows/release.yml) so **every push to `main`** automatically creates the next sequential `vN` tag and publishes a GitHub Release with commit notes, changed files, compare link, and download instructions whenever a manual tag isn't already attached to `HEAD`.
 - Added this [`CHANGELOG.md`](CHANGELOG.md) summarizing all releases (`v1`–`v13`) and explaining how to download and work on any version locally.
@@ -81,3 +88,4 @@ git checkout -b work-from-v11 v11
 
 ### `v1` — Core 3D Shelf, Mini-Server Storage & Open-Book Reader
 - Initial release with the Three.js 3D bookshelf (`ShelfEngine`), cover generators, open-book reader (`/book`), memory composer (`/compose`), memory spread viewer (`/memory`), and private storage server (`storage-server/server.mjs`).
+
