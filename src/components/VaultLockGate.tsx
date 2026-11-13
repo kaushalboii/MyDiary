@@ -47,7 +47,6 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
 
   // Server authentication state (never displays backend URLs)
   const [authStatus, setAuthStatus] = useState<AuthStatusResponse | null>(null);
-  const [customServerUrl, setCustomServerUrl] = useState("");
   const [authMessage, setAuthMessage] = useState<string | null>(null);
 
   // Google 1-Tap & OTP sign-in configuration (strictly from environment or user local storage)
@@ -278,12 +277,7 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
   }, [mode, googleClientId, initGoogleGsi]);
 
   function resolveEffectiveConfig() {
-    const current = loadStorageConfig();
-    const override = customServerUrl.trim();
-    return {
-      ...current,
-      serverUrl: override || current.serverUrl,
-    };
+    return loadStorageConfig();
   }
 
   async function handleVaultUnlock(e: FormEvent) {
@@ -533,23 +527,6 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
               {error}
             </div>
           )}
-
-          <details className="vault-gate-footer mt-4">
-            <summary className="vault-wipe-trigger cursor-pointer list-none text-[11px]">
-              Switch or set private archive endpoint
-            </summary>
-            <div className="mt-3 space-y-2 text-left">
-              <label className="field-block">
-                <span>Archive Endpoint URL (masked for privacy)</span>
-                <input
-                  type="password"
-                  value={customServerUrl}
-                  onChange={(e) => setCustomServerUrl(e.target.value)}
-                  placeholder="Leave blank to use default configured host"
-                />
-              </label>
-            </div>
-          </details>
 
           <button
             type="button"
