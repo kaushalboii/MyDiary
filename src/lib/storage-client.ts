@@ -27,6 +27,8 @@ import {
   updateUnlockedVaultToken,
 } from "./vault-security";
 
+export { AUTH_REQUIRED_EVENT } from "./vault-security";
+
 export class StorageAuthError extends Error {
   status: number;
 

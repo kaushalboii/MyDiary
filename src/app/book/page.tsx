@@ -36,7 +36,6 @@ import {
   syncLayoutBlocksWithMemory,
 } from "@/lib/memory-layout";
 import {
-  AUTH_REQUIRED_EVENT,
   deleteBook,
   deleteMemory,
   fetchBooks,
@@ -51,6 +50,7 @@ import {
   updateMemory,
   type BookPatchInput,
 } from "@/lib/storage-client";
+import { AUTH_REQUIRED_EVENT } from "@/lib/vault-security";
 import type {
   AlbumPhoto,
   DiaryBook,
