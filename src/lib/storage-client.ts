@@ -608,6 +608,24 @@ export async function checkStorageHealth(
   return serverFetch<StorageHealth>("/api/health", {}, customConfig);
 }
 
+export async function pingStorageKeepAlive(): Promise<void> {
+  const config = loadStorageConfig();
+  const base = normalizeServerUrl(config.serverUrl);
+  if (!base) return;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    await fetch(`${base}/api/health`, {
+      method: "GET",
+      signal: controller.signal,
+      cache: "no-store",
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function upgradeLegacyServerBooks(books: DiaryBook[]): DiaryBook[] {
   const byId = new Map(defaultBooks.map((b) => [b.id, b]));
   return books.map((b) => {
