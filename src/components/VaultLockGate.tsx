@@ -34,6 +34,9 @@ import {
   wipeLocalDiaryData,
 } from "@/lib/vault-security";
 
+const DEFAULT_GOOGLE_CLIENT_ID =
+  "383477263375-6e67rdqdqverja13oc7gsqrttsrhun0d.apps.googleusercontent.com";
+
 type GateMode = "none" | "vault-locked" | "server-auth";
 type ServerAuthTab = "signin" | "register";
 
@@ -64,10 +67,10 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
       return (
         process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
         localStorage.getItem("mydiary:google_client_id") ||
-        ""
+        DEFAULT_GOOGLE_CLIENT_ID
       );
     }
-    return process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
+    return process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID;
   });
   const [showGoogleSetup, setShowGoogleSetup] = useState(false);
 
@@ -225,35 +228,54 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
   const initGoogleGsi = useCallback(
     (clientId: string) => {
       if (typeof window === "undefined" || !clientId) return;
-      const google = (window as unknown as { google?: { accounts?: { id?: { initialize: Function; renderButton: Function } } } })?.google;
-      if (!google?.accounts?.id) return;
-      try {
-        google.accounts.id.initialize({
-          client_id: clientId,
-          callback: (res: { credential?: string }) => {
-            if (res.credential) {
-              void handleGoogleCredentialResponse(res.credential);
-            }
-          },
-          auto_select: false,
-          cancel_on_tap_outside: true,
-        });
+      let attempts = 0;
+      const interval = setInterval(() => {
+        attempts++;
+        const google = (window as unknown as {
+          google?: {
+            accounts?: {
+              id?: {
+                initialize: (opts: Record<string, unknown>) => void;
+                renderButton: (el: HTMLElement, opts: Record<string, unknown>) => void;
+                prompt: () => void;
+              };
+            };
+          };
+        })?.google;
 
-        const container = document.getElementById("google-gsi-btn-mount");
-        if (container) {
-          container.innerHTML = "";
-          google.accounts.id.renderButton(container, {
-            theme: "outline",
-            size: "large",
-            text: "continue_with",
-            shape: "pill",
-            width: 300,
-            logo_alignment: "left",
-          });
+        if (google?.accounts?.id) {
+          clearInterval(interval);
+          try {
+            google.accounts.id.initialize({
+              client_id: clientId,
+              callback: (res: { credential?: string }) => {
+                if (res.credential) {
+                  void handleGoogleCredentialResponse(res.credential);
+                }
+              },
+              auto_select: false,
+              cancel_on_tap_outside: true,
+            });
+
+            const container = document.getElementById("google-gsi-btn-mount");
+            if (container) {
+              container.innerHTML = "";
+              google.accounts.id.renderButton(container, {
+                theme: "outline",
+                size: "large",
+                text: "continue_with",
+                shape: "pill",
+                width: 280,
+                logo_alignment: "left",
+              });
+            }
+          } catch (err) {
+            console.warn("Google GSI render notice:", err);
+          }
+        } else if (attempts >= 25) {
+          clearInterval(interval);
         }
-      } catch (err) {
-        console.warn("Google GSI render notice:", err);
-      }
+      }, 150);
     },
     [],
   );
