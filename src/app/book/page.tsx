@@ -13,7 +13,6 @@ import {
   Images,
   LayoutGrid,
   MapPin,
-  Monitor,
   PenLine,
   RotateCcw,
   SlidersHorizontal,
@@ -25,6 +24,7 @@ import {
 import { ExpandableDock } from "@/components/ExpandableDock";
 import { FlipBookReader, type BookSpread } from "@/components/FlipBookReader";
 import { FreeformPageSurface } from "@/components/FreeformPageBlocks";
+import { MemoryEditorModal } from "@/components/MemoryEditorModal";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { VolumeEditorModal } from "@/components/VolumeEditorModal";
 import { defaultBooks } from "@/lib/default-books";
@@ -89,7 +89,7 @@ function BookMemoriesContent() {
   const [editorInitialTab, setEditorInitialTab] = useState<"cover" | "wordings" | "memory" | "size">("cover");
   const [activeSpreadIndex, setActiveSpreadIndex] = useState(0);
   const [arrangingMemoryId, setArrangingMemoryId] = useState<string | null>(null);
-  const [desktopArrangePrompt, setDesktopArrangePrompt] = useState<string | null>(null);
+  const [editingMemory, setEditingMemory] = useState<MemoryAlbum | null>(null);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [draftBlocksByMemory, setDraftBlocksByMemory] = useState<
     Record<string, MemoryLayoutBlock[]>
@@ -611,7 +611,7 @@ function BookMemoriesContent() {
               {welcomeText}
             </p>
 
-            <div className="mt-5 flex flex-wrap items-center gap-2.5">
+            <div className="mt-5 hidden sm:flex flex-wrap items-center gap-2.5">
               <button
                 type="button"
                 data-no-flip="true"
@@ -680,7 +680,7 @@ function BookMemoriesContent() {
                       setEditorInitialTab("memory");
                       setEditingVolume(true);
                     }}
-                    className="inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-[11px] font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)]"
+                    className="hidden sm:inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-[11px] font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)]"
                   >
                     <PenLine className="h-3.5 w-3.5" />
                     <span>Write First Entry</span>
@@ -713,7 +713,7 @@ function BookMemoriesContent() {
             <div className="flex items-center justify-between text-[11px] italic opacity-50">
               <Link
                 href={`/compose?bookId=${encodeURIComponent(book.id)}`}
-                className="not-italic text-[10px] font-semibold tracking-wider uppercase opacity-80 no-underline hover:underline"
+                className="hidden sm:inline-block not-italic text-[10px] font-semibold tracking-wider uppercase opacity-80 no-underline hover:underline"
               >
                 + Add entry on this page
               </Link>
@@ -757,16 +757,18 @@ function BookMemoriesContent() {
 
       const spreadToolbarFooterLeft = (
         <div data-no-flip="true" className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3 text-xs text-[var(--ink-soft)]">
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Desktop-only edit & arrange toolbar - blocked on mobile */}
+          <div className="hidden sm:flex flex-wrap items-center gap-3">
             {isUserAuthenticated() ? (
-              <Link
-                href={`/compose?bookId=${encodeURIComponent(book.id)}&edit=${encodeURIComponent(mem.id)}`}
+              <button
+                type="button"
                 data-no-flip="true"
-                className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] no-underline hover:underline"
+                onClick={() => setEditingMemory(mem)}
+                className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] cursor-pointer hover:underline"
               >
                 <Edit3 className="h-3.5 w-3.5" />
                 <span>Edit</span>
-              </Link>
+              </button>
             ) : (
               <button
                 type="button"
@@ -801,11 +803,6 @@ function BookMemoriesContent() {
                   setArrangingMemoryId(null);
                   setSelectedBlockId(null);
                 } else {
-                  // Spreads & freeform arrangement are designed for desktop mode (both pages side-by-side)
-                  if (typeof window !== "undefined" && window.innerWidth < 820) {
-                    setDesktopArrangePrompt(mem.id);
-                    return;
-                  }
                   setDraftBlocksByMemory((prev) => ({
                     ...prev,
                     [mem.id]:
@@ -849,7 +846,7 @@ function BookMemoriesContent() {
               </button>
             )}
           </div>
-          <span className="italic">
+          <span className="italic ml-auto sm:ml-0">
             {savingLayoutId === mem.id ? "Saving…" : pageLeftStr}
           </span>
         </div>
@@ -1094,12 +1091,14 @@ function BookMemoriesContent() {
                   style={{ backgroundColor: pageAccent }}
                   aria-hidden="true"
                 />
-                <Link
-                  href={`/compose?bookId=${encodeURIComponent(book.id)}&edit=${encodeURIComponent(mem.id)}`}
-                  className="mt-4 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)] no-underline hover:text-[var(--ink)] hover:underline"
+                <button
+                  type="button"
+                  data-no-flip="true"
+                  onClick={() => setEditingMemory(mem)}
+                  className="hidden sm:inline-block mt-4 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)] cursor-pointer hover:text-[var(--ink)] hover:underline"
                 >
                   + Add photographs (optional)
-                </Link>
+                </button>
               </div>
             )}
 
@@ -1134,7 +1133,7 @@ function BookMemoriesContent() {
               setEditorInitialTab("memory");
               setEditingVolume(true);
             }}
-            className="inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)]"
+            className="hidden sm:inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)]"
           >
             <PenLine className="h-3.5 w-3.5" />
             <span>Write Next Memory</span>
@@ -1212,6 +1211,10 @@ function BookMemoriesContent() {
                       detail: { message: "Sign in to customize this volume and edit memories." },
                     }),
                   );
+                  return;
+                }
+                if (typeof window !== "undefined" && window.innerWidth < 820) {
+                  alert("Book customization and editing are designed for Desktop Mode. Please switch your mobile browser to 'Desktop Site' or view on a desktop computer.");
                   return;
                 }
                 setEditorInitialTab("cover");
@@ -1412,70 +1415,16 @@ function BookMemoriesContent() {
         }}
       />
 
-      {desktopArrangePrompt && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setDesktopArrangePrompt(null)}
-        >
-          <div
-            className="stationery-card w-full max-w-md p-6 text-center shadow-2xl relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-[var(--paper-deep)] text-[var(--accent)]">
-              <Monitor className="h-6 w-6" />
-            </div>
-            <h3 className="m-0 font-serif text-2xl font-normal text-[var(--ink)]">
-              Desktop Mode Recommended
-            </h3>
-            <p className="mt-2.5 text-xs leading-relaxed text-[var(--ink-soft)]">
-              Freeform layout rearrangement is designed for desktop screens so you can freely position, drag, and resize blocks across both left and right pages side-by-side.
-            </p>
-            <p className="mt-2 text-xs leading-relaxed text-[var(--ink-soft)]">
-              To rearrange pages freely, please open this link on a computer or switch your mobile browser to <strong>&ldquo;Desktop Site&rdquo;</strong>.
-            </p>
-
-            <div className="mt-6 flex flex-col gap-2.5">
-              <Link
-                href={`/compose?bookId=${encodeURIComponent(book.id)}&edit=${encodeURIComponent(desktopArrangePrompt)}`}
-                onClick={() => setDesktopArrangePrompt(null)}
-                className="w-full rounded-full bg-[var(--ink)] py-2.5 text-xs font-semibold tracking-wider text-[var(--paper-light)] uppercase no-underline transition hover:bg-[var(--walnut-deep)]"
-              >
-                Edit Memory Content (Mobile)
-              </Link>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const id = desktopArrangePrompt;
-                  setDesktopArrangePrompt(null);
-                  setDraftBlocksByMemory((prev) => ({
-                    ...prev,
-                    [id]:
-                      prev[id] ||
-                      (memories.find((m) => m.id === id)?.layoutBlocks?.length
-                        ? syncLayoutBlocksWithMemory(memories.find((m) => m.id === id)!)
-                        : buildDefaultLayoutBlocks(memories.find((m) => m.id === id)!)),
-                  }));
-                  setArrangingMemoryId(id);
-                }}
-                className="w-full rounded-full border border-[var(--hairline)] py-2 text-xs font-semibold tracking-wider uppercase text-[var(--ink-soft)] transition hover:border-[var(--ink)] hover:text-[var(--ink)] cursor-pointer"
-              >
-                Rearrange on Single Page Anyway
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDesktopArrangePrompt(null)}
-                className="mt-1 text-[11px] font-semibold tracking-wider uppercase text-[var(--ink-soft)] underline cursor-pointer hover:text-[var(--ink)]"
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <MemoryEditorModal
+        memory={editingMemory}
+        open={Boolean(editingMemory)}
+        onClose={() => setEditingMemory(null)}
+        onSave={(updated) => {
+          setMemories((prev) =>
+            prev.map((m) => (m.id === updated.id ? updated : m)),
+          );
+        }}
+      />
     </div>
   );
 }
