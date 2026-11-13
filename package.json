@@ -2,6 +2,7 @@
   "name": "mydiary-complete-shelf",
   "version": "1.0.0",
   "private": true,
+  "author": "M Kaushal Maran (https://github.com/kaushalboii)",
   "type": "module",
   "browserslist": [
     "chrome >= 111",
