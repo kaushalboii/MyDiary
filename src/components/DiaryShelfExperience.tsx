@@ -655,20 +655,6 @@ function ShelfExperienceInner() {
                 </span>
                 <span aria-hidden="true">→</span>
               </Link>
-
-              {isUserAuthenticated() && (
-                <Link
-                  className="official-link official-link--secondary"
-                  data-testid="write-volume-memory"
-                  href={`/compose?bookId=${encodeURIComponent(selectedBook.id)}`}
-                >
-                  <span className="inline-flex items-center gap-2">
-                    <PenLine className="h-3.5 w-3.5" />
-                    <span>Write New Memory</span>
-                  </span>
-                  <span aria-hidden="true">+</span>
-                </Link>
-              )}
             </div>
 
             <div className="focus-controls" aria-label="Inspection controls">

@@ -85,6 +85,7 @@ function BookMemoriesContent() {
   });
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
   const [editingVolume, setEditingVolume] = useState(false);
+  const [editorInitialTab, setEditorInitialTab] = useState<"cover" | "wordings" | "memory" | "size">("cover");
   const [activeSpreadIndex, setActiveSpreadIndex] = useState(0);
   const [arrangingMemoryId, setArrangingMemoryId] = useState<string | null>(null);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
@@ -466,13 +467,17 @@ function BookMemoriesContent() {
                     <span>Sign In to Unlock Volume</span>
                   </button>
                 ) : (
-                  <Link
-                    href={`/compose?bookId=${encodeURIComponent(book.id)}`}
-                    className="inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-[11px] font-semibold tracking-widest text-[var(--paper-light)] uppercase no-underline hover:bg-[var(--walnut-deep)]"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditorInitialTab("memory");
+                      setEditingVolume(true);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-[11px] font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)]"
                   >
                     <PenLine className="h-3.5 w-3.5" />
                     <span>Write First Entry</span>
-                  </Link>
+                  </button>
                 )}
               </div>
             )}
@@ -851,13 +856,17 @@ function BookMemoriesContent() {
       ),
       right: (
         <div className="flex flex-1 flex-col items-center justify-center text-center">
-          <Link
-            href={`/compose?bookId=${encodeURIComponent(book.id)}`}
-            className="inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase no-underline hover:bg-[var(--walnut-deep)]"
+          <button
+            type="button"
+            onClick={() => {
+              setEditorInitialTab("memory");
+              setEditingVolume(true);
+            }}
+            className="inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)]"
           >
             <PenLine className="h-3.5 w-3.5" />
             <span>Write Next Memory</span>
-          </Link>
+          </button>
         </div>
       ),
     };
@@ -926,23 +935,17 @@ function BookMemoriesContent() {
 
                 <button
                   type="button"
-                  onClick={() => setEditingVolume(true)}
-                  className="top-dock__btn"
-                  aria-label="Customize Book"
-                  title="Customize Book"
+                  onClick={() => {
+                    setEditorInitialTab("cover");
+                    setEditingVolume(true);
+                  }}
+                  className="top-dock__btn top-dock__btn--primary"
+                  aria-label="Customize Book & Memories"
+                  title="Customize Book & Memories"
                 >
                   <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>Customize</span>
                 </button>
-
-                <Link
-                  href={`/compose?bookId=${encodeURIComponent(book.id)}`}
-                  className="top-dock__btn top-dock__btn--primary"
-                  aria-label="Write Memory"
-                >
-                  <PenLine className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Write Memory</span>
-                </Link>
               </>
             )}
           </ExpandableDock>
@@ -1119,14 +1122,18 @@ function BookMemoriesContent() {
       )}
 
       <VolumeEditorModal
-        key={`${book.id}-${editingVolume}`}
+        key={`${book.id}-${editingVolume}-${editorInitialTab}`}
         mode="edit"
         book={book}
         shelfBooks={books}
+        initialTab={editorInitialTab}
         open={editingVolume}
         onClose={() => setEditingVolume(false)}
         onSave={handleSaveBook}
         onDelete={handleDeleteBook}
+        onMemoryCreated={async () => {
+          await loadData(true);
+        }}
       />
     </div>
   );

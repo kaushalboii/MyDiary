@@ -10,8 +10,10 @@ import {
   Check,
   ImagePlus,
   Loader2,
+  PenLine,
   Shuffle,
   Sparkles,
+  Star,
   Trash2,
   X,
 } from "lucide-react";
@@ -21,17 +23,22 @@ import {
   getBookPageStyleVars,
   getBookPaperCss,
   getPageAccentColor,
+  hasMemoryContent,
 } from "@/lib/memory-layout";
 import {
+  createMemory,
   resolveMediaUrl,
   uploadPhotos,
   type BookPatchInput,
 } from "@/lib/storage-client";
 import type {
+  AlbumPhoto,
+  AlbumStyle,
   BookFontStyle,
   BookMotif,
   CoverTemplate,
   DiaryBook,
+  MemoryMood,
   PageHeaderStyle,
   PageNumberStyle,
   PaperStyle,
@@ -80,6 +87,37 @@ function autoContrastInk(hex: string): string {
   const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luma > 0.6 ? "#1F1C18" : "#F7F3EA";
 }
+
+const MOODS: MemoryMood[] = [
+  "Nostalgic",
+  "Joyful",
+  "Peaceful",
+  "Adventurous",
+  "Reflective",
+  "Grateful",
+];
+
+const ALBUM_STYLES: Array<{
+  id: AlbumStyle;
+  name: string;
+  desc: string;
+}> = [
+  {
+    id: "polaroid",
+    name: "Archival Polaroid",
+    desc: "Tactile tilted frames with cream borders & serif captions",
+  },
+  {
+    id: "grid",
+    name: "Editorial Grid",
+    desc: "Clean gallery layout with featured hero framing",
+  },
+  {
+    id: "filmstrip",
+    name: "Contact Sheet",
+    desc: "Darkroom film-strip frames with numbered margins",
+  },
+];
 
 const CLOTH_PRESETS: ClothPreset[] = [
   // Curated light pastels & calm memory-psychology editorial palettes (first so changing colors is instant)
@@ -197,26 +235,30 @@ const SIZE_PRESETS = [
   { name: "Tall Quarto", thickness: 0.22, height: 2.38, width: 1.32 },
 ];
 
-type EditorTab = "cover" | "wordings" | "size";
+type EditorTab = "cover" | "wordings" | "memory" | "size";
 
 export function VolumeEditorModal({
   mode = "edit",
   book,
   shelfBooks = [],
   defaultInsertIndex,
+  initialTab = "cover",
   open,
   onClose,
   onSave,
   onDelete,
+  onMemoryCreated,
 }: {
   mode?: "edit" | "create";
   book: DiaryBook;
   shelfBooks?: DiaryBook[];
   defaultInsertIndex?: number;
+  initialTab?: EditorTab;
   open: boolean;
   onClose: () => void;
   onSave: (patch: BookPatchInput) => Promise<void>;
   onDelete?: (bookId: string) => Promise<void>;
+  onMemoryCreated?: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -228,7 +270,29 @@ export function VolumeEditorModal({
           shelfBooks.findIndex((b) => b.id === book.id),
         );
 
-  const [tab, setTab] = useState<EditorTab>(mode === "create" ? "cover" : "cover");
+  const [tab, setTab] = useState<EditorTab>(mode === "create" ? "cover" : initialTab);
+
+  useEffect(() => {
+    if (open) {
+      setTab(mode === "create" ? "cover" : initialTab);
+      setMemorySuccess(null);
+    }
+  }, [open, initialTab, mode]);
+
+  // Memory Composer Studio state (all-in-one studio)
+  const memoryPhotoInputRef = useRef<HTMLInputElement>(null);
+  const [memoryDate, setMemoryDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [memoryMood, setMemoryMood] = useState<string>("Nostalgic");
+  const [memoryTitle, setMemoryTitle] = useState("");
+  const [memoryLocation, setMemoryLocation] = useState("");
+  const [memoryNote, setMemoryNote] = useState("");
+  const [memoryParagraphs, setMemoryParagraphs] = useState("");
+  const [memoryPhotos, setMemoryPhotos] = useState<AlbumPhoto[]>([]);
+  const [memoryCoverPhotoId, setMemoryCoverPhotoId] = useState<string | null>(null);
+  const [memoryAlbumStyle, setMemoryAlbumStyle] = useState<AlbumStyle>("polaroid");
+  const [memoryUploading, setMemoryUploading] = useState(false);
+  const [memorySaving, setMemorySaving] = useState(false);
+  const [memorySuccess, setMemorySuccess] = useState<string | null>(null);
 
   // Wordings & Inside
   const [title, setTitle] = useState(book.title);
@@ -370,8 +434,104 @@ export function VolumeEditorModal({
     }
   }
 
+  async function handleMemoryPhotosSelected(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) return;
+    const imageFiles = Array.from(fileList).filter(
+      (f) =>
+        f.type.startsWith("image/") ||
+        /\.(jpe?g|png|webp|gif|avif|heic|heif)$/i.test(f.name),
+    );
+    if (imageFiles.length === 0) {
+      setError("Please select image files (JPG, PNG, WebP, GIF).");
+      return;
+    }
+    setError(null);
+    setMemoryUploading(true);
+    try {
+      const res = await uploadPhotos(imageFiles);
+      setMemoryPhotos((prev) => {
+        const next = [...prev, ...res.files];
+        if (!memoryCoverPhotoId && next[0]) setMemoryCoverPhotoId(next[0].id);
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Image upload failed.");
+    } finally {
+      setMemoryUploading(false);
+    }
+  }
+
+  function updateMemoryPhotoCaption(photoId: string, caption: string) {
+    setMemoryPhotos((prev) =>
+      prev.map((p) => (p.id === photoId ? { ...p, caption } : p)),
+    );
+  }
+
+  function removeMemoryPhoto(photoId: string) {
+    setMemoryPhotos((prev) => {
+      const next = prev.filter((p) => p.id !== photoId);
+      if (memoryCoverPhotoId === photoId) {
+        setMemoryCoverPhotoId(next[0]?.id || null);
+      }
+      return next;
+    });
+  }
+
+  async function handleSaveMemory() {
+    const parsedParagraphs = memoryParagraphs
+      .split(/\n\s*\n/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    if (
+      !hasMemoryContent({
+        title: memoryTitle.trim(),
+        note: memoryNote.trim(),
+        paragraphs: parsedParagraphs,
+        photos: memoryPhotos,
+      })
+    ) {
+      setError("Add a title, note, journal paragraphs, or at least one photo.");
+      return;
+    }
+
+    setError(null);
+    setMemorySaving(true);
+    try {
+      await createMemory({
+        bookId: book.id,
+        title: memoryTitle.trim(),
+        date: memoryDate,
+        location: memoryLocation.trim(),
+        mood: memoryMood,
+        note: memoryNote.trim(),
+        paragraphs: parsedParagraphs,
+        photos: memoryPhotos,
+        coverPhotoId: memoryCoverPhotoId || memoryPhotos[0]?.id || null,
+        albumStyle: memoryAlbumStyle,
+      });
+
+      setMemorySuccess(`Memory entry bound successfully into ${book.title}!`);
+      setMemoryTitle("");
+      setMemoryNote("");
+      setMemoryParagraphs("");
+      setMemoryLocation("");
+      setMemoryPhotos([]);
+      setMemoryCoverPhotoId(null);
+      onMemoryCreated?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save memory.");
+    } finally {
+      setMemorySaving(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (tab === "memory") {
+      await handleSaveMemory();
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -764,14 +924,23 @@ export function VolumeEditorModal({
 
         {/* Minimal Tabs */}
         <div
-          className="mb-5 grid grid-cols-3 border border-[var(--hairline)] bg-[var(--paper)]"
+          className={`mb-5 grid ${mode === "create" ? "grid-cols-3" : "grid-cols-4"} border border-[var(--hairline)] bg-[var(--paper)]`}
           role="tablist"
         >
-          {[
-            { id: "cover" as const, label: "Outer Look" },
-            { id: "wordings" as const, label: "Wordings & Page" },
-            { id: "size" as const, label: "Size & Shelf Spot" },
-          ].map((item) => (
+          {(
+            mode === "create"
+              ? [
+                  { id: "cover" as const, label: "Outer Look" },
+                  { id: "wordings" as const, label: "Wordings & Page" },
+                  { id: "size" as const, label: "Size & Shelf Spot" },
+                ]
+              : [
+                  { id: "cover" as const, label: "Outer Look" },
+                  { id: "wordings" as const, label: "Wordings & Page" },
+                  { id: "memory" as const, label: "Write Memory" },
+                  { id: "size" as const, label: "Size & Shelf Spot" },
+                ]
+          ).map((item) => (
             <button
               key={item.id}
               type="button"
@@ -779,7 +948,7 @@ export function VolumeEditorModal({
               aria-selected={tab === item.id}
               onClick={() => {
                 setTab(item.id);
-                setPreviewView(item.id === "wordings" ? "inside" : "cover");
+                setPreviewView(item.id === "wordings" || item.id === "memory" ? "inside" : "cover");
               }}
               className={`py-2.5 text-[11px] font-semibold tracking-wider uppercase transition cursor-pointer ${
                 tab === item.id
@@ -1659,6 +1828,237 @@ export function VolumeEditorModal({
             </div>
           )}
 
+          {tab === "memory" && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] p-3.5">
+                <p className="eyebrow m-0 text-[10px] text-[var(--accent)] font-semibold uppercase tracking-widest">
+                  Memory Composer Studio
+                </p>
+                <h3
+                  className="mt-1 text-base font-normal tracking-tight"
+                  style={{ fontFamily: "var(--serif)" }}
+                >
+                  Write Memory into {previewBook.title}
+                </h3>
+                <p className="mt-0.5 text-xs text-[var(--ink-soft)]">
+                  Save notes, photographs, or journal paragraphs directly bound inside this notebook.
+                </p>
+              </div>
+
+              {/* Memory Date & Mood */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                    Memory Date
+                  </label>
+                  <input
+                    type="date"
+                    value={memoryDate}
+                    onChange={(e) => setMemoryDate(e.target.value)}
+                    className="w-full rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] px-3 py-2 text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                    Atmosphere & Mood
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {MOODS.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setMemoryMood(m)}
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-medium transition cursor-pointer ${
+                          memoryMood === m
+                            ? "bg-[var(--ink)] text-[var(--paper-light)]"
+                            : "border border-[var(--hairline)] bg-[var(--paper-light)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Title & Location */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                    Memory Title (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={memoryTitle}
+                    onChange={(e) => setMemoryTitle(e.target.value)}
+                    placeholder="e.g., Monsoon Walk by the Sea"
+                    className="w-full rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] px-3 py-2 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                    Location (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={memoryLocation}
+                    onChange={(e) => setMemoryLocation(e.target.value)}
+                    placeholder="e.g., Goa, India"
+                    className="w-full rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] px-3 py-2 text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Keepsake Note */}
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                  Keepsake Note / Quote
+                </label>
+                <textarea
+                  value={memoryNote}
+                  onChange={(e) => setMemoryNote(e.target.value)}
+                  rows={2}
+                  placeholder="Write a quick note, a feeling from that day, a line someone said, or a tiny reminder you never want to forget..."
+                  className="w-full rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] p-3 text-xs font-serif leading-relaxed"
+                />
+              </div>
+
+              {/* Journal Paragraphs */}
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                  Journal Paragraphs
+                </label>
+                <textarea
+                  value={memoryParagraphs}
+                  onChange={(e) => setMemoryParagraphs(e.target.value)}
+                  rows={4}
+                  placeholder="Write your deeper story or memory paragraphs here. Separate multiple paragraphs with a blank line..."
+                  className="w-full rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] p-3 text-xs font-serif leading-relaxed"
+                />
+              </div>
+
+              {/* Photographs Upload & List */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                    Photographs & Moments ({memoryPhotos.length})
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => memoryPhotoInputRef.current?.click()}
+                    disabled={memoryUploading}
+                    className="inline-flex items-center gap-1 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider hover:border-[var(--ink)] cursor-pointer"
+                  >
+                    {memoryUploading ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <ImagePlus className="h-3 w-3" />
+                    )}
+                    <span>{memoryUploading ? "Uploading..." : "Upload Photos"}</span>
+                  </button>
+                  <input
+                    ref={memoryPhotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => void handleMemoryPhotosSelected(e.target.files)}
+                  />
+                </div>
+
+                {memoryPhotos.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] p-3">
+                    {memoryPhotos.map((photo) => (
+                      <div
+                        key={photo.id}
+                        className="relative rounded-lg border border-[var(--hairline)] overflow-hidden bg-[var(--paper)]"
+                      >
+                        <img
+                          src={resolveMediaUrl(photo.url)}
+                          alt={photo.caption || "Photo"}
+                          className="h-24 w-full object-cover"
+                        />
+                        <div className="p-1.5 space-y-1">
+                          <input
+                            type="text"
+                            value={photo.caption}
+                            onChange={(e) => updateMemoryPhotoCaption(photo.id, e.target.value)}
+                            placeholder="Caption..."
+                            className="w-full border-b border-[var(--hairline)] bg-transparent text-[10px] focus:outline-none"
+                          />
+                          <div className="flex items-center justify-between pt-0.5">
+                            <button
+                              type="button"
+                              onClick={() => setMemoryCoverPhotoId(photo.id)}
+                              title={memoryCoverPhotoId === photo.id ? "Volume cover photo" : "Set as cover photo"}
+                              className={`text-[10px] inline-flex items-center gap-0.5 cursor-pointer ${
+                                memoryCoverPhotoId === photo.id ? "text-amber-600 font-bold" : "text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                              }`}
+                            >
+                              <Star className={`h-2.5 w-2.5 ${memoryCoverPhotoId === photo.id ? "fill-current" : ""}`} />
+                              <span>{memoryCoverPhotoId === photo.id ? "Cover" : "Set Cover"}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeMemoryPhoto(photo.id)}
+                              className="text-[var(--ink-soft)] hover:text-red-500 cursor-pointer"
+                              title="Remove photo"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Album Style Selection */}
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                  Album Framing Style
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {ALBUM_STYLES.map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => setMemoryAlbumStyle(st.id)}
+                      className={`rounded-xl border p-2.5 text-left transition cursor-pointer ${
+                        memoryAlbumStyle === st.id
+                          ? "border-[var(--ink)] bg-[var(--paper)] shadow-xs"
+                          : "border-[var(--hairline)] bg-[var(--paper-light)] hover:border-[var(--ink-soft)]"
+                      }`}
+                    >
+                      <div className="text-[11px] font-semibold">{st.name}</div>
+                      <div className="text-[9px] text-[var(--ink-soft)] leading-tight mt-0.5">
+                        {st.desc}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {memorySuccess && (
+            <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Check className="h-4 w-4 shrink-0" />
+                {memorySuccess}
+              </span>
+              <button
+                type="button"
+                onClick={() => setMemorySuccess(null)}
+                className="text-[10px] uppercase font-semibold underline cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {error && (
             <div className="rounded-xl border border-[var(--accent)]/40 bg-[var(--danger-bg)] px-3 py-2 text-xs text-[var(--danger-ink)]">
               {error}
@@ -1675,14 +2075,18 @@ export function VolumeEditorModal({
             </button>
             <button
               type="submit"
-              disabled={saving || uploadingCover}
+              disabled={tab === "memory" ? memorySaving || memoryUploading : saving || uploadingCover}
               className="rounded-full bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)] disabled:opacity-50"
             >
-              {saving
-                ? "Saving..."
-                : mode === "create"
-                  ? "Place Book on Shelf"
-                  : "Save Changes"}
+              {tab === "memory"
+                ? memorySaving
+                  ? "Saving Memory..."
+                  : "Save Memory to Volume"
+                : saving
+                  ? "Saving..."
+                  : mode === "create"
+                    ? "Place Book on Shelf"
+                    : "Save Changes"}
             </button>
           </div>
         </form>
