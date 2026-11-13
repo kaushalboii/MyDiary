@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "author": "M Kaushal Maran (https://github.com/kaushalboii)",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/kaushalboii"
+  },
   "type": "module",
   "browserslist": [
     "chrome >= 111",

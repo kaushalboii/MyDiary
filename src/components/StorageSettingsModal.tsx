@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  Heart,
   LogOut,
   RefreshCw,
   ShieldCheck,
@@ -279,6 +280,25 @@ export function StorageSettingsModal({
             </div>
           </div>
         )}
+        {/* Open Source & Sponsorship */}
+        <div className="mt-6 border-t border-[var(--hairline)] pt-4 text-center">
+          <div className="flex items-center justify-center gap-1.5 text-[11px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+            <Heart className="h-3.5 w-3.5 text-[#ea4aaa] fill-[#ea4aaa]" />
+            <span>Support Open Source Development</span>
+          </div>
+          <p className="mx-auto mt-1 max-w-sm text-xs text-[var(--ink-soft)] leading-relaxed">
+            MyDiary is free and open source. If you love this project, consider sponsoring M Kaushal Maran on GitHub Sponsors!
+          </p>
+          <div className="mt-3 flex justify-center">
+            <iframe
+              src="https://github.com/sponsors/kaushalboii/button"
+              title="Sponsor kaushalboii"
+              height="32"
+              width="114"
+              style={{ border: 0, borderRadius: "6px" }}
+            />
+          </div>
+        </div>
       </div>
     </div>,
     document.body,

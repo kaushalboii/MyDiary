@@ -3,6 +3,30 @@
 An editorial **3D physical memory library & interactive flipbook diary** built with **Next.js 16**, **React 19**, **Three.js**, and **Tailwind CSS v4**. Experience personal diaries, notes, and photo albums as clothbound hardcovers resting on a continuous walnut shelf with synchronized flipbook page turning, full customization, and client-side **AES-256-GCM** vault security.
 
 > **Created with ❤️ by [M Kaushal Maran](https://github.com/kaushalboii)**
+>
+> [![Sponsor kaushalboii](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?style=flat-square&logo=GitHub%20Sponsors)](https://github.com/sponsors/kaushalboii)
+> [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+> [![GitHub Release](https://img.shields.io/github/v/release/kaushalboii/MyDiary)](https://github.com/kaushalboii/MyDiary/releases)
+
+---
+
+## 💖 Sponsor & Support
+
+MyDiary is an independent open-source project. If you love using MyDiary, find it inspiring, or want to support ongoing development and server maintenance, please consider sponsoring!
+
+<p align="center">
+  <iframe src="https://github.com/sponsors/kaushalboii/button" title="Sponsor kaushalboii" height="32" width="114" style="border: 0; border-radius: 6px;"></iframe>
+</p>
+
+<p align="center">
+  <iframe src="https://github.com/sponsors/kaushalboii/card" title="Sponsor kaushalboii" height="225" width="600" style="border: 0;"></iframe>
+</p>
+
+<p align="center">
+  <a href="https://github.com/sponsors/kaushalboii">
+    <img src="https://img.shields.io/badge/Sponsor%20on%20GitHub-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor kaushalboii" />
+  </a>
+</p>
 
 ---
 
