@@ -1,9 +1,15 @@
 {
   "name": "mydiary-storage-server",
   "version": "2.0.0",
+  "description": "Persistent multi-member isolated diary & photo archive storage server",
+  "license": "MIT",
+  "author": "M Kaushal Maran (https://github.com/kaushalboii)",
   "private": true,
   "type": "module",
-  "description": "Persistent multi-member isolated diary & photo archive storage server",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kaushalboii/MyDiary.git"
+  },
   "scripts": {
     "start": "node server.mjs"
   },

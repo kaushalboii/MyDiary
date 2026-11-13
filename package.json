@@ -1,8 +1,32 @@
 {
-  "name": "mydiary-complete-shelf",
+  "name": "mydiary",
   "version": "1.0.0",
+  "description": "Editorial 3D physical memory library & interactive flipbook diary with client-side AES-256-GCM vault security",
+  "license": "MIT",
   "private": true,
   "author": "M Kaushal Maran (https://github.com/kaushalboii)",
+  "homepage": "https://kaushalboii.github.io/MyDiary",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kaushalboii/MyDiary.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kaushalboii/MyDiary/issues"
+  },
+  "keywords": [
+    "diary",
+    "journal",
+    "threejs",
+    "flipbook",
+    "3d",
+    "memory-keeper",
+    "editorial",
+    "aes-256-gcm",
+    "vault",
+    "nextjs",
+    "react19",
+    "typescript"
+  ],
   "funding": {
     "type": "github",
     "url": "https://github.com/sponsors/kaushalboii"

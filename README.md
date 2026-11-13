@@ -6,6 +6,7 @@ An editorial **3D physical memory library & interactive flipbook diary** built w
 >
 > [![Sponsor kaushalboii](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?style=flat-square&logo=GitHub%20Sponsors)](https://github.com/sponsors/kaushalboii)
 > [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+> [![Security: E2EE Vault](https://img.shields.io/badge/Security-AES--256--GCM-green.svg)](SECURITY.md)
 > [![GitHub Release](https://img.shields.io/github/v/release/kaushalboii/MyDiary)](https://github.com/kaushalboii/MyDiary/releases)
 
 ---
@@ -67,8 +68,71 @@ MyDiary is an independent open-source creation by **[M Kaushal Maran](https://gi
 - **Frontend:** Next.js 16 (Static Export), React 19, TypeScript
 - **3D & Physics:** Three.js, Verlet Integration Rope Engine
 - **Styling & UI:** Tailwind CSS v4, Lucide Icons, Newsreader & Inter fonts
-- **Security:** WebCrypto API (PBKDF2 + AES-256-GCM)
-- **Storage Backend (Optional):** Node.js, Express, Scrypt auth & HMAC media signing
+- **Security & Vault:** WebCrypto API (`PBKDF2-SHA256` + `AES-256-GCM`)
+- **Storage Backend (Optional):** Node.js, Express, `scrypt` hashing & HMAC media signing
+
+---
+
+## 📁 Project Structure
+
+```text
+MyDiary/
+├── .github/
+│   ├── FUNDING.yml            # GitHub Sponsors configuration
+│   └── workflows/             # GitHub Actions CI/CD workflows
+│       ├── deploy.yml         # GitHub Pages static export deployment
+│       ├── keepalive.yml      # Storage backend health ping
+│       └── release.yml        # Automated GitHub releases on tag push
+├── docs/                      # Screenshots and documentation assets
+├── scripts/                   # Local orchestration utilities
+│   └── dev-all.mjs            # Concurrent runner for Next.js and backend
+├── src/
+│   ├── app/                   # Next.js 16 App Router
+│   │   ├── book/page.tsx      # 3D FlipBook interactive reader & in-book editor
+│   │   ├── compose/page.tsx   # Memory composer studio route
+│   │   ├── memory/page.tsx    # Single-memory focused reading view
+│   │   ├── page.tsx           # Home 3D walnut bookshelf experience
+│   │   ├── layout.tsx         # Root layout with font imports & theme setup
+│   │   ├── robots.ts          # SEO crawler configuration
+│   │   └── sitemap.ts         # Dynamic static sitemap
+│   ├── components/            # Reusable UI & modal components
+│   │   ├── DiaryShelfExperience.tsx # Three.js canvas integration
+│   │   ├── FlipBookReader.tsx       # Physics-based dual-page flipbook
+│   │   ├── FreeformPageBlocks.tsx   # Draggable block layout engine
+│   │   ├── MemoryEditorModal.tsx    # In-book real-time memory editor
+│   │   ├── VolumeEditorModal.tsx    # Book studio cloth, motif & styling customizer
+│   │   ├── StorageSettingsModal.tsx # Account, E2EE vault & sync modal
+│   │   └── ThemeToggle.tsx          # Verlet rope pendulum light/dark toggle
+│   ├── lib/                   # Core business logic & security libraries
+│   │   ├── memory-layout.ts   # Spread calculation, styling & block synchronization
+│   │   ├── storage-client.ts  # Client-side API, offline IndexedDB & encryption hooks
+│   │   ├── vault-security.ts  # WebCrypto AES-256-GCM + PBKDF2 encryption engine
+│   │   └── types.ts           # Comprehensive TypeScript type definitions
+│   └── three/                 # Three.js 3D rendering pipeline
+│       ├── ShelfEngine.ts     # Procedural shelf, shadows & lighting
+│       ├── cover-art.ts       # Canvas procedural cloth & gold foil generative textures
+│       └── book-motion.ts     # Physics animation & inspection camera math
+├── storage-server/            # Optional lightweight Node.js storage microservice
+│   ├── server.mjs             # Multi-tenant scoped API with Scrypt & HMAC auth
+│   ├── setup-mini-server.sh   # One-command production deployment script
+│   └── default-books.json     # Starter books baseline
+├── .env.example               # Frontend environment template
+├── LICENSE                    # MIT License with author attribution
+├── package.json               # Project manifest, scripts & dependencies
+├── SECURITY.md                # Anti-tamper & E2EE security policy
+└── tsconfig.json              # Strict TypeScript configuration
+```
+
+---
+
+## 🔒 Security & Anti-Tamper Architecture
+
+MyDiary is built with **Zero-Knowledge privacy** at its foundation:
+- **Client-Side Encryption:** All journal texts, notes, and coordinates are encrypted using `AES-256-GCM` in the user's browser via the WebCrypto API.
+- **Key Derivation:** Master keys are derived from your passphrase using `PBKDF2-SHA256` with **310,000 iterations** and a unique per-user salt.
+- **Zero-Knowledge Storage:** The server only stores ciphertext. Even if server files are accessed without authorization, **no entries can be decrypted without the user's secret passphrase**.
+- **No Leaked Secrets:** Static builds contain zero tokens or private URLs. Passwords and tokens are never stored in plaintext `localStorage`.
+- See [SECURITY.md](SECURITY.md) for full security specifications and reporting guidelines.
 
 ---
 

@@ -1,13 +1,61 @@
+# Dependencies
 node_modules/
+storage-server/node_modules/
+.pnp
+.pnp.js
+
+# Next.js build and export outputs
 .next/
-dist/
 out/
-.env
-.env.local
+dist/
+build/
 *.tsbuildinfo
 next-env.d.ts
-storage-server/node_modules/
-storage-server/data/
+
+# Environment variables & secrets (CRITICAL FOR SECURITY)
+.env
+.env*.local
+.env.development
+.env.test
+.env.production
 storage-server/.env
+storage-server/.env*.local
+storage-server/.storage-token
+storage-server/.session-secret
+storage-server/data/
+storage-server/uploads/
+storage-server/backups/
+
+# Certificates, Keys & Credentials
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+*.p12
+
+# Debug & Execution logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 *.log
+storage-server/*.log
+
+# OS & Editor generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Coverage and cache
+coverage/
+.turbo/
+.cache/
