@@ -106,6 +106,11 @@ export function getSessionToken(): string {
   }
 }
 
+export function isUserAuthenticated(): boolean {
+  if (typeof window === "undefined") return false;
+  return Boolean(getSessionToken().trim());
+}
+
 export function saveSessionToken(token: string) {
   if (typeof window === "undefined") return;
   const trimmed = token.trim();

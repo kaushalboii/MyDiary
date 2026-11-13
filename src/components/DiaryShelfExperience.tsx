@@ -12,6 +12,7 @@ import {
   fetchBooks,
   fetchMemories,
   isStorageAuthError,
+  isUserAuthenticated,
   loadCachedServerBooks,
   resolveMediaUrl,
   updateBook,
@@ -378,30 +379,19 @@ function ShelfExperienceInner() {
               <span>Inspect</span>
             </button>
 
-            <button
-              type="button"
-              className="top-dock__btn"
-              data-testid="customize-active"
-              disabled={isFocused}
-              onClick={() => setEditorState({ mode: "edit", book: activeBook })}
-              aria-label={`Customize ${activeBook.title}`}
-              title={`Customize ${activeBook.title}`}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Customize</span>
-            </button>
-
-            <button
-              type="button"
-              data-testid="add-book"
-              onClick={() => setEditorState({ mode: "create" })}
-              className="top-dock__btn"
-              aria-label="Add Book"
-              title="Add Book"
-            >
-              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Add Book</span>
-            </button>
+            {isUserAuthenticated() && (
+              <button
+                type="button"
+                data-testid="add-book"
+                onClick={() => setEditorState({ mode: "create" })}
+                className="top-dock__btn"
+                aria-label="Add Book"
+                title="Add Book"
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Add Book</span>
+              </button>
+            )}
 
             <span className="top-dock__divider" aria-hidden="true" />
 
@@ -528,16 +518,18 @@ function ShelfExperienceInner() {
                 <p className="eyebrow m-0">
                   {selectedBook.coverImprint || siteConfig.editionEyebrow}
                 </p>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setEditorState({ mode: "edit", book: selectedBook })
-                  }
-                  className="inline-flex min-h-[28px] items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-3.5 py-1.5 text-[9px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
-                >
-                  <SlidersHorizontal className="h-3 w-3" />
-                  <span>Customize Book</span>
-                </button>
+                {isUserAuthenticated() && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditorState({ mode: "edit", book: selectedBook })
+                    }
+                    className="inline-flex min-h-[28px] items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-3.5 py-1.5 text-[9px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
+                  >
+                    <SlidersHorizontal className="h-3 w-3" />
+                    <span>Customize Book</span>
+                  </button>
+                )}
               </div>
 
               <h2 className="mt-3">{selectedBook.title}</h2>
@@ -559,11 +551,15 @@ function ShelfExperienceInner() {
               <div className="mt-5 max-w-[500px] border-t border-[var(--hairline)] pt-4">
                 <div className="mb-2.5 flex items-center justify-between">
                   <span className="text-[9px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)]">
-                    Inside This Book ({selectedMemories.length})
+                    Inside This Book
                   </span>
                 </div>
 
-                {loadingMemories ? (
+                {!isUserAuthenticated() ? (
+                  <p className="font-serif text-xs italic text-[var(--ink-soft)] leading-relaxed">
+                    Personal memories inside this volume are protected. Sign in to view and read entries.
+                  </p>
+                ) : loadingMemories ? (
                   <p className="text-xs italic text-[var(--ink-soft)]">
                     Opening pages...
                   </p>
@@ -628,17 +624,19 @@ function ShelfExperienceInner() {
                 <span aria-hidden="true">→</span>
               </Link>
 
-              <Link
-                className="official-link official-link--secondary"
-                data-testid="write-volume-memory"
-                href={`/compose?bookId=${encodeURIComponent(selectedBook.id)}`}
-              >
-                <span className="inline-flex items-center gap-2">
-                  <PenLine className="h-3.5 w-3.5" />
-                  <span>Write New Memory</span>
-                </span>
-                <span aria-hidden="true">+</span>
-              </Link>
+              {isUserAuthenticated() && (
+                <Link
+                  className="official-link official-link--secondary"
+                  data-testid="write-volume-memory"
+                  href={`/compose?bookId=${encodeURIComponent(selectedBook.id)}`}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <PenLine className="h-3.5 w-3.5" />
+                    <span>Write New Memory</span>
+                  </span>
+                  <span aria-hidden="true">+</span>
+                </Link>
+              )}
             </div>
 
             <div className="focus-controls" aria-label="Inspection controls">

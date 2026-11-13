@@ -36,12 +36,14 @@ import {
   syncLayoutBlocksWithMemory,
 } from "@/lib/memory-layout";
 import {
+  AUTH_REQUIRED_EVENT,
   deleteBook,
   deleteMemory,
   fetchBooks,
   fetchMemories,
   getOfflineDraftCount,
   isStorageAuthError,
+  isUserAuthenticated,
   loadCachedServerBooks,
   resolveMediaUrl,
   syncOfflineToServer,
@@ -97,9 +99,12 @@ function BookMemoriesContent() {
     async (preserveSpread = false) => {
       setLoading(true);
       try {
+        const authenticated = isUserAuthenticated();
         const [booksRes, initialMemRes] = await Promise.all([
           fetchBooks(),
-          requestedBookId ? fetchMemories({ bookId: requestedBookId }) : Promise.resolve(null),
+          authenticated && requestedBookId
+            ? fetchMemories({ bookId: requestedBookId })
+            : Promise.resolve({ memories: [], mode: "offline-fallback" as const }),
         ]);
         setBooks(booksRes.books);
         setStorageMode(booksRes.mode);
@@ -109,10 +114,12 @@ function BookMemoriesContent() {
             : booksRes.books[0]?.id || "memories-2022";
 
         const [memRes, draftCount] = await Promise.all([
-          initialMemRes && targetId === requestedBookId
-            ? Promise.resolve(initialMemRes)
-            : fetchMemories({ bookId: targetId }),
-          getOfflineDraftCount(),
+          authenticated
+            ? (initialMemRes && targetId === requestedBookId
+                ? Promise.resolve(initialMemRes)
+                : fetchMemories({ bookId: targetId }))
+            : Promise.resolve({ memories: [], mode: "offline-fallback" as const }),
+          authenticated ? getOfflineDraftCount() : Promise.resolve(0),
         ]);
         setMemories(memRes.memories);
         setOfflineDraftCount(draftCount);
@@ -423,13 +430,29 @@ function BookMemoriesContent() {
               </div>
             ) : (
               <div className="mt-8">
-                <Link
-                  href={`/compose?bookId=${encodeURIComponent(book.id)}`}
-                  className="inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-[11px] font-semibold tracking-widest text-[var(--paper-light)] uppercase no-underline hover:bg-[var(--walnut-deep)]"
-                >
-                  <PenLine className="h-3.5 w-3.5" />
-                  <span>Write First Entry</span>
-                </Link>
+                {!isUserAuthenticated() ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.dispatchEvent(
+                        new CustomEvent(AUTH_REQUIRED_EVENT, {
+                          detail: { message: "Sign in to unlock your private memory volume." },
+                        }),
+                      );
+                    }}
+                    className="inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-[11px] font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)]"
+                  >
+                    <span>Sign In to Unlock Volume</span>
+                  </button>
+                ) : (
+                  <Link
+                    href={`/compose?bookId=${encodeURIComponent(book.id)}`}
+                    className="inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-[11px] font-semibold tracking-widest text-[var(--paper-light)] uppercase no-underline hover:bg-[var(--walnut-deep)]"
+                  >
+                    <PenLine className="h-3.5 w-3.5" />
+                    <span>Write First Entry</span>
+                  </Link>
+                )}
               </div>
             )}
           </div>
@@ -499,7 +522,7 @@ function BookMemoriesContent() {
         draftBlocksByMemory[mem.id] ||
         (hasCustomLayout || isArranging ? syncLayoutBlocksWithMemory(mem) : null);
 
-      const spreadToolbarFooterLeft = (
+      const spreadToolbarFooterLeft = !isUserAuthenticated() ? null : (
         <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3 text-xs text-[var(--ink-soft)]">
           <div className="flex flex-wrap items-center gap-3">
             <Link
@@ -876,27 +899,31 @@ function BookMemoriesContent() {
               ))}
             </select>
 
-            <span className="top-dock__divider" aria-hidden="true" />
+            {isUserAuthenticated() && (
+              <>
+                <span className="top-dock__divider" aria-hidden="true" />
 
-            <button
-              type="button"
-              onClick={() => setEditingVolume(true)}
-              className="top-dock__btn"
-              aria-label="Customize Book"
-              title="Customize Book"
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Customize</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingVolume(true)}
+                  className="top-dock__btn"
+                  aria-label="Customize Book"
+                  title="Customize Book"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Customize</span>
+                </button>
 
-            <Link
-              href={`/compose?bookId=${encodeURIComponent(book.id)}`}
-              className="top-dock__btn top-dock__btn--primary"
-              aria-label="Write Memory"
-            >
-              <PenLine className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Write Memory</span>
-            </Link>
+                <Link
+                  href={`/compose?bookId=${encodeURIComponent(book.id)}`}
+                  className="top-dock__btn top-dock__btn--primary"
+                  aria-label="Write Memory"
+                >
+                  <PenLine className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Write Memory</span>
+                </Link>
+              </>
+            )}
           </ExpandableDock>
 
           <ThemeToggle />

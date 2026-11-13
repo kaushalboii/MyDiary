@@ -74,7 +74,7 @@ export function StorageSettingsModal({
   open,
   onClose,
   onConnected,
-  initialTab = "vault",
+  initialTab = "account",
 }: {
   open: boolean;
   onClose: () => void;
@@ -833,16 +833,14 @@ export function StorageSettingsModal({
                       {currentUser
                         ? `${currentUser.displayName} (@${currentUser.username}) · ${currentUser.role}`
                         : health
-                          ? health.authRequired
-                            ? "Archive Protected · Sign In Required"
-                            : "Connected · Single-User Mode"
+                          ? "Archive Protected · Sign In Required"
                           : "Archive Unreachable (Offline Drafts)"}
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-[var(--ink-soft)]">
                     {currentUser
                       ? "Your volumes, entries, and uploaded media are strictly isolated under your account."
-                      : "Create an owner account to lock anonymous access and invite verified members later."}
+                      : "Sign in or create an account to view and save your private diary volumes."}
                   </p>
                 </div>
 

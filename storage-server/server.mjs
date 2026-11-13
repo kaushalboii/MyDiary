@@ -959,19 +959,23 @@ function getClientIpKey(req, bucket = "") {
 }
 
 function isLoopbackReq(req) {
+  if (req.headers.origin && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(req.headers.origin)) {
+    return false;
+  }
   const hasProxyHeaders = Boolean(
     req.headers["x-forwarded-for"] ||
       req.headers["x-real-ip"] ||
       req.headers["forwarded"] ||
       req.headers["cf-connecting-ip"] ||
-      req.headers["x-forwarded-host"],
+      req.headers["x-forwarded-host"] ||
+      req.headers["x-forwarded-proto"],
   );
   if (hasProxyHeaders) return false;
   const addr = String(req.socket?.remoteAddress || "");
   const isLoopbackAddr = addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
   if (!isLoopbackAddr) return false;
   const hostHeader = String(req.headers.host || "").split(":")[0].toLowerCase();
-  return !hostHeader || hostHeader === "127.0.0.1" || hostHeader === "localhost" || hostHeader === "[::1]";
+  return hostHeader === "127.0.0.1" || hostHeader === "localhost" || hostHeader === "[::1]";
 }
 
 function authenticateRequest(req) {
@@ -1005,7 +1009,8 @@ function authenticateRequest(req) {
     return { authorized: false, kind: "invalid-token", scopeId: LEGACY_SCOPE_ID, isOwner: false };
   }
 
-  if (!TOKEN && !hasAccounts && isLoopbackReq(req)) {
+  // Only allow open loopback when run purely on a local machine and never over public tunnels
+  if (!TOKEN && !hasAccounts && isLoopbackReq(req) && process.env.ALLOW_INSECURE_PUBLIC === "true") {
     return {
       authorized: true,
       kind: "loopback-open",
@@ -1566,7 +1571,7 @@ app.delete("/api/admin/members/:id", requireOwner, (req, res) => {
 app.get("/api/health", (req, res) => {
   const { users } = readUsersStore();
   const auth = authenticateRequest(req);
-  const authRequired = Boolean(TOKEN) || users.length > 0;
+  const authRequired = Boolean(TOKEN) || users.length > 0 || !isLoopbackReq(req);
   const authorized = auth.authorized && (users.length === 0 || auth.kind !== "loopback-open");
 
   res.json({
