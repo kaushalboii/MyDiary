@@ -1810,6 +1810,7 @@ html[data-vault="locked"] .vault-protected-shell {
   .book-details__inner {
     grid-template-columns: 1fr;
     grid-template-rows: auto auto minmax(0, 1fr) auto;
+    height: 100%;
     padding: 4px 18px max(14px, env(safe-area-inset-bottom));
     border-top: 1px solid var(--hairline);
     border-left: 0;
@@ -1883,18 +1884,28 @@ html[data-vault="locked"] .vault-protected-shell {
 
   .book-details__copy {
     grid-column: 1 / -1;
-    grid-row: 2;
+    grid-row: 3;
     align-self: auto;
-    padding: 18px 0 14px;
+    padding: 12px 0 14px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .focus-controls {
     grid-column: 1 / -1;
-    grid-row: 3;
+    grid-row: 4;
   }
 
   .focus-controls span:nth-child(2) {
     display: none;
+  }
+
+  .diary-container {
+    padding: 12px 14px max(18px, env(safe-area-inset-bottom));
+    min-height: calc(100dvh - 58px);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
   }
 }
 

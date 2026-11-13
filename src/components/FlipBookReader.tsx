@@ -629,7 +629,7 @@ export function FlipBookReader({
               ...pageVars,
             }}
           >
-            <div className="relative h-[500px] sm:h-[540px] w-full overflow-hidden rounded-lg ring-1 ring-black/15">
+            <div className="relative h-[clamp(500px,calc(100dvh-175px),680px)] w-full overflow-hidden rounded-lg ring-1 ring-black/15">
               {/* Stationary Target Sheet Underneath */}
               <div
                 data-testid="flipbook-mobile-page"

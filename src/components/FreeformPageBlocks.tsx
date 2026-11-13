@@ -189,7 +189,7 @@ export function FreeformPageSurface({
       onClick={(e) => {
         if (editing && e.target === e.currentTarget) onSelectBlock(null);
       }}
-      className={`freeform-canvas-page ${
+      className={`freeform-canvas-page flex-1 h-full ${
         editing ? "freeform-canvas-page--editing" : ""
       } ${compact ? "min-h-[250px] sm:min-h-[300px]" : "min-h-[450px] lg:min-h-[490px]"}`}
     >
