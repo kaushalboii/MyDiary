@@ -907,8 +907,8 @@ const explicitAllowedOrigins = allowedOriginsRaw
 function isOriginAllowed(origin) {
   if (!origin) return true;
   const cleanOrigin = normalizeOrigin(origin);
-  // Always permit official GitHub Pages origin & local development
-  if (cleanOrigin === "https://kaushalboii.github.io") return true;
+  // Always permit GitHub Pages origins & local development
+  if (cleanOrigin.endsWith(".github.io")) return true;
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(cleanOrigin)) return true;
 
   if (explicitAllowedOrigins.length > 0) {

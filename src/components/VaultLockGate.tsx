@@ -34,9 +34,6 @@ import {
   wipeLocalDiaryData,
 } from "@/lib/vault-security";
 
-const DEFAULT_GOOGLE_CLIENT_ID =
-  "383477263375-6e67rdqdqverja13oc7gsqrttsrhun0d.apps.googleusercontent.com";
-
 type GateMode = "none" | "vault-locked" | "server-auth";
 type ServerAuthTab = "signin" | "register";
 
@@ -61,16 +58,16 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
   const [customServerUrl, setCustomServerUrl] = useState("");
   const [authMessage, setAuthMessage] = useState<string | null>(null);
 
-  // Google 1-Tap & OTP sign-in configuration
+  // Google 1-Tap & OTP sign-in configuration (strictly from environment or user local storage)
   const [googleClientId, setGoogleClientId] = useState(() => {
     if (typeof window !== "undefined") {
       return (
         process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
         localStorage.getItem("mydiary:google_client_id") ||
-        DEFAULT_GOOGLE_CLIENT_ID
+        ""
       );
     }
-    return process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID;
+    return process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
   });
   const [showGoogleSetup, setShowGoogleSetup] = useState(false);
 
