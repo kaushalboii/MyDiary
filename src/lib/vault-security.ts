@@ -4,6 +4,7 @@ export const VAULT_ENVELOPE_KEY = "mydiary_vault_envelope_v1";
 export const VAULT_SESSION_KEY = "mydiary_vault_session_v1";
 export const VAULT_LOCKOUT_KEY = "mydiary_vault_lockout_v1";
 export const AUTH_SESSION_KEY = "mydiary_auth_session_v1";
+export const E2EE_KEY_STORAGE = "mydiary_e2ee_key_v1";
 export const VAULT_STATE_EVENT = "mydiary:vault-state-changed";
 export const AUTH_REQUIRED_EVENT = "mydiary:auth-required";
 
@@ -149,7 +150,13 @@ function writeSession(secrets: VaultSecrets) {
     unlockedAt: now,
     lastActivity: now,
   };
-  window.sessionStorage.setItem(VAULT_SESSION_KEY, JSON.stringify(payload));
+  const json = JSON.stringify(payload);
+  try {
+    window.localStorage.setItem(VAULT_SESSION_KEY, json);
+    window.sessionStorage.setItem(VAULT_SESSION_KEY, json);
+  } catch {
+    // Ignore storage quota
+  }
 }
 
 async function deriveAesKey(
@@ -208,12 +215,15 @@ export function getUnlockedVaultSecrets(): VaultSecrets | null {
   const envelope = readEnvelope();
   if (!envelope) return null;
   try {
-    const raw = window.sessionStorage.getItem(VAULT_SESSION_KEY);
+    const raw =
+      window.localStorage.getItem(VAULT_SESSION_KEY) ||
+      window.sessionStorage.getItem(VAULT_SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<VaultSessionPayload>;
     if (!parsed?.secrets || typeof parsed.lastActivity !== "number") return null;
     const idleMs = Date.now() - parsed.lastActivity;
     if (idleMs > envelope.autoLockMinutes * 60_000) {
+      window.localStorage.removeItem(VAULT_SESSION_KEY);
       window.sessionStorage.removeItem(VAULT_SESSION_KEY);
       return null;
     }
@@ -251,7 +261,9 @@ export function touchVaultActivity(): void {
   const envelope = readEnvelope();
   if (!envelope) return;
   try {
-    const raw = window.sessionStorage.getItem(VAULT_SESSION_KEY);
+    const raw =
+      window.localStorage.getItem(VAULT_SESSION_KEY) ||
+      window.sessionStorage.getItem(VAULT_SESSION_KEY);
     if (!raw) return;
     const parsed = JSON.parse(raw) as Partial<VaultSessionPayload>;
     if (!parsed?.secrets || typeof parsed.lastActivity !== "number") return;
@@ -261,7 +273,9 @@ export function touchVaultActivity(): void {
       return;
     }
     parsed.lastActivity = now;
-    window.sessionStorage.setItem(VAULT_SESSION_KEY, JSON.stringify(parsed));
+    const json = JSON.stringify(parsed);
+    window.localStorage.setItem(VAULT_SESSION_KEY, json);
+    window.sessionStorage.setItem(VAULT_SESSION_KEY, json);
   } catch {
     // Ignore malformed session payload
   }
@@ -270,13 +284,17 @@ export function touchVaultActivity(): void {
 export function updateUnlockedVaultToken(nextToken: string): void {
   if (typeof window === "undefined") return;
   try {
-    const raw = window.sessionStorage.getItem(VAULT_SESSION_KEY);
+    const raw =
+      window.localStorage.getItem(VAULT_SESSION_KEY) ||
+      window.sessionStorage.getItem(VAULT_SESSION_KEY);
     if (!raw) return;
     const parsed = JSON.parse(raw) as Partial<VaultSessionPayload>;
     if (!parsed?.secrets) return;
     parsed.secrets.token = nextToken;
     parsed.lastActivity = Date.now();
-    window.sessionStorage.setItem(VAULT_SESSION_KEY, JSON.stringify(parsed));
+    const json = JSON.stringify(parsed);
+    window.localStorage.setItem(VAULT_SESSION_KEY, json);
+    window.sessionStorage.setItem(VAULT_SESSION_KEY, json);
   } catch {
     // Ignore session update issues
   }
@@ -371,6 +389,7 @@ export async function unlockVaultWithPassphrase(passphrase: string): Promise<Vau
 export async function disableVaultLock(currentPassphrase: string): Promise<VaultSecrets> {
   const secrets = await unlockVaultWithPassphrase(currentPassphrase);
   window.localStorage.removeItem(VAULT_ENVELOPE_KEY);
+  window.localStorage.removeItem(VAULT_SESSION_KEY);
   window.sessionStorage.removeItem(VAULT_SESSION_KEY);
   writeLockout({ failedAttempts: 0, lockedUntil: 0 });
   try {
@@ -395,7 +414,9 @@ export async function disableVaultLock(currentPassphrase: string): Promise<Vault
 
 export function lockVaultNow(): void {
   if (typeof window === "undefined") return;
+  window.localStorage.removeItem(VAULT_SESSION_KEY);
   window.sessionStorage.removeItem(VAULT_SESSION_KEY);
+  window.localStorage.removeItem(AUTH_SESSION_KEY);
   window.sessionStorage.removeItem(AUTH_SESSION_KEY);
   window.sessionStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
   window.localStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
@@ -406,8 +427,12 @@ export function lockVaultNow(): void {
 export async function wipeLocalDiaryData(): Promise<void> {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(VAULT_ENVELOPE_KEY);
+  window.localStorage.removeItem(VAULT_SESSION_KEY);
   window.sessionStorage.removeItem(VAULT_SESSION_KEY);
+  window.localStorage.removeItem(AUTH_SESSION_KEY);
   window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+  window.localStorage.removeItem(E2EE_KEY_STORAGE);
+  window.sessionStorage.removeItem(E2EE_KEY_STORAGE);
   window.sessionStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
   window.localStorage.removeItem(VAULT_LOCKOUT_KEY);
   window.localStorage.removeItem(STORAGE_CONFIG_KEY);
@@ -478,6 +503,15 @@ export async function setActiveUserEncryptionKey(username: string, pass: string)
     ["encrypt", "decrypt"],
   );
 
+  // Persist derived key to persistent storage so closing/reopening mobile browser stays authenticated and decrypts instantly
+  try {
+    const rawB64 = bytesToBase64(new Uint8Array(digestBuffer));
+    window.localStorage.setItem(E2EE_KEY_STORAGE, rawB64);
+    window.sessionStorage.setItem(E2EE_KEY_STORAGE, rawB64);
+  } catch {
+    // Ignore storage quota
+  }
+
   // Background non-blocking legacy PBKDF2 derivation for backward-compatibility fallback
   void (async () => {
     try {
@@ -492,6 +526,29 @@ export async function setActiveUserEncryptionKey(username: string, pass: string)
   return cachedUserKey;
 }
 
+export async function restoreActiveUserEncryptionKey(): Promise<CryptoKey | null> {
+  if (typeof window === "undefined") return null;
+  if (cachedUserKey) return cachedUserKey;
+  try {
+    const rawB64 =
+      window.localStorage.getItem(E2EE_KEY_STORAGE) ||
+      window.sessionStorage.getItem(E2EE_KEY_STORAGE);
+    if (!rawB64) return null;
+    const rawBytes = base64ToBytes(rawB64);
+    const subtle = requireWebCrypto();
+    cachedUserKey = await subtle.importKey(
+      "raw",
+      rawBytes,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"],
+    );
+    return cachedUserKey;
+  } catch {
+    return null;
+  }
+}
+
 export function getActiveUserEncryptionKey(): CryptoKey | null {
   return cachedUserKey;
 }
@@ -503,6 +560,14 @@ export function getLegacyUserEncryptionKey(): CryptoKey | null {
 export function clearActiveUserEncryptionKey(): void {
   cachedUserKey = null;
   cachedLegacyUserKey = null;
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.removeItem(E2EE_KEY_STORAGE);
+      window.sessionStorage.removeItem(E2EE_KEY_STORAGE);
+    } catch {
+      // Ignore storage cleanup issues
+    }
+  }
 }
 
 export async function encryptMemoryPayload(

@@ -122,7 +122,7 @@ const JSON_LD_DATA = {
   },
 };
 
-const THEME_INIT_SCRIPT = `(function(){try{var k="mydiary_theme_v1";var v=localStorage.getItem(k);var t=(v==="dark"||v==="light")?v:"light";document.documentElement.dataset.theme=t;document.documentElement.style.colorScheme=t;var ve=localStorage.getItem("mydiary_vault_envelope_v1");var vs=sessionStorage.getItem("mydiary_vault_session_v1");if(ve&&!vs){document.documentElement.dataset.vault="locked";}}catch(e){}})();`;
+const THEME_INIT_SCRIPT = `(function(){try{var k="mydiary_theme_v1";var v=localStorage.getItem(k);var t=(v==="dark"||v==="light")?v:"light";document.documentElement.dataset.theme=t;document.documentElement.style.colorScheme=t;var ve=localStorage.getItem("mydiary_vault_envelope_v1");var vs=localStorage.getItem("mydiary_vault_session_v1")||sessionStorage.getItem("mydiary_vault_session_v1");if(ve&&!vs){document.documentElement.dataset.vault="locked";}}catch(e){}})();`;
 
 export default function RootLayout({
   children,

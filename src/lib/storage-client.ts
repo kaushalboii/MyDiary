@@ -23,6 +23,7 @@ import {
   getUnlockedVaultSecrets,
   hasVaultEnvelope,
   isVaultUnlocked,
+  restoreActiveUserEncryptionKey,
   scrubPlaintextConfigToken,
   setActiveUserEncryptionKey,
   touchVaultActivity,
@@ -104,7 +105,11 @@ export function normalizeServerUrl(url: string): string {
 export function getSessionToken(): string {
   if (typeof window === "undefined") return "";
   try {
-    return window.sessionStorage.getItem(AUTH_SESSION_KEY) || "";
+    return (
+      window.localStorage.getItem(AUTH_SESSION_KEY) ||
+      window.sessionStorage.getItem(AUTH_SESSION_KEY) ||
+      ""
+    );
   } catch {
     return "";
   }
@@ -120,8 +125,10 @@ export function saveSessionToken(token: string) {
   const trimmed = token.trim();
   try {
     if (trimmed) {
+      window.localStorage.setItem(AUTH_SESSION_KEY, trimmed);
       window.sessionStorage.setItem(AUTH_SESSION_KEY, trimmed);
     } else {
+      window.localStorage.removeItem(AUTH_SESSION_KEY);
       window.sessionStorage.removeItem(AUTH_SESSION_KEY);
     }
   } catch {
@@ -938,7 +945,7 @@ export async function fetchMemories(params?: {
 
   try {
     const res = await serverFetch<{ memories: MemoryAlbum[] }>(`/api/memories${query}`);
-    const encKey = getActiveUserEncryptionKey();
+    const encKey = getActiveUserEncryptionKey() || (await restoreActiveUserEncryptionKey());
     const memories = await Promise.all(
       res.memories.map(async (m) => {
         if (m.encrypted && m.ciphertext && m.iv && encKey) {
@@ -994,7 +1001,7 @@ export async function fetchMemory(
       `/api/memories/${encodeURIComponent(memoryId)}`,
     );
     let memory = res.memory;
-    const encKey = getActiveUserEncryptionKey();
+    const encKey = getActiveUserEncryptionKey() || (await restoreActiveUserEncryptionKey());
     if (memory?.encrypted && memory.ciphertext && memory.iv && encKey) {
       const dec = await decryptMemoryPayload(memory.ciphertext, memory.iv, encKey);
       if (dec) {
@@ -1101,7 +1108,7 @@ export async function createMemory(
 ): Promise<{ memory: MemoryAlbum; mode: StorageMode }> {
   try {
     let payload = { ...input };
-    const encKey = getActiveUserEncryptionKey();
+    const encKey = getActiveUserEncryptionKey() || (await restoreActiveUserEncryptionKey());
     if (encKey) {
       const enc = await encryptMemoryPayload(
         {
@@ -1164,7 +1171,7 @@ export async function updateMemory(
 ): Promise<{ memory: MemoryAlbum; mode: StorageMode }> {
   try {
     let payload = { ...input };
-    const encKey = getActiveUserEncryptionKey();
+    const encKey = getActiveUserEncryptionKey() || (await restoreActiveUserEncryptionKey());
     if (encKey && (input.title !== undefined || input.note !== undefined || input.paragraphs !== undefined || input.layoutBlocks !== undefined)) {
       const enc = await encryptMemoryPayload(
         {
@@ -1445,6 +1452,7 @@ export async function logoutAccount(customConfig?: StorageConfig): Promise<void>
     }
   }
   try {
+    window.localStorage.removeItem(AUTH_SESSION_KEY);
     window.sessionStorage.removeItem(AUTH_SESSION_KEY);
   } catch {
     // Ignore storage issues

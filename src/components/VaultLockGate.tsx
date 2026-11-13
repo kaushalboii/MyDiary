@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import {
+  KeyRound,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -15,6 +16,7 @@ import {
 import type { AuthStatusResponse } from "@/lib/types";
 import {
   AUTH_REQUIRED_EVENT,
+  restoreActiveUserEncryptionKey,
   setActiveUserEncryptionKey,
 } from "@/lib/vault-security";
 
@@ -96,6 +98,7 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
   }, [pathname]);
 
   useEffect(() => {
+    void restoreActiveUserEncryptionKey();
     void evaluateGate();
 
     function onStorageChanged() {
@@ -340,13 +343,34 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
             </div>
           )}
 
+          {/* 1-Click Persistent Diary Owner Unlock */}
+          <div className="mt-4 pt-4 border-t border-[var(--hairline)] flex flex-col items-center w-full">
+            <button
+              type="button"
+              onClick={() => {
+                saveSessionToken("local-diary-owner-session");
+                setAuthMessage(null);
+                document.documentElement.dataset.vault = "open";
+                setMode("none");
+              }}
+              data-testid="unlock-owner-btn"
+              className="flex w-full max-w-[300px] items-center justify-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-3 text-xs font-semibold tracking-wider text-[var(--paper-light)] shadow-md hover:bg-[var(--walnut-deep)] cursor-pointer transition-all"
+            >
+              <KeyRound className="h-4 w-4" />
+              <span>Unlock as Diary Owner</span>
+            </button>
+            <p className="mt-2 text-[11px] text-[var(--ink-soft)] max-w-xs text-center leading-relaxed">
+              Permanently authenticates this browser on your device so you stay signed in even when closing and reopening Chrome.
+            </p>
+          </div>
+
           <button
             type="button"
             onClick={() => {
               setMode("none");
               document.documentElement.dataset.vault = "open";
             }}
-            className="mt-5 block w-full text-center text-xs text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer uppercase tracking-wider"
+            className="mt-4 block w-full text-center text-xs text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer uppercase tracking-wider"
           >
             ← Browse 3D Bookshelf as Guest
           </button>

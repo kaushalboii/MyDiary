@@ -15,6 +15,7 @@ import {
   checkStorageHealth,
   getAuthStatus,
   getOfflineDraftCount,
+  isUserAuthenticated,
   loadStorageConfig,
   logoutAccount,
   syncOfflineToServer,
@@ -167,21 +168,25 @@ export function StorageSettingsModal({
                 <span
                   className="inline-block h-2.5 w-2.5 rounded-full"
                   style={{
-                    backgroundColor: currentUser ? "#4e7c53" : "#b87a3d",
+                    backgroundColor: currentUser || isUserAuthenticated() ? "#4e7c53" : "#b87a3d",
                   }}
                 />
                 <span className="text-xs font-semibold tracking-wider uppercase">
                   {currentUser
                     ? `${currentUser.displayName} (@${currentUser.username})`
-                    : health
-                      ? "Archive Connected · Sign In Required"
-                      : "Archive Offline (Local Drafts)"}
+                    : isUserAuthenticated()
+                      ? "Diary Owner (Local Storage Authenticated)"
+                      : health
+                        ? "Archive Connected · Sign In Required"
+                        : "Archive Offline (Local Drafts)"}
                 </span>
               </div>
               <p className="mt-1 text-xs text-[var(--ink-soft)]">
                 {currentUser
                   ? "Signed in with Google. All your books and entries are safely synchronized."
-                  : "Sign in with Google to sync and read your private memory archive."}
+                  : isUserAuthenticated()
+                    ? "Authenticated on this device. You can edit memories, books, and layouts seamlessly."
+                    : "Sign in with Google to sync and read your private memory archive."}
               </p>
             </div>
 
@@ -196,7 +201,7 @@ export function StorageSettingsModal({
                 <span>{testing ? "Checking..." : "Refresh"}</span>
               </button>
 
-              {currentUser ? (
+              {currentUser || isUserAuthenticated() ? (
                 <button
                   type="button"
                   onClick={() => void handleSignOut()}
