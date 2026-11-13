@@ -16,6 +16,7 @@ import type {
 import {
   AUTH_REQUIRED_EVENT,
   AUTH_SESSION_KEY,
+  clearActiveUserEncryptionKey,
   decryptMemoryPayload,
   encryptMemoryPayload,
   getActiveUserEncryptionKey,
@@ -126,7 +127,7 @@ export function saveSessionToken(token: string) {
     // Ignore storage quota issues
   }
   updateUnlockedVaultToken(trimmed);
-  clearCachedServerBooks();
+  // Do NOT wipe cached books on session token update so user gets instant 0ms UI render
   window.dispatchEvent(new CustomEvent("mydiary:storage-config-changed"));
 }
 
@@ -401,13 +402,15 @@ const LEGACY_OFFLINE_COVERS = new Set([
   "#edeae3",
 ]);
 
+const MEMORIES_CACHE_PREFIX = "mydiary_memories_cache_v10_";
+
 export function loadCachedServerBooks(): DiaryBook[] | null {
   if (typeof window === "undefined") return null;
   if (hasVaultEnvelope() && !isVaultUnlocked()) return null;
   try {
-    // Scrub any legacy persistent copy from localStorage
-    window.localStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
-    const raw = window.sessionStorage.getItem(SERVER_BOOKS_CACHE_KEY);
+    const raw =
+      window.localStorage.getItem(SERVER_BOOKS_CACHE_KEY) ||
+      window.sessionStorage.getItem(SERVER_BOOKS_CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) && parsed.length > 0 ? (parsed as DiaryBook[]) : null;
@@ -416,20 +419,68 @@ export function loadCachedServerBooks(): DiaryBook[] | null {
   }
 }
 
-function saveCachedServerBooks(books: DiaryBook[]) {
-  if (typeof window === "undefined") return;
+export function saveCachedServerBooks(books: DiaryBook[]) {
+  if (typeof window === "undefined" || !Array.isArray(books) || books.length === 0) return;
   try {
-    window.sessionStorage.setItem(SERVER_BOOKS_CACHE_KEY, JSON.stringify(books));
+    const serialized = JSON.stringify(books);
+    window.localStorage.setItem(SERVER_BOOKS_CACHE_KEY, serialized);
+    window.sessionStorage.setItem(SERVER_BOOKS_CACHE_KEY, serialized);
   } catch {
     // Ignore storage quota issues
   }
 }
 
-function clearCachedServerBooks() {
+export function clearCachedServerBooks() {
   if (typeof window === "undefined") return;
   try {
     window.sessionStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
     window.localStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
+  } catch {
+    // Ignore storage issues
+  }
+}
+
+export function loadCachedMemories(bookId: string): MemoryAlbum[] | null {
+  if (typeof window === "undefined" || !bookId) return null;
+  try {
+    const raw =
+      window.localStorage.getItem(MEMORIES_CACHE_PREFIX + bookId) ||
+      window.sessionStorage.getItem(MEMORIES_CACHE_PREFIX + bookId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as MemoryAlbum[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCachedMemories(bookId: string, memories: MemoryAlbum[]) {
+  if (typeof window === "undefined" || !bookId || !Array.isArray(memories)) return;
+  try {
+    const serialized = JSON.stringify(memories);
+    window.localStorage.setItem(MEMORIES_CACHE_PREFIX + bookId, serialized);
+    window.sessionStorage.setItem(MEMORIES_CACHE_PREFIX + bookId, serialized);
+  } catch {
+    // Ignore storage quota issues
+  }
+}
+
+export function clearCachedMemories(bookId?: string) {
+  if (typeof window === "undefined") return;
+  try {
+    if (bookId) {
+      window.localStorage.removeItem(MEMORIES_CACHE_PREFIX + bookId);
+      window.sessionStorage.removeItem(MEMORIES_CACHE_PREFIX + bookId);
+    } else {
+      for (let i = window.localStorage.length - 1; i >= 0; i--) {
+        const k = window.localStorage.key(i);
+        if (k && k.startsWith(MEMORIES_CACHE_PREFIX)) window.localStorage.removeItem(k);
+      }
+      for (let i = window.sessionStorage.length - 1; i >= 0; i--) {
+        const k = window.sessionStorage.key(i);
+        if (k && k.startsWith(MEMORIES_CACHE_PREFIX)) window.sessionStorage.removeItem(k);
+      }
+    }
   } catch {
     // Ignore storage issues
   }
@@ -666,14 +717,9 @@ export async function fetchBooks(): Promise<{
   }
   const config = loadStorageConfig();
   try {
-    const [booksData, health] = await Promise.all([
-      serverFetch<{ books: DiaryBook[] }>("/api/books", {}, config),
-      checkStorageHealth(config).catch(() => null),
-    ]);
-    const shouldUpgradeLegacy = (health?.schemaVersion ?? 0) < 9;
-    const books = shouldUpgradeLegacy
-      ? upgradeLegacyServerBooks(booksData.books)
-      : booksData.books;
+    // Single fast network fetch without redundant health ping
+    const booksData = await serverFetch<{ books: DiaryBook[] }>("/api/books", {}, config);
+    const books = booksData.books;
     saveCachedServerBooks(books);
     return {
       books,
@@ -681,8 +727,15 @@ export async function fetchBooks(): Promise<{
     };
   } catch (err) {
     if (isStorageAuthError(err)) {
-      clearCachedServerBooks();
+      const cached = loadCachedServerBooks();
+      if (cached && cached.length > 0) {
+        return { books: cached, mode: "server" };
+      }
       throw err;
+    }
+    const cached = loadCachedServerBooks();
+    if (cached && cached.length > 0) {
+      return { books: cached, mode: "server" };
     }
     const books = await getOfflineBooks();
     return { books, mode: "offline-fallback" };
@@ -894,8 +947,18 @@ export async function fetchMemories(params?: {
         return m;
       }),
     );
+    // Instant SWR cache save
+    if (params?.bookId && !params?.q && (!params?.mood || params?.mood === "All")) {
+      saveCachedMemories(params.bookId, memories);
+    }
     return { memories, mode: "server" };
   } catch (err) {
+    if (params?.bookId && !params?.q && (!params?.mood || params?.mood === "All")) {
+      const cached = loadCachedMemories(params.bookId);
+      if (cached && cached.length > 0) {
+        return { memories: cached, mode: "server" };
+      }
+    }
     if (isStorageAuthError(err)) throw err;
     let list = await getAllFromStore<MemoryAlbum>("memories");
     if (params?.bookId) list = list.filter((m) => m.bookId === params.bookId);
@@ -1057,15 +1120,19 @@ export async function createMemory(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    clearCachedServerBooks();
+    const createdMem: MemoryAlbum = {
+      ...res.memory,
+      title: input.title,
+      note: input.note,
+      paragraphs: input.paragraphs,
+      layoutBlocks: input.layoutBlocks,
+    };
+    if (input.bookId) {
+      const existing = loadCachedMemories(input.bookId) || [];
+      saveCachedMemories(input.bookId, [createdMem, ...existing.filter((m) => m.id !== createdMem.id)]);
+    }
     return {
-      memory: {
-        ...res.memory,
-        title: input.title,
-        note: input.note,
-        paragraphs: input.paragraphs,
-        layoutBlocks: input.layoutBlocks,
-      },
+      memory: createdMem,
       mode: "server",
     };
   } catch (err) {
@@ -1119,8 +1186,15 @@ export async function updateMemory(
         body: JSON.stringify(payload),
       },
     );
-    clearCachedServerBooks();
-    return { memory: res.memory, mode: "server" };
+    const updatedMem = res.memory;
+    if (updatedMem.bookId) {
+      const existing = loadCachedMemories(updatedMem.bookId) || [];
+      saveCachedMemories(
+        updatedMem.bookId,
+        existing.map((m) => (m.id === updatedMem.id ? updatedMem : m)),
+      );
+    }
+    return { memory: updatedMem, mode: "server" };
   } catch (err) {
     if (isStorageAuthError(err) || isStorageClientError(err)) throw err;
     const list = await getAllFromStore<MemoryAlbum>("memories");
@@ -1141,7 +1215,23 @@ export async function deleteMemory(memoryId: string): Promise<{ mode: StorageMod
     await serverFetch<{ ok: boolean }>(`/api/memories/${encodeURIComponent(memoryId)}`, {
       method: "DELETE",
     });
-    clearCachedServerBooks();
+    // Remove from any cached memory lists
+    try {
+      if (typeof window !== "undefined") {
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const k = window.localStorage.key(i);
+          if (k && k.startsWith(MEMORIES_CACHE_PREFIX)) {
+            const bookId = k.slice(MEMORIES_CACHE_PREFIX.length);
+            const list = loadCachedMemories(bookId);
+            if (list && list.some((m) => m.id === memoryId)) {
+              saveCachedMemories(bookId, list.filter((m) => m.id !== memoryId));
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignore cache cleanup errors
+    }
     return { mode: "server" };
   } catch (err) {
     if (isStorageAuthError(err)) throw err;
@@ -1340,7 +1430,7 @@ export async function logoutAccount(customConfig?: StorageConfig): Promise<void>
   }
   updateUnlockedVaultToken("");
   scrubPlaintextConfigToken();
-  clearCachedServerBooks();
+  clearActiveUserEncryptionKey();
   if (typeof window !== "undefined") {
     window.dispatchEvent(
       new CustomEvent(AUTH_REQUIRED_EVENT, {

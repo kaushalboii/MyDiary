@@ -13,8 +13,10 @@ import {
   fetchMemories,
   isStorageAuthError,
   isUserAuthenticated,
+  loadCachedMemories,
   loadCachedServerBooks,
   resolveMediaUrl,
+  saveCachedMemories,
   updateBook,
   type BookPatchInput,
 } from "@/lib/storage-client";
@@ -111,6 +113,12 @@ function ShelfExperienceInner() {
     }
     initialFetchRef.current = refreshBooks();
     const handler = () => {
+      const fresh = loadCachedServerBooks();
+      if (fresh && fresh.length > 0) {
+        booksRef.current = fresh;
+        setBooks(fresh);
+        engineRef.current?.syncBooks(fresh);
+      }
       void refreshBooks();
     };
     window.addEventListener("mydiary:storage-config-changed", handler);
@@ -148,21 +156,31 @@ function ShelfExperienceInner() {
   );
   const isFocused = mode !== "browse";
 
-  // Load saved memories preview whenever a book is pulled forward
+  // Load saved memories preview whenever a book is pulled forward (SWR instant cache first)
   useEffect(() => {
     if (!selectedBook) {
       setSelectedMemories([]);
       return;
     }
+    const cached = loadCachedMemories(selectedBook.id);
+    if (cached && cached.length > 0) {
+      setSelectedMemories(cached);
+      setLoadingMemories(false);
+    } else {
+      setLoadingMemories(true);
+    }
+
     let cancelled = false;
-    setLoadingMemories(true);
     void fetchMemories({ bookId: selectedBook.id })
       .then((res) => {
-        if (!cancelled) setSelectedMemories(res.memories);
+        if (!cancelled) {
+          setSelectedMemories(res.memories);
+          saveCachedMemories(selectedBook.id, res.memories);
+        }
       })
       .catch((err) => {
         if (!isStorageAuthError(err) && !cancelled) {
-          setSelectedMemories([]);
+          if (!cached) setSelectedMemories([]);
         }
       })
       .finally(() => {

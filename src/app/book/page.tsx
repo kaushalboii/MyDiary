@@ -43,8 +43,10 @@ import {
   getOfflineDraftCount,
   isStorageAuthError,
   isUserAuthenticated,
+  loadCachedMemories,
   loadCachedServerBooks,
   resolveMediaUrl,
+  saveCachedMemories,
   syncOfflineToServer,
   updateBook,
   updateMemory,
@@ -68,12 +70,19 @@ function BookMemoriesContent() {
   const requestedMemoryId = params.get("memory") || "";
 
   const [books, setBooks] = useState<DiaryBook[]>(() => loadCachedServerBooks() || defaultBooks);
-  const [memories, setMemories] = useState<MemoryAlbum[]>([]);
+  const [memories, setMemories] = useState<MemoryAlbum[]>(() => {
+    if (typeof window === "undefined" || !requestedBookId) return [];
+    return loadCachedMemories(requestedBookId) || [];
+  });
   const [storageMode, setStorageMode] = useState<StorageMode>("offline-fallback");
   const [offlineDraftCount, setOfflineDraftCount] = useState(0);
   const [restoringDrafts, setRestoringDrafts] = useState(false);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    const cachedBooks = loadCachedServerBooks();
+    const cachedMems = requestedBookId ? loadCachedMemories(requestedBookId) : null;
+    return !cachedBooks && !cachedMems;
+  });
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
   const [editingVolume, setEditingVolume] = useState(false);
   const [activeSpreadIndex, setActiveSpreadIndex] = useState(0);
@@ -97,14 +106,26 @@ function BookMemoriesContent() {
 
   const loadData = useCallback(
     async (preserveSpread = false) => {
-      setLoading(true);
+      // SWR: Hydrate immediately from cache with zero delay
+      const cachedB = loadCachedServerBooks();
+      const cachedM = requestedBookId ? loadCachedMemories(requestedBookId) : null;
+      if (cachedB && cachedB.length > 0) {
+        setBooks(cachedB);
+      }
+      if (cachedM) {
+        setMemories(cachedM);
+        setLoading(false);
+      } else if (!cachedB) {
+        setLoading(true);
+      }
+
       try {
         const authenticated = isUserAuthenticated();
         const [booksRes, initialMemRes] = await Promise.all([
           fetchBooks(),
           authenticated && requestedBookId
             ? fetchMemories({ bookId: requestedBookId })
-            : Promise.resolve({ memories: [], mode: "offline-fallback" as const }),
+            : Promise.resolve({ memories: cachedM || [], mode: "offline-fallback" as const }),
         ]);
         setBooks(booksRes.books);
         setStorageMode(booksRes.mode);
@@ -118,7 +139,7 @@ function BookMemoriesContent() {
             ? (initialMemRes && targetId === requestedBookId
                 ? Promise.resolve(initialMemRes)
                 : fetchMemories({ bookId: targetId }))
-            : Promise.resolve({ memories: [], mode: "offline-fallback" as const }),
+            : Promise.resolve({ memories: cachedM || [], mode: "offline-fallback" as const }),
           authenticated ? getOfflineDraftCount() : Promise.resolve(0),
         ]);
         setMemories(memRes.memories);
@@ -131,7 +152,7 @@ function BookMemoriesContent() {
             );
             setActiveSpreadIndex(memIdx >= 0 ? memIdx + 1 : 0);
           } else if (memRes.memories.length > 0) {
-            setActiveSpreadIndex(1);
+            setActiveSpreadIndex((prev) => (prev === 0 ? 1 : prev));
           } else {
             setActiveSpreadIndex(0);
           }

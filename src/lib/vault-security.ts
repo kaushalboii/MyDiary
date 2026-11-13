@@ -414,6 +414,20 @@ export async function wipeLocalDiaryData(): Promise<void> {
   window.localStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
   window.localStorage.removeItem(OFFLINE_BOOK_ORDER_KEY);
 
+  // Clear all memory caches
+  try {
+    for (let i = window.localStorage.length - 1; i >= 0; i--) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith("mydiary_memories_cache_")) window.localStorage.removeItem(k);
+    }
+    for (let i = window.sessionStorage.length - 1; i >= 0; i--) {
+      const k = window.sessionStorage.key(i);
+      if (k && k.startsWith("mydiary_memories_cache_")) window.sessionStorage.removeItem(k);
+    }
+  } catch {
+    // Ignore storage issues
+  }
+
   if (typeof indexedDB !== "undefined") {
     await new Promise<void>((resolve) => {
       try {
@@ -443,15 +457,38 @@ export async function wipeLocalDiaryData(): Promise<void> {
 
 // --- Zero-Knowledge Military-Grade AES-256-GCM Memory Encryption ---
 let cachedUserKey: CryptoKey | null = null;
+let cachedLegacyUserKey: CryptoKey | null = null;
 const E2EE_SALT_PREFIX = "mydiary-e2ee-salt-v1:";
 
 export async function setActiveUserEncryptionKey(username: string, pass: string): Promise<CryptoKey | null> {
   if (typeof window === "undefined" || !username || !pass) return null;
   const subtle = requireWebCrypto();
   const cleanUser = username.toLowerCase().trim();
-  const saltHash = await subtle.digest("SHA-256", new TextEncoder().encode(E2EE_SALT_PREFIX + cleanUser));
-  const salt = new Uint8Array(saltHash).slice(0, 16);
-  cachedUserKey = await deriveAesKey(pass, salt, PBKDF2_ITERATIONS, ["encrypt", "decrypt"]);
+
+  // Instant SHA-256 key derivation (< 0.5ms) - zero UI blocking on login
+  const digestBuffer = await subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`mydiary-fast-key-v2:${cleanUser}:${pass}`),
+  );
+  cachedUserKey = await subtle.importKey(
+    "raw",
+    digestBuffer,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+
+  // Background non-blocking legacy PBKDF2 derivation for backward-compatibility fallback
+  void (async () => {
+    try {
+      const saltHash = await subtle.digest("SHA-256", new TextEncoder().encode(E2EE_SALT_PREFIX + cleanUser));
+      const salt = new Uint8Array(saltHash).slice(0, 16);
+      cachedLegacyUserKey = await deriveAesKey(pass, salt, PBKDF2_ITERATIONS, ["encrypt", "decrypt"]);
+    } catch {
+      // Ignore background derivation
+    }
+  })();
+
   return cachedUserKey;
 }
 
@@ -459,8 +496,13 @@ export function getActiveUserEncryptionKey(): CryptoKey | null {
   return cachedUserKey;
 }
 
+export function getLegacyUserEncryptionKey(): CryptoKey | null {
+  return cachedLegacyUserKey;
+}
+
 export function clearActiveUserEncryptionKey(): void {
   cachedUserKey = null;
+  cachedLegacyUserKey = null;
 }
 
 export async function encryptMemoryPayload(
@@ -486,8 +528,16 @@ export async function decryptMemoryPayload(
     const subtle = requireWebCrypto();
     const cipherBytes = base64ToBytes(ciphertext);
     const ivBytes = base64ToBytes(iv);
-    const decrypted = await subtle.decrypt({ name: "AES-GCM", iv: ivBytes }, key, cipherBytes);
-    return JSON.parse(new TextDecoder().decode(decrypted));
+    try {
+      const decrypted = await subtle.decrypt({ name: "AES-GCM", iv: ivBytes }, key, cipherBytes);
+      return JSON.parse(new TextDecoder().decode(decrypted));
+    } catch (primaryErr) {
+      if (cachedLegacyUserKey && cachedLegacyUserKey !== key) {
+        const decryptedLegacy = await subtle.decrypt({ name: "AES-GCM", iv: ivBytes }, cachedLegacyUserKey, cipherBytes);
+        return JSON.parse(new TextDecoder().decode(decryptedLegacy));
+      }
+      throw primaryErr;
+    }
   } catch {
     return null;
   }
