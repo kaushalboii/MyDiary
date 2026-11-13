@@ -37,6 +37,7 @@ jobs:
         env:
           NEXT_PUBLIC_BASE_PATH: "/${{ github.event.repository.name }}"
           NEXT_PUBLIC_STORAGE_URL: ${{ secrets.MYDIARY_STORAGE_URL || vars.MYDIARY_STORAGE_URL || '' }}
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID || vars.GOOGLE_CLIENT_ID || '' }}
         run: npm run build
 
       - name: Upload artifact

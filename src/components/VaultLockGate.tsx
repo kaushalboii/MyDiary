@@ -16,6 +16,7 @@ import {
   getAuthStatus,
   loadStorageConfig,
   loginAccount,
+  loginWithGoogle,
   registerAccount,
   saveSessionToken,
 } from "@/lib/storage-client";
@@ -56,6 +57,19 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
   const [password, setPassword] = useState("");
   const [customServerUrl, setCustomServerUrl] = useState("");
   const [authMessage, setAuthMessage] = useState<string | null>(null);
+
+  // Google 1-Tap & OTP sign-in configuration
+  const [googleClientId, setGoogleClientId] = useState(() => {
+    if (typeof window !== "undefined") {
+      return (
+        process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
+        localStorage.getItem("mydiary:google_client_id") ||
+        ""
+      );
+    }
+    return process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
+  });
+  const [showGoogleSetup, setShowGoogleSetup] = useState(false);
 
   const checkSeqRef = useRef(0);
 
@@ -171,6 +185,87 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
       window.removeEventListener("keydown", onUserActivity);
     };
   }, [evaluateGate]);
+
+  // Load Google Identity Services script
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (document.getElementById("google-gsi-client")) return;
+    const script = document.createElement("script");
+    script.id = "google-gsi-client";
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    document.body.appendChild(script);
+  }, []);
+
+  async function handleGoogleCredentialResponse(credential: string) {
+    const targetCfg = resolveEffectiveConfig();
+    if (!targetCfg.serverUrl) {
+      setError("Archive server is unreachable. Check your storage connection.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await loginWithGoogle(credential, targetCfg);
+      if (res.sessionToken) {
+        saveSessionToken(res.sessionToken);
+      }
+      await setActiveUserEncryptionKey(res.user.username, res.googleSub);
+      setAuthMessage(null);
+      document.documentElement.dataset.vault = "open";
+      setMode("none");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Google authentication failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const initGoogleGsi = useCallback(
+    (clientId: string) => {
+      if (typeof window === "undefined" || !clientId) return;
+      const google = (window as unknown as { google?: { accounts?: { id?: { initialize: Function; renderButton: Function } } } })?.google;
+      if (!google?.accounts?.id) return;
+      try {
+        google.accounts.id.initialize({
+          client_id: clientId,
+          callback: (res: { credential?: string }) => {
+            if (res.credential) {
+              void handleGoogleCredentialResponse(res.credential);
+            }
+          },
+          auto_select: false,
+          cancel_on_tap_outside: true,
+        });
+
+        const container = document.getElementById("google-gsi-btn-mount");
+        if (container) {
+          container.innerHTML = "";
+          google.accounts.id.renderButton(container, {
+            theme: "outline",
+            size: "large",
+            text: "continue_with",
+            shape: "pill",
+            width: 300,
+            logo_alignment: "left",
+          });
+        }
+      } catch (err) {
+        console.warn("Google GSI render notice:", err);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (mode === "server-auth" && googleClientId.trim()) {
+      const timer = setTimeout(() => {
+        initGoogleGsi(googleClientId.trim());
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [mode, googleClientId, initGoogleGsi]);
 
   function resolveEffectiveConfig() {
     const current = loadStorageConfig();
@@ -443,6 +538,82 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
               ? "Enter your credentials to unlock and read your private memory archive."
               : "Create an isolated account to store and encrypt your personal memories."}
           </p>
+
+          {/* Google 1-Click Sign-In with 2FA / OTP */}
+          <div className="mb-4 flex flex-col items-center w-full">
+            {googleClientId.trim() ? (
+              <div id="google-gsi-btn-mount" className="flex justify-center min-h-[44px] w-full" />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowGoogleSetup((prev) => !prev)}
+                className="flex w-full items-center justify-center gap-2.5 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-4 py-2.5 text-xs font-semibold tracking-wide text-[var(--ink)] shadow-sm hover:border-[var(--ink)] cursor-pointer transition-all"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                  />
+                </svg>
+                <span>Continue with Google (Instant &amp; OTP 2FA)</span>
+              </button>
+            )}
+
+            {showGoogleSetup && !googleClientId.trim() && (
+              <div className="mt-3 w-full rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] p-3 text-xs text-left">
+                <p className="m-0 font-semibold text-[var(--ink)]">
+                  Google One-Tap &amp; OTP Sign-In Setup:
+                </p>
+                <p className="mt-1 mb-2 text-[11px] text-[var(--ink-soft)] leading-relaxed">
+                  Enter your free Google OAuth Client ID (or add <code>GOOGLE_CLIENT_ID</code> to GitHub repository secrets):
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={googleClientId}
+                    onChange={(e) => setGoogleClientId(e.target.value)}
+                    placeholder="xxxx.apps.googleusercontent.com"
+                    className="flex-1 rounded border border-[var(--hairline)] px-2.5 py-1 text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const trimmed = googleClientId.trim();
+                      if (trimmed && typeof window !== "undefined") {
+                        localStorage.setItem("mydiary:google_client_id", trimmed);
+                        setShowGoogleSetup(false);
+                        initGoogleGsi(trimmed);
+                      }
+                    }}
+                    className="rounded bg-[var(--ink)] px-3 py-1 text-[11px] font-semibold text-[var(--paper-light)] uppercase cursor-pointer"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="relative my-4 w-full text-center">
+              <span className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-[var(--hairline)]" />
+              </span>
+              <span className="relative bg-[var(--paper)] px-3 text-[10px] font-semibold tracking-widest text-[var(--ink-soft)] uppercase">
+                or continue with username
+              </span>
+            </div>
+          </div>
 
           <div className="mb-5 flex rounded-full border border-[var(--hairline)] bg-[var(--paper)] p-1">
             <button

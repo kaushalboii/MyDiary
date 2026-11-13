@@ -172,6 +172,8 @@ export type AuthUser = {
   id: string;
   username: string;
   displayName: string;
+  email?: string | null;
+  avatarUrl?: string | null;
   role: UserRole;
   status: UserStatus;
   createdAt?: string;

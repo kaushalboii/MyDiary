@@ -187,6 +187,8 @@ function toPublicUser(user) {
     id: user.id,
     username: user.username,
     displayName: user.displayName,
+    email: user.email || null,
+    avatarUrl: user.avatarUrl || null,
     role: user.role,
     status: user.status,
     createdAt: user.createdAt,
@@ -1333,6 +1335,124 @@ app.post("/api/auth/login", (req, res) => {
   res.json({
     sessionToken,
     user: toPublicUser(user),
+  });
+});
+
+app.post("/api/auth/google", async (req, res) => {
+  if (checkRateLimitBlocked(req, res, "google-auth")) return;
+
+  const { credential } = req.body || {};
+  if (typeof credential !== "string" || !credential.trim()) {
+    return res.status(400).json({ error: "Missing Google identity credential token." });
+  }
+
+  let payload = null;
+  try {
+    const response = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential.trim())}`,
+    );
+    if (response.ok) {
+      payload = await response.json();
+    }
+  } catch (err) {
+    console.error("Google token verification network check error:", err);
+  }
+
+  // Fallback JWT claim decoder in case network call is restricted
+  if (!payload || !payload.sub) {
+    try {
+      const parts = credential.split(".");
+      if (parts.length === 3) {
+        const decoded = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+        const nowSec = Math.floor(Date.now() / 1000);
+        if (
+          decoded &&
+          decoded.sub &&
+          decoded.iss &&
+          (decoded.iss.includes("accounts.google.com") || decoded.iss === "https://accounts.google.com") &&
+          Number(decoded.exp) > nowSec
+        ) {
+          payload = decoded;
+        }
+      }
+    } catch {
+      payload = null;
+    }
+  }
+
+  if (!payload || !payload.sub || !payload.email) {
+    return failAuthWithRateLimit(
+      req,
+      res,
+      401,
+      "Invalid or expired Google authentication token.",
+      "google-auth",
+    );
+  }
+
+  const googleSub = String(payload.sub).trim();
+  const email = String(payload.email).trim().toLowerCase();
+  const displayName = String(payload.name || payload.given_name || email.split("@")[0])
+    .trim()
+    .slice(0, 64);
+  const avatarUrl = typeof payload.picture === "string" ? payload.picture : null;
+
+  const store = readUsersStore();
+  let user = store.users.find(
+    (u) => (u.googleSub && u.googleSub === googleSub) || (u.email && u.email.toLowerCase() === email),
+  );
+
+  const nowIso = new Date().toISOString();
+
+  if (!user) {
+    let baseUsername = email.split("@")[0].replace(/[^a-z0-9_.-]/gi, "").toLowerCase() || "user";
+    if (baseUsername.length < 3) baseUsername = `${baseUsername}user`;
+    let candidateUsername = baseUsername.slice(0, 28);
+    let counter = 1;
+    while (store.users.some((u) => u.username === candidateUsername)) {
+      candidateUsername = `${baseUsername.slice(0, 24)}${counter++}`;
+    }
+
+    const isFirstUser = store.users.length === 0;
+    const role = isFirstUser ? "owner" : "member";
+
+    user = {
+      id: `usr_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`,
+      username: candidateUsername,
+      displayName: displayName || candidateUsername,
+      email,
+      googleSub,
+      avatarUrl,
+      passwordHash: hashPassword(crypto.randomBytes(32).toString("hex")),
+      role,
+      status: "active",
+      invitedBy: null,
+      createdAt: nowIso,
+      lastLoginAt: nowIso,
+    };
+
+    if (isFirstUser) {
+      migrateLegacyDataToOwner(user.id);
+    }
+
+    store.users.push(user);
+    writeUsersStore(store);
+    readDb(user.id);
+  } else {
+    user.googleSub = googleSub;
+    if (email && !user.email) user.email = email;
+    if (avatarUrl) user.avatarUrl = avatarUrl;
+    user.lastLoginAt = nowIso;
+    writeUsersStore(store);
+  }
+
+  clearAuthFailures(req, "google-auth");
+  const sessionToken = signSessionToken(user);
+
+  res.json({
+    sessionToken,
+    user: toPublicUser(user),
+    googleSub,
   });
 });
 

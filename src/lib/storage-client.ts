@@ -1267,6 +1267,25 @@ export async function loginAccount(
   return res;
 }
 
+export async function loginWithGoogle(
+  credential: string,
+  customConfig?: StorageConfig,
+): Promise<{ sessionToken: string; user: AuthUser; googleSub: string }> {
+  const res = await publicAuthFetch<{ sessionToken: string; user: AuthUser; googleSub: string }>(
+    "/api/auth/google",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ credential }),
+    },
+    customConfig,
+  );
+  if (res.sessionToken) {
+    saveSessionToken(res.sessionToken);
+  }
+  return res;
+}
+
 export async function registerAccount(
   input: {
     username: string;
