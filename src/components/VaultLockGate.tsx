@@ -1,13 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import {
-  Eye,
-  EyeOff,
-  Lock,
   ShieldCheck,
-  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -19,37 +15,22 @@ import {
 import type { AuthStatusResponse } from "@/lib/types";
 import {
   AUTH_REQUIRED_EVENT,
-  VAULT_STATE_EVENT,
-  getVaultStatus,
-  hasVaultEnvelope,
-  isVaultUnlocked,
-  lockVaultNow,
   setActiveUserEncryptionKey,
-  touchVaultActivity,
-  unlockVaultWithPassphrase,
-  wipeLocalDiaryData,
 } from "@/lib/vault-security";
 
-type GateMode = "none" | "vault-locked" | "server-auth";
+type GateMode = "none" | "server-auth";
 
 export function VaultLockGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const [mode, setMode] = useState<GateMode>(() =>
-    typeof window !== "undefined" && hasVaultEnvelope() && !isVaultUnlocked()
-      ? "vault-locked"
-      : "none",
-  );
-  const [passphrase, setPassphrase] = useState("");
-  const [showSecret, setShowSecret] = useState(false);
+  const [mode, setMode] = useState<GateMode>("none");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [confirmWipe, setConfirmWipe] = useState(false);
 
-  // Server authentication state (never displays backend URLs)
+  // Server authentication state
   const [authStatus, setAuthStatus] = useState<AuthStatusResponse | null>(null);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
 
-  // Google 1-Tap & OTP sign-in configuration (strictly from environment or user local storage)
+  // Google 1-Tap & OTP sign-in configuration (from environment or user local storage)
   const [googleClientId, setGoogleClientId] = useState(() => {
     if (typeof window !== "undefined") {
       return (
@@ -71,12 +52,6 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
     if (isHome && !forceServerAuth) {
       document.documentElement.dataset.vault = "open";
       setMode("none");
-      return;
-    }
-
-    if (hasVaultEnvelope() && !isVaultUnlocked()) {
-      document.documentElement.dataset.vault = "locked";
-      setMode("vault-locked");
       return;
     }
 
@@ -122,19 +97,12 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     void evaluateGate();
 
-    function onVaultOrConfigChange() {
+    function onStorageChanged() {
       setError(null);
-      setPassphrase("");
-      setConfirmWipe(false);
       void evaluateGate();
     }
 
     function onAuthRequired(event: Event) {
-      if (hasVaultEnvelope() && !isVaultUnlocked()) {
-        document.documentElement.dataset.vault = "locked";
-        setMode("vault-locked");
-        return;
-      }
       const detail = (event as CustomEvent<{ message?: string }>)?.detail;
       document.documentElement.dataset.vault = "locked";
       setError(null);
@@ -145,34 +113,12 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
       void evaluateGate(true, detail?.message);
     }
 
-    let lastTouch = 0;
-    function onUserActivity() {
-      const now = Date.now();
-      if (now - lastTouch < 12_000) return;
-      lastTouch = now;
-      touchVaultActivity();
-    }
-
-    const idleTimer = window.setInterval(() => {
-      const status = getVaultStatus();
-      if (status.enabled && !status.unlocked) {
-        lockVaultNow();
-      }
-    }, 15_000);
-
-    window.addEventListener(VAULT_STATE_EVENT, onVaultOrConfigChange);
-    window.addEventListener("mydiary:storage-config-changed", onVaultOrConfigChange);
+    window.addEventListener("mydiary:storage-config-changed", onStorageChanged);
     window.addEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
-    window.addEventListener("pointerdown", onUserActivity, { passive: true });
-    window.addEventListener("keydown", onUserActivity);
 
     return () => {
-      window.clearInterval(idleTimer);
-      window.removeEventListener(VAULT_STATE_EVENT, onVaultOrConfigChange);
-      window.removeEventListener("mydiary:storage-config-changed", onVaultOrConfigChange);
+      window.removeEventListener("mydiary:storage-config-changed", onStorageChanged);
       window.removeEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
-      window.removeEventListener("pointerdown", onUserActivity);
-      window.removeEventListener("keydown", onUserActivity);
     };
   }, [evaluateGate]);
 
@@ -189,7 +135,7 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
   }, []);
 
   async function handleGoogleCredentialResponse(credential: string) {
-    const targetCfg = resolveEffectiveConfig();
+    const targetCfg = loadStorageConfig();
     if (!targetCfg.serverUrl) {
       setError("Archive server is unreachable. Check your storage connection.");
       return;
@@ -275,144 +221,6 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
       return () => clearTimeout(timer);
     }
   }, [mode, googleClientId, initGoogleGsi]);
-
-  function resolveEffectiveConfig() {
-    return loadStorageConfig();
-  }
-
-  async function handleVaultUnlock(e: FormEvent) {
-    e.preventDefault();
-    if (!passphrase.trim()) {
-      setError("Enter your vault passphrase to unlock.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      await unlockVaultWithPassphrase(passphrase);
-      setPassphrase("");
-      await evaluateGate();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not unlock vault.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleWipeBrowserData() {
-    setBusy(true);
-    setError(null);
-    try {
-      await wipeLocalDiaryData();
-      setConfirmWipe(false);
-      await evaluateGate();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (mode === "vault-locked") {
-    return (
-      <main
-        className="vault-gate-backdrop"
-        data-testid="vault-gate"
-        aria-label="Owner Vault Locked"
-      >
-        <section className="vault-gate-card">
-          <div className="vault-gate-emblem" aria-hidden="true">
-            <Lock size={22} />
-          </div>
-          <p className="diary-kicker">PRIVATE DIARY ARCHIVE</p>
-          <h1 className="diary-title vault-gate-title">Owner Vault Locked</h1>
-          <p className="diary-muted vault-gate-subtitle">
-            Your session credentials and cached diary state are sealed with AES-256-GCM encryption
-            on this browser.
-          </p>
-
-          <form onSubmit={(e) => void handleVaultUnlock(e)} className="vault-gate-form">
-            <label className="field-block">
-              <span>Vault Passphrase</span>
-              <div className="vault-input-wrap">
-                <input
-                  type={showSecret ? "text" : "password"}
-                  autoComplete="current-password"
-                  autoFocus
-                  value={passphrase}
-                  onChange={(e) => setPassphrase(e.target.value)}
-                  placeholder="Enter your vault passphrase"
-                  data-testid="vault-passphrase-input"
-                />
-                <button
-                  type="button"
-                  className="vault-reveal-btn"
-                  onClick={() => setShowSecret((v) => !v)}
-                  aria-label={showSecret ? "Hide passphrase" : "Show passphrase"}
-                >
-                  {showSecret ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
-            </label>
-
-            {error ? (
-              <div className="notice-banner error" role="alert" data-testid="vault-unlock-error">
-                {error}
-              </div>
-            ) : null}
-
-            <button
-              type="submit"
-              disabled={busy}
-              className="primary-btn vault-submit-btn"
-              data-testid="vault-unlock-btn"
-            >
-              <Lock size={15} />
-              <span>{busy ? "Decrypting..." : "Unlock Diary"}</span>
-            </button>
-          </form>
-
-          <div className="vault-gate-footer">
-            {!confirmWipe ? (
-              <button
-                type="button"
-                className="text-link vault-wipe-trigger"
-                onClick={() => setConfirmWipe(true)}
-                data-testid="vault-wipe-toggle"
-              >
-                Forgot passphrase? Clear local browser lock
-              </button>
-            ) : (
-              <div className="vault-wipe-confirm-box">
-                <p>
-                  Clears only this browser&apos;s locked credentials &amp; offline drafts. Data on
-                  your private archive stays intact.
-                </p>
-                <div className="modal-actions-row">
-                  <button
-                    type="button"
-                    className="ghost-pill"
-                    onClick={() => setConfirmWipe(false)}
-                    disabled={busy}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="danger-btn"
-                    onClick={() => void handleWipeBrowserData()}
-                    disabled={busy}
-                    data-testid="vault-wipe-confirm"
-                  >
-                    <Trash2 size={14} />
-                    <span>Clear Browser Data</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-      </main>
-    );
-  }
 
   if (mode === "server-auth") {
     const isHome = !pathname || pathname === "/" || pathname.endsWith("/MyDiary") || pathname.endsWith("/MyDiary/");

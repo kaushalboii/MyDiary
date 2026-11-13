@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Lock, Menu, ShieldCheck, X } from "lucide-react";
-import { VAULT_STATE_EVENT, hasVaultEnvelope, isVaultUnlocked, lockVaultNow } from "@/lib/vault-security";
+import { Menu, ShieldCheck, X } from "lucide-react";
 import { StorageSettingsModal } from "./StorageSettingsModal";
 
 export function ExpandableDock({
@@ -24,7 +23,6 @@ export function ExpandableDock({
 }) {
   const [open, setOpen] = useState(false);
   const [internalSecurityOpen, setInternalSecurityOpen] = useState(false);
-  const [vaultProtected, setVaultProtected] = useState(false);
   const dockRef = useRef<HTMLDivElement>(null);
 
   const securityModalOpen =
@@ -40,15 +38,6 @@ export function ExpandableDock({
     },
     [onSecurityOpenChange],
   );
-
-  useEffect(() => {
-    function syncVault() {
-      setVaultProtected(hasVaultEnvelope() && isVaultUnlocked());
-    }
-    syncVault();
-    window.addEventListener(VAULT_STATE_EVENT, syncVault);
-    return () => window.removeEventListener(VAULT_STATE_EVENT, syncVault);
-  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -104,13 +93,6 @@ export function ExpandableDock({
               <Menu className="h-3.5 w-3.5" aria-hidden="true" />
             )}
             <span>{open ? "Close" : label}</span>
-            {!open && vaultProtected ? (
-              <span
-                className="top-dock__shield-dot"
-                title="Owner Vault Lock active"
-                aria-hidden="true"
-              />
-            ) : null}
           </button>
 
           {open ? (
@@ -128,32 +110,15 @@ export function ExpandableDock({
                   <button
                     type="button"
                     className="top-dock__btn"
-                    data-testid="dock-security"
+                    data-testid="dock-account"
                     onClick={() => setSecurityModalOpen(true)}
-                    aria-label="Security and Storage Settings"
-                    title="Security & Storage"
+                    aria-label="Account and Storage"
+                    title="Account & Storage"
                   >
                     <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span>Security</span>
+                    <span>Account</span>
                   </button>
                 </>
-              ) : null}
-
-              {vaultProtected ? (
-                <button
-                  type="button"
-                  className="top-dock__btn top-dock__btn--soft"
-                  data-testid="dock-lock-btn"
-                  onClick={() => {
-                    setOpen(false);
-                    lockVaultNow();
-                  }}
-                  aria-label="Lock Owner Vault"
-                  title="Lock Diary Now"
-                >
-                  <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Lock</span>
-                </button>
               ) : null}
             </div>
           ) : null}
