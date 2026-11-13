@@ -122,9 +122,9 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
     };
   }, [evaluateGate]);
 
-  // Load Google Identity Services script
+  // Load Google Identity Services script on-demand when authentication modal opens
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || mode === "none") return;
     if (document.getElementById("google-gsi-client")) return;
     const script = document.createElement("script");
     script.id = "google-gsi-client";
@@ -132,7 +132,7 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
     script.async = true;
     script.defer = true;
     document.body.appendChild(script);
-  }, []);
+  }, [mode]);
 
   async function handleGoogleCredentialResponse(credential: string) {
     const targetCfg = loadStorageConfig();

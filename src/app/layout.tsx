@@ -39,10 +39,56 @@ const inter = localFont({
 });
 
 export const metadata: Metadata = {
-  title: siteConfig.title,
+  metadataBase: new URL("https://kaushalboii.github.io/MyDiary/"),
+  title: {
+    default: siteConfig.title,
+    template: `%s | ${siteConfig.title}`,
+  },
   description: siteConfig.description,
   applicationName: siteConfig.applicationName,
-  category: "diary",
+  keywords: [
+    "diary",
+    "journal",
+    "memories",
+    "private diary",
+    "memory archive",
+    "3D bookshelf",
+    "clothbound notebooks",
+    "photo album",
+  ],
+  authors: [{ name: "Kaushal", url: "https://github.com/kaushalboii" }],
+  creator: "Kaushal",
+  publisher: "MyDiary",
+  category: "lifestyle",
+  formatDetection: {
+    telephone: false,
+  },
+  alternates: {
+    canonical: "./",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  openGraph: {
+    title: siteConfig.title,
+    description: siteConfig.description,
+    url: "https://kaushalboii.github.io/MyDiary/",
+    siteName: siteConfig.title,
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: siteConfig.title,
+    description: siteConfig.description,
+  },
 };
 
 export const viewport: Viewport = {
@@ -53,6 +99,27 @@ export const viewport: Viewport = {
     { media: "(prefers-color-scheme: dark)", color: "#171513" },
   ],
   colorScheme: "light dark",
+};
+
+const JSON_LD_DATA = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  name: "My Diary",
+  url: "https://kaushalboii.github.io/MyDiary/",
+  description: siteConfig.description,
+  applicationCategory: "LifestyleApplication",
+  operatingSystem: "All",
+  browserRequirements: "Requires WebGL & WebCrypto",
+  author: {
+    "@type": "Person",
+    name: "Kaushal",
+    url: "https://github.com/kaushalboii",
+  },
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+  },
 };
 
 const THEME_INIT_SCRIPT = `(function(){try{var k="mydiary_theme_v1";var v=localStorage.getItem(k);var t=(v==="dark"||v==="light")?v:"light";document.documentElement.dataset.theme=t;document.documentElement.style.colorScheme=t;var ve=localStorage.getItem("mydiary_vault_envelope_v1");var vs=sessionStorage.getItem("mydiary_vault_session_v1");if(ve&&!vs){document.documentElement.dataset.vault="locked";}}catch(e){}})();`;
@@ -70,9 +137,12 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <meta name="referrer" content="no-referrer" />
-        <meta name="robots" content="noindex, nofollow" />
+        <meta name="referrer" content="origin-when-cross-origin" />
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD_DATA) }}
+        />
       </head>
       <body>
         <KeepAliveBeacon />

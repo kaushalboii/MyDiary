@@ -217,11 +217,18 @@ function ShelfExperienceInner() {
       const initialStartIndex = resolveBookIndex(booksRef.current, urlBook);
       setActiveIndex(initialStartIndex);
 
-      // Yield once so static HTML / hero heading paints before WebGL initializes
+      // Yield to the main thread until idle so FCP, LCP, and interactive UI paint cleanly before WebGL starts
       await new Promise<void>((resolve) => {
-        window.requestAnimationFrame(() => {
-          window.setTimeout(resolve, 0);
-        });
+        if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+          (window as unknown as { requestIdleCallback: (fn: () => void, opts: { timeout: number }) => void }).requestIdleCallback(
+            () => resolve(),
+            { timeout: 800 },
+          );
+        } else {
+          window.requestAnimationFrame(() => {
+            window.setTimeout(resolve, 60);
+          });
+        }
       });
       if (cancelled || !canvasRef.current) return;
 
