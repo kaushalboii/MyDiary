@@ -13,6 +13,7 @@ import {
   Images,
   LayoutGrid,
   MapPin,
+  Monitor,
   PenLine,
   RotateCcw,
   SlidersHorizontal,
@@ -88,6 +89,7 @@ function BookMemoriesContent() {
   const [editorInitialTab, setEditorInitialTab] = useState<"cover" | "wordings" | "memory" | "size">("cover");
   const [activeSpreadIndex, setActiveSpreadIndex] = useState(0);
   const [arrangingMemoryId, setArrangingMemoryId] = useState<string | null>(null);
+  const [desktopArrangePrompt, setDesktopArrangePrompt] = useState<string | null>(null);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [draftBlocksByMemory, setDraftBlocksByMemory] = useState<
     Record<string, MemoryLayoutBlock[]>
@@ -799,6 +801,11 @@ function BookMemoriesContent() {
                   setArrangingMemoryId(null);
                   setSelectedBlockId(null);
                 } else {
+                  // Spreads & freeform arrangement are designed for desktop mode (both pages side-by-side)
+                  if (typeof window !== "undefined" && window.innerWidth < 820) {
+                    setDesktopArrangePrompt(mem.id);
+                    return;
+                  }
                   setDraftBlocksByMemory((prev) => ({
                     ...prev,
                     [mem.id]:
@@ -845,74 +852,6 @@ function BookMemoriesContent() {
           <span className="italic">
             {savingLayoutId === mem.id ? "Saving…" : pageLeftStr}
           </span>
-        </div>
-      );
-
-      const spreadToolbarFooterRight = (
-        <div data-no-flip="true" className="sm:hidden mt-auto pt-2.5 border-t border-[var(--hairline)]/50 flex items-center justify-between text-xs text-[var(--ink-soft)]">
-          <div className="flex items-center gap-3">
-            {isUserAuthenticated() ? (
-              <Link
-                href={`/compose?bookId=${encodeURIComponent(book.id)}&edit=${encodeURIComponent(mem.id)}`}
-                data-no-flip="true"
-                className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] no-underline hover:underline"
-              >
-                <Edit3 className="h-3.5 w-3.5" />
-                <span>Edit</span>
-              </Link>
-            ) : (
-              <button
-                type="button"
-                data-no-flip="true"
-                onClick={() => {
-                  window.dispatchEvent(
-                    new CustomEvent(AUTH_REQUIRED_EVENT, {
-                      detail: { message: "Sign in to edit this memory." },
-                    }),
-                  );
-                }}
-                className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] cursor-pointer hover:underline"
-              >
-                <Edit3 className="h-3.5 w-3.5" />
-                <span>Edit</span>
-              </button>
-            )}
-            <button
-              type="button"
-              data-no-flip="true"
-              onClick={() => {
-                if (!isUserAuthenticated()) {
-                  window.dispatchEvent(
-                    new CustomEvent(AUTH_REQUIRED_EVENT, {
-                      detail: { message: "Sign in to arrange memory blocks." },
-                    }),
-                  );
-                  return;
-                }
-                if (isArranging) {
-                  setArrangingMemoryId(null);
-                  setSelectedBlockId(null);
-                } else {
-                  setDraftBlocksByMemory((prev) => ({
-                    ...prev,
-                    [mem.id]:
-                      prev[mem.id] ||
-                      (mem.layoutBlocks?.length
-                        ? syncLayoutBlocksWithMemory(mem)
-                        : buildDefaultLayoutBlocks(mem)),
-                  }));
-                  setArrangingMemoryId(mem.id);
-                }
-              }}
-              className={`inline-flex items-center gap-1 font-semibold tracking-wider uppercase cursor-pointer hover:underline ${
-                isArranging ? "text-[var(--accent)]" : "text-[var(--ink)]"
-              }`}
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              <span>{isArranging ? "Done" : "Arrange"}</span>
-            </button>
-          </div>
-          <span className="text-[11px] italic opacity-75">{pageRightStr}</span>
         </div>
       );
 
@@ -1038,9 +977,8 @@ function BookMemoriesContent() {
                   />
                 </div>
               )}
-              {spreadToolbarFooterRight}
               <div
-                className={`hidden sm:block text-right text-xs italic text-[var(--ink-soft)] ${
+                className={`text-right text-xs italic text-[var(--ink-soft)] ${
                   isWeddingPortrait ? "mt-auto pt-2 opacity-80" : "mt-8 border-t border-[var(--hairline)] pt-3.5"
                 }`}
               >
@@ -1165,9 +1103,8 @@ function BookMemoriesContent() {
               </div>
             )}
 
-            {spreadToolbarFooterRight}
             <div
-              className={`hidden sm:block text-right text-xs italic text-[var(--ink-soft)] ${
+              className={`text-right text-xs italic text-[var(--ink-soft)] ${
                 isWeddingPortrait ? "mt-auto pt-2 opacity-80" : "mt-8 border-t border-[var(--hairline)] pt-3.5"
               }`}
             >
@@ -1235,29 +1172,6 @@ function BookMemoriesContent() {
         </Link>
 
         <div className="header-controls-cluster">
-          {/* Always visible Customize button on mobile header so mobile users can edit without searching */}
-          <button
-            type="button"
-            onClick={() => {
-              if (!isUserAuthenticated()) {
-                window.dispatchEvent(
-                  new CustomEvent(AUTH_REQUIRED_EVENT, {
-                    detail: { message: "Sign in to customize this volume and edit memories." },
-                  }),
-                );
-                return;
-              }
-              setEditorInitialTab("cover");
-              setEditingVolume(true);
-            }}
-            className="sm:hidden inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--pill-bg)] px-3 py-1.5 text-[10px] font-semibold tracking-wider text-[var(--ink)] uppercase transition hover:border-[var(--ink)] cursor-pointer"
-            aria-label="Customize Book"
-            title="Customize Book"
-          >
-            <SlidersHorizontal className="h-3 w-3" />
-            <span>Customize</span>
-          </button>
-
           <ExpandableDock
             ariaLabel="Book controls"
             onStorageConnected={() => void loadData(true)}
@@ -1497,6 +1411,71 @@ function BookMemoriesContent() {
           await loadData(true);
         }}
       />
+
+      {desktopArrangePrompt && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setDesktopArrangePrompt(null)}
+        >
+          <div
+            className="stationery-card w-full max-w-md p-6 text-center shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-[var(--paper-deep)] text-[var(--accent)]">
+              <Monitor className="h-6 w-6" />
+            </div>
+            <h3 className="m-0 font-serif text-2xl font-normal text-[var(--ink)]">
+              Desktop Mode Recommended
+            </h3>
+            <p className="mt-2.5 text-xs leading-relaxed text-[var(--ink-soft)]">
+              Freeform layout rearrangement is designed for desktop screens so you can freely position, drag, and resize blocks across both left and right pages side-by-side.
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-[var(--ink-soft)]">
+              To rearrange pages freely, please open this link on a computer or switch your mobile browser to <strong>&ldquo;Desktop Site&rdquo;</strong>.
+            </p>
+
+            <div className="mt-6 flex flex-col gap-2.5">
+              <Link
+                href={`/compose?bookId=${encodeURIComponent(book.id)}&edit=${encodeURIComponent(desktopArrangePrompt)}`}
+                onClick={() => setDesktopArrangePrompt(null)}
+                className="w-full rounded-full bg-[var(--ink)] py-2.5 text-xs font-semibold tracking-wider text-[var(--paper-light)] uppercase no-underline transition hover:bg-[var(--walnut-deep)]"
+              >
+                Edit Memory Content (Mobile)
+              </Link>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const id = desktopArrangePrompt;
+                  setDesktopArrangePrompt(null);
+                  setDraftBlocksByMemory((prev) => ({
+                    ...prev,
+                    [id]:
+                      prev[id] ||
+                      (memories.find((m) => m.id === id)?.layoutBlocks?.length
+                        ? syncLayoutBlocksWithMemory(memories.find((m) => m.id === id)!)
+                        : buildDefaultLayoutBlocks(memories.find((m) => m.id === id)!)),
+                  }));
+                  setArrangingMemoryId(id);
+                }}
+                className="w-full rounded-full border border-[var(--hairline)] py-2 text-xs font-semibold tracking-wider uppercase text-[var(--ink-soft)] transition hover:border-[var(--ink)] hover:text-[var(--ink)] cursor-pointer"
+              >
+                Rearrange on Single Page Anyway
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDesktopArrangePrompt(null)}
+                className="mt-1 text-[11px] font-semibold tracking-wider uppercase text-[var(--ink-soft)] underline cursor-pointer hover:text-[var(--ink)]"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
