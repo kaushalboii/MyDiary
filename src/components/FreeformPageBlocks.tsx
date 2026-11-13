@@ -145,6 +145,7 @@ export function FreeformPageSurface({
   const sideBlocks = [...blocks]
     .filter((b) => b.side === side)
     .sort((a, b) => (a.y - b.y) || (a.x - b.x));
+  const sidePhotoBlocks = sideBlocks.filter((b) => b.kind === "photo");
 
   const accentColor = book ? getPageAccentColor(book) : "var(--accent)";
 
@@ -437,14 +438,24 @@ export function FreeformPageSurface({
                       draggable={false}
                       className={`w-full ${
                         memory.albumStyle === "portrait"
-                          ? "aspect-[3/4] sm:aspect-[4/5] object-cover"
+                          ? sidePhotoBlocks.length > 1 && block.w > 60
+                            ? "aspect-[16/10] sm:aspect-[16/9] max-h-[26vh] sm:max-h-[190px] object-cover"
+                            : sidePhotoBlocks.length > 1
+                              ? "aspect-[4/3] sm:aspect-[3/4] max-h-[24vh] sm:max-h-[180px] object-cover"
+                              : "aspect-[3/4] sm:aspect-[4/5] max-h-[50vh] sm:max-h-[420px] object-cover"
                           : memory.albumStyle === "filmstrip"
                             ? compact
                               ? "max-h-24 object-contain"
                               : "max-h-56 object-contain"
                             : memory.albumStyle === "grid"
-                              ? "aspect-[4/3] object-cover"
-                              : "aspect-square object-cover"
+                              ? sidePhotoBlocks.length > 1 && block.w > 60
+                                ? "aspect-[16/10] max-h-[24vh] sm:max-h-[180px] object-cover"
+                                : "aspect-[4/3] max-h-[24vh] sm:max-h-[180px] object-cover"
+                              : sidePhotoBlocks.length > 1 && block.w > 60
+                                ? "aspect-[16/10] max-h-[24vh] sm:max-h-[180px] object-cover"
+                                : sidePhotoBlocks.length > 1
+                                  ? "aspect-square max-h-[22vh] sm:max-h-[160px] object-cover"
+                                  : "aspect-square max-h-[45vh] sm:max-h-[360px] object-cover"
                       }`}
                     />
                   </button>

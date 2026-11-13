@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type {
+  AlbumPhoto,
   BookFontStyle,
   DiaryBook,
   MemoryAlbum,
@@ -220,6 +221,251 @@ export function isWordsOnlyMemory(
   );
 }
 
+export function isMinimalTextMemory(
+  mem: Pick<MemoryAlbum, "title" | "note" | "paragraphs">,
+): boolean {
+  const hasParas = Boolean(mem.paragraphs?.some((p) => p.trim()));
+  const parasCount = mem.paragraphs?.filter((p) => p.trim()).length || 0;
+  return !hasParas || (parasCount === 1 && (mem.paragraphs?.join(" ").length || 0) <= 180);
+}
+
+export type MemorySpreadPartition = {
+  isPrimary: boolean;
+  spreadSubIndex: number;
+  totalSubSpreads: number;
+  leftPhotos: { photo: AlbumPhoto; idx: number }[];
+  rightPhotos: { photo: AlbumPhoto; idx: number }[];
+};
+
+/**
+ * Automatically partitions memory photos across pages & spreads so that:
+ * 1. Each page has at most 3-4 (max 4-6) photos and never squishes or cuts off images.
+ * 2. Short-text or title-only memories distribute photos across BOTH left and right pages.
+ * 3. Memories with many photos (e.g. 7+ photos) flow across consecutive spreads as a luxury photo album.
+ */
+export function partitionMemoryIntoSpreads(mem: MemoryAlbum): MemorySpreadPartition[] {
+  const photos = mem.photos || [];
+  const hasParas = Boolean(mem.paragraphs?.some((p) => p.trim()));
+  const parasCount = mem.paragraphs?.filter((p) => p.trim()).length || 0;
+  const isLongText = parasCount >= 2 || (hasParas && mem.paragraphs.join(" ").length > 220);
+  const isMinimalText = !isLongText;
+
+  // Case 1: No photos
+  if (photos.length === 0) {
+    return [
+      {
+        isPrimary: true,
+        spreadSubIndex: 0,
+        totalSubSpreads: 1,
+        leftPhotos: [],
+        rightPhotos: [],
+      },
+    ];
+  }
+
+  // Case 2: Minimal text (title only, or title + short note)
+  if (isMinimalText) {
+    if (photos.length === 1) {
+      return [
+        {
+          isPrimary: true,
+          spreadSubIndex: 0,
+          totalSubSpreads: 1,
+          leftPhotos: [],
+          rightPhotos: [{ photo: photos[0], idx: 0 }],
+        },
+      ];
+    }
+    if (photos.length === 2) {
+      return [
+        {
+          isPrimary: true,
+          spreadSubIndex: 0,
+          totalSubSpreads: 1,
+          leftPhotos: [{ photo: photos[0], idx: 0 }],
+          rightPhotos: [{ photo: photos[1], idx: 1 }],
+        },
+      ];
+    }
+    if (photos.length === 3) {
+      return [
+        {
+          isPrimary: true,
+          spreadSubIndex: 0,
+          totalSubSpreads: 1,
+          leftPhotos: [{ photo: photos[0], idx: 0 }],
+          rightPhotos: [
+            { photo: photos[1], idx: 1 },
+            { photo: photos[2], idx: 2 },
+          ],
+        },
+      ];
+    }
+    if (photos.length === 4) {
+      return [
+        {
+          isPrimary: true,
+          spreadSubIndex: 0,
+          totalSubSpreads: 1,
+          leftPhotos: [
+            { photo: photos[0], idx: 0 },
+            { photo: photos[1], idx: 1 },
+          ],
+          rightPhotos: [
+            { photo: photos[2], idx: 2 },
+            { photo: photos[3], idx: 3 },
+          ],
+        },
+      ];
+    }
+    if (photos.length === 5) {
+      return [
+        {
+          isPrimary: true,
+          spreadSubIndex: 0,
+          totalSubSpreads: 1,
+          leftPhotos: [
+            { photo: photos[0], idx: 0 },
+            { photo: photos[1], idx: 1 },
+          ],
+          rightPhotos: [
+            { photo: photos[2], idx: 2 },
+            { photo: photos[3], idx: 3 },
+            { photo: photos[4], idx: 4 },
+          ],
+        },
+      ];
+    }
+    if (photos.length === 6) {
+      return [
+        {
+          isPrimary: true,
+          spreadSubIndex: 0,
+          totalSubSpreads: 1,
+          leftPhotos: [
+            { photo: photos[0], idx: 0 },
+            { photo: photos[1], idx: 1 },
+            { photo: photos[2], idx: 2 },
+          ],
+          rightPhotos: [
+            { photo: photos[3], idx: 3 },
+            { photo: photos[4], idx: 4 },
+            { photo: photos[5], idx: 5 },
+          ],
+        },
+      ];
+    }
+
+    // 7+ photos: Multi-spread album
+    const partitions: MemorySpreadPartition[] = [];
+    partitions.push({
+      isPrimary: true,
+      spreadSubIndex: 0,
+      totalSubSpreads: 1,
+      leftPhotos: [
+        { photo: photos[0], idx: 0 },
+        { photo: photos[1], idx: 1 },
+      ],
+      rightPhotos: [
+        { photo: photos[2], idx: 2 },
+        { photo: photos[3], idx: 3 },
+      ],
+    });
+
+    let currIdx = 4;
+    let subIdx = 1;
+    while (currIdx < photos.length) {
+      const remaining = photos.length - currIdx;
+      const count = Math.min(6, remaining);
+      const leftCount = Math.ceil(count / 2);
+      const rightCount = count - leftCount;
+
+      const leftSlice = photos.slice(currIdx, currIdx + leftCount).map((p, i) => ({
+        photo: p,
+        idx: currIdx + i,
+      }));
+      currIdx += leftCount;
+
+      const rightSlice = photos.slice(currIdx, currIdx + rightCount).map((p, i) => ({
+        photo: p,
+        idx: currIdx + i,
+      }));
+      currIdx += rightCount;
+
+      partitions.push({
+        isPrimary: false,
+        spreadSubIndex: subIdx++,
+        totalSubSpreads: 1,
+        leftPhotos: leftSlice,
+        rightPhotos: rightSlice,
+      });
+    }
+
+    partitions.forEach((p) => {
+      p.totalSubSpreads = partitions.length;
+    });
+    return partitions;
+  }
+
+  // Case 3: Long story text (paragraphs >= 2)
+  if (photos.length <= 4) {
+    return [
+      {
+        isPrimary: true,
+        spreadSubIndex: 0,
+        totalSubSpreads: 1,
+        leftPhotos: [],
+        rightPhotos: photos.map((p, idx) => ({ photo: p, idx })),
+      },
+    ];
+  }
+
+  // Long text with > 4 photos:
+  const partitions: MemorySpreadPartition[] = [];
+  const primaryCount = Math.min(4, photos.length);
+  partitions.push({
+    isPrimary: true,
+    spreadSubIndex: 0,
+    totalSubSpreads: 1,
+    leftPhotos: [],
+    rightPhotos: photos.slice(0, primaryCount).map((p, idx) => ({ photo: p, idx })),
+  });
+
+  let currIdx = primaryCount;
+  let subIdx = 1;
+  while (currIdx < photos.length) {
+    const remaining = photos.length - currIdx;
+    const count = Math.min(6, remaining);
+    const leftCount = Math.ceil(count / 2);
+    const rightCount = count - leftCount;
+
+    const leftSlice = photos.slice(currIdx, currIdx + leftCount).map((p, i) => ({
+      photo: p,
+      idx: currIdx + i,
+    }));
+    currIdx += leftCount;
+
+    const rightSlice = photos.slice(currIdx, currIdx + rightCount).map((p, i) => ({
+      photo: p,
+      idx: currIdx + i,
+    }));
+    currIdx += rightCount;
+
+    partitions.push({
+      isPrimary: false,
+      spreadSubIndex: subIdx++,
+      totalSubSpreads: 1,
+      leftPhotos: leftSlice,
+      rightPhotos: rightSlice,
+    });
+  }
+
+  partitions.forEach((p) => {
+    p.totalSubSpreads = partitions.length;
+  });
+  return partitions;
+}
+
 export function clampBlock(block: MemoryLayoutBlock): MemoryLayoutBlock {
   const w = Math.max(20, Math.min(94, Math.round(block.w)));
   const maxX = Math.max(2, 97 - w);
@@ -236,12 +482,16 @@ export function clampBlock(block: MemoryLayoutBlock): MemoryLayoutBlock {
 
 /**
  * Computes default page placement coordinates matching what content exists in the memory.
+ * Distributes photos across left & right pages when text is short, ensuring clean non-overlapping coordinates.
  */
 export function buildDefaultLayoutBlocks(
   mem: Pick<MemoryAlbum, "title" | "note" | "paragraphs" | "photos">,
 ): MemoryLayoutBlock[] {
   const blocks: MemoryLayoutBlock[] = [];
-  const hasHeader = Boolean(mem.title?.trim() || mem.note?.trim() || mem.paragraphs?.some((p) => p.trim()));
+  const hasParas = Boolean(mem.paragraphs?.some((p) => p.trim()));
+  const hasNote = Boolean(mem.note?.trim());
+  const hasTitle = Boolean(mem.title?.trim());
+  const hasHeader = hasTitle || hasNote || hasParas;
   let leftY = 5;
   let zCounter = 1;
 
@@ -257,10 +507,10 @@ export function buildDefaultLayoutBlocks(
         z: zCounter++,
       }),
     );
-    leftY += mem.title?.trim() ? 24 : 18;
+    leftY += hasTitle ? 24 : 18;
   }
 
-  if (mem.note?.trim()) {
+  if (hasNote) {
     blocks.push(
       clampBlock({
         id: "note",
@@ -275,7 +525,7 @@ export function buildDefaultLayoutBlocks(
     leftY += 24;
   }
 
-  if (mem.paragraphs?.some((p) => p.trim())) {
+  if (hasParas) {
     blocks.push(
       clampBlock({
         id: "text",
@@ -287,16 +537,197 @@ export function buildDefaultLayoutBlocks(
         z: zCounter++,
       }),
     );
+    leftY += 36;
   }
 
   const photos = mem.photos || [];
-  const imagesOnly = isImagesOnlyMemory(mem);
+  if (photos.length === 0) return blocks;
+
   const isPortraitAlbum = (mem as { albumStyle?: string }).albumStyle === "portrait" || photos.length === 1;
   const photoTilts = [-2, 2, -1.5, 2.5];
+  const isMinimalText = !hasParas;
 
-  photos.forEach((photo, idx) => {
-    if (imagesOnly) {
-      // Spread images gracefully across both Left and Right pages when there are no words
+  if (isMinimalText && hasHeader) {
+    // Distribute photos across Left and Right pages so Left isn't an empty void
+    if (photos.length === 1) {
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[0].id}`,
+          kind: "photo",
+          photoId: photos[0].id,
+          side: "right",
+          x: 6,
+          y: 8,
+          w: 88,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[0],
+        }),
+      );
+    } else if (photos.length === 2) {
+      // Photo 0 under Title on Left; Photo 1 on Right
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[0].id}`,
+          kind: "photo",
+          photoId: photos[0].id,
+          side: "left",
+          x: 6,
+          y: Math.min(36, leftY + 3),
+          w: 88,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[0],
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[1].id}`,
+          kind: "photo",
+          photoId: photos[1].id,
+          side: "right",
+          x: 6,
+          y: 8,
+          w: 88,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[1],
+        }),
+      );
+    } else if (photos.length === 3) {
+      // Photo 0 under Title on Left; Photo 1 & 2 side by side on Right
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[0].id}`,
+          kind: "photo",
+          photoId: photos[0].id,
+          side: "left",
+          x: 6,
+          y: Math.min(36, leftY + 3),
+          w: 88,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[0],
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[1].id}`,
+          kind: "photo",
+          photoId: photos[1].id,
+          side: "right",
+          x: 5,
+          y: 16,
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[1],
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[2].id}`,
+          kind: "photo",
+          photoId: photos[2].id,
+          side: "right",
+          x: 52,
+          y: 16,
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[2],
+        }),
+      );
+    } else if (photos.length === 4) {
+      // 2 on Left, 2 on Right
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[0].id}`,
+          kind: "photo",
+          photoId: photos[0].id,
+          side: "left",
+          x: 5,
+          y: Math.min(40, leftY + 3),
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[0],
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[1].id}`,
+          kind: "photo",
+          photoId: photos[1].id,
+          side: "left",
+          x: 52,
+          y: Math.min(40, leftY + 3),
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[1],
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[2].id}`,
+          kind: "photo",
+          photoId: photos[2].id,
+          side: "right",
+          x: 5,
+          y: 16,
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[2],
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[3].id}`,
+          kind: "photo",
+          photoId: photos[3].id,
+          side: "right",
+          x: 52,
+          y: 16,
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[3],
+        }),
+      );
+    } else {
+      // 5+ photos: 2 on left, rest on right in a 2-column grid
+      photos.forEach((photo, idx) => {
+        const side: "left" | "right" = idx < 2 ? "left" : "right";
+        if (side === "left") {
+          const col = idx % 2;
+          blocks.push(
+            clampBlock({
+              id: `photo-${photo.id}`,
+              kind: "photo",
+              photoId: photo.id,
+              side: "left",
+              x: col === 0 ? 5 : 52,
+              y: Math.min(40, leftY + 3),
+              w: 43,
+              z: zCounter++,
+              rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
+            }),
+          );
+        } else {
+          const rIdx = idx - 2;
+          const col = rIdx % 2;
+          const row = Math.floor(rIdx / 2);
+          blocks.push(
+            clampBlock({
+              id: `photo-${photo.id}`,
+              kind: "photo",
+              photoId: photo.id,
+              side: "right",
+              x: col === 0 ? 5 : 52,
+              y: 7 + row * 40,
+              w: 43,
+              z: zCounter++,
+              rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
+            }),
+          );
+        }
+      });
+    }
+  } else if (!hasHeader) {
+    // Pure images memory (no words)
+    photos.forEach((photo, idx) => {
       const side: "left" | "right" = idx % 2 === 0 ? "left" : "right";
       const slot = Math.floor(idx / 2);
       const countOnSide = Math.ceil((photos.length - (side === "right" ? 1 : 0)) / 2);
@@ -307,9 +738,9 @@ export function buildDefaultLayoutBlocks(
             kind: "photo",
             photoId: photo.id,
             side,
-            x: isPortraitAlbum ? 6 : 12,
-            y: isPortraitAlbum ? 6 : 12,
-            w: isPortraitAlbum ? 88 : 76,
+            x: 6,
+            y: 8,
+            w: 88,
             z: zCounter++,
             rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
           }),
@@ -323,38 +754,127 @@ export function buildDefaultLayoutBlocks(
             kind: "photo",
             photoId: photo.id,
             side,
-            x: col === 0 ? 5 : 51,
-            y: 7 + row * 38,
-            w: 44,
+            x: col === 0 ? 5 : 52,
+            y: 7 + row * 40,
+            w: 43,
             z: zCounter++,
             rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
           }),
         );
       }
-    } else {
-      const col = photos.length === 1 ? 0 : idx % 2;
-      const row = photos.length === 1 ? 0 : Math.floor(idx / 2);
+    });
+  } else {
+    // Long story text on left page: all photos on side: "right"
+    if (photos.length === 1) {
       blocks.push(
         clampBlock({
-          id: `photo-${photo.id}`,
+          id: `photo-${photos[0].id}`,
           kind: "photo",
-          photoId: photo.id,
+          photoId: photos[0].id,
           side: "right",
-          x: photos.length === 1 ? 6 : col === 0 ? 5 : 51,
-          y: photos.length === 1 ? 6 : 7 + row * 38,
-          w: photos.length === 1 ? 88 : 44,
+          x: 6,
+          y: 8,
+          w: 88,
           z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
+          rotation: isPortraitAlbum ? 0 : photoTilts[0],
         }),
       );
+    } else if (photos.length === 2) {
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[0].id}`,
+          kind: "photo",
+          photoId: photos[0].id,
+          side: "right",
+          x: 5,
+          y: 18,
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[0],
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[1].id}`,
+          kind: "photo",
+          photoId: photos[1].id,
+          side: "right",
+          x: 52,
+          y: 18,
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[1],
+        }),
+      );
+    } else if (photos.length === 3) {
+      // 1 Hero top + 2 bottom cards (no overlap!)
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[0].id}`,
+          kind: "photo",
+          photoId: photos[0].id,
+          side: "right",
+          x: 6,
+          y: 6,
+          w: 88,
+          z: zCounter++,
+          rotation: 0,
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[1].id}`,
+          kind: "photo",
+          photoId: photos[1].id,
+          side: "right",
+          x: 5,
+          y: 50,
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[1],
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[2].id}`,
+          kind: "photo",
+          photoId: photos[2].id,
+          side: "right",
+          x: 52,
+          y: 50,
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[2],
+        }),
+      );
+    } else {
+      // 4+ photos: 2x2 grid
+      photos.forEach((photo, idx) => {
+        const col = idx % 2;
+        const row = Math.floor(idx / 2);
+        blocks.push(
+          clampBlock({
+            id: `photo-${photo.id}`,
+            kind: "photo",
+            photoId: photo.id,
+            side: "right",
+            x: col === 0 ? 5 : 52,
+            y: 6 + row * 42,
+            w: 43,
+            z: zCounter++,
+            rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
+          }),
+        );
+      });
     }
-  });
+  }
 
   return blocks;
 }
 
 /**
  * Reconciles saved custom blocks with current content/photos so added or removed photos stay in sync.
+ * Automatically recovers from stale single-photo configurations or clashing block positions.
  */
 export function syncLayoutBlocksWithMemory(
   mem: Pick<MemoryAlbum, "title" | "note" | "paragraphs" | "photos" | "layoutBlocks">,
@@ -363,6 +883,21 @@ export function syncLayoutBlocksWithMemory(
   const existing = mem.layoutBlocks;
   if (!Array.isArray(existing) || existing.length === 0) return fallback;
 
+  // If existing blocks were saved when there was only 1 photo, but now there are multiple, re-generate clean layout
+  const existingPhotos = existing.filter((b) => b.kind === "photo");
+  if (existingPhotos.length === 1 && (mem.photos?.length || 0) > 1) {
+    return fallback;
+  }
+
+  // Detect overlapping blocks on same side from legacy bug
+  const rightPhotos = existing.filter((b) => b.kind === "photo" && b.side === "right");
+  const hasClashing = rightPhotos.some((a) =>
+    rightPhotos.some((b) => a.id !== b.id && a.w > 60 && Math.abs(a.y - b.y) < 25),
+  );
+  if (hasClashing) {
+    return fallback;
+  }
+
   const fallbackById = new Map(fallback.map((b) => [b.id, b]));
   const result: MemoryLayoutBlock[] = [];
   const seen = new Set<string>();
@@ -370,7 +905,7 @@ export function syncLayoutBlocksWithMemory(
   for (const raw of existing) {
     const valid =
       raw.kind === "photo"
-        ? Boolean(raw.photoId && mem.photos.some((p) => p.id === raw.photoId))
+        ? Boolean(raw.photoId && mem.photos?.some((p) => p.id === raw.photoId))
         : fallbackById.has(raw.kind);
     const id = raw.kind === "photo" && raw.photoId ? `photo-${raw.photoId}` : raw.kind;
     if (!valid || seen.has(id)) continue;
