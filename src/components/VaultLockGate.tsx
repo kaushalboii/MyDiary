@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import {
   CheckCircle2,
   Eye,
@@ -10,6 +11,7 @@ import {
   ShieldCheck,
   Trash2,
   UserPlus,
+  X,
 } from "lucide-react";
 import {
   bootstrapOwnerAccount,
@@ -30,6 +32,7 @@ import {
   hasVaultEnvelope,
   isVaultUnlocked,
   lockVaultNow,
+  setActiveUserEncryptionKey,
   touchVaultActivity,
   unlockVaultWithPassphrase,
   wipeLocalDiaryData,
@@ -39,6 +42,7 @@ type GateMode = "none" | "vault-locked" | "server-auth";
 type ServerAuthTab = "signin" | "register" | "setup-key";
 
 export function VaultLockGate({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const [mode, setMode] = useState<GateMode>(() =>
     typeof window !== "undefined" && hasVaultEnvelope() && !isVaultUnlocked()
       ? "vault-locked"
@@ -68,6 +72,13 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
 
   const evaluateGate = useCallback(async (forceServerAuth = false, customMsg?: string) => {
     const seq = ++checkSeqRef.current;
+
+    const isHome = !pathname || pathname === "/" || pathname.endsWith("/MyDiary") || pathname.endsWith("/MyDiary/");
+    if (isHome && !forceServerAuth) {
+      document.documentElement.dataset.vault = "open";
+      setMode("none");
+      return;
+    }
 
     if (hasVaultEnvelope() && !isVaultUnlocked()) {
       document.documentElement.dataset.vault = "locked";
@@ -112,7 +123,7 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
       document.documentElement.dataset.vault = "open";
       setMode("none");
     }
-  }, []);
+  }, [pathname]);
 
   useEffect(() => {
     void evaluateGate();
@@ -250,6 +261,8 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
         },
         targetCfg,
       );
+      await setActiveUserEncryptionKey(username.trim(), password);
+      await setActiveUserEncryptionKey(username.trim(), password);
       await sealIfRequested(res.sessionToken, targetCfg.serverUrl, targetCfg.label);
       setPassword("");
       setSetupToken("");
@@ -283,6 +296,8 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
         { username: username.trim(), password },
         targetCfg,
       );
+      await setActiveUserEncryptionKey(username.trim(), password);
+      await setActiveUserEncryptionKey(username.trim(), password);
       await sealIfRequested(res.sessionToken, targetCfg.serverUrl, targetCfg.label);
       setPassword("");
       setOptionalVaultPass("");
@@ -329,6 +344,7 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
         );
         return;
       }
+      await setActiveUserEncryptionKey(username.trim(), password);
       await sealIfRequested(res.sessionToken, targetCfg.serverUrl, targetCfg.label);
       setPassword("");
       setInviteCode("");
@@ -529,14 +545,26 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
   if (mode === "server-auth") {
     const needsOwnerSetup = Boolean(authStatus?.needsOwnerSetup);
     const inviteRequiredOnly = authStatus?.registrationMode === "invite-only";
+    const isHome = !pathname || pathname === "/" || pathname.endsWith("/MyDiary") || pathname.endsWith("/MyDiary/");
 
-    return (
+    const modal = (
       <main
         className="vault-gate-backdrop"
         data-testid="vault-gate"
         aria-label="Private Archive Sign In"
       >
-        <section className="vault-gate-card">
+        <section className="vault-gate-card relative">
+          <button
+            type="button"
+            onClick={() => {
+              setMode("none");
+              document.documentElement.dataset.vault = "open";
+            }}
+            className="absolute top-4 right-4 p-2 text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer"
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
           <div className="vault-gate-emblem" aria-hidden="true">
             <ShieldCheck size={22} />
           </div>
@@ -939,8 +967,28 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
               </label>
             </div>
           </details>
+
+          <button
+            type="button"
+            onClick={() => {
+              setMode("none");
+              document.documentElement.dataset.vault = "open";
+            }}
+            className="mt-4 block w-full text-center text-xs text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer uppercase tracking-wider"
+          >
+            ← Browse 3D Bookshelf as Guest
+          </button>
         </section>
       </main>
+    );
+
+    return isHome ? (
+      <>
+        <div className="vault-protected-shell">{children}</div>
+        {modal}
+      </>
+    ) : (
+      modal
     );
   }
 

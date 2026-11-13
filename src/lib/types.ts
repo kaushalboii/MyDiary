@@ -152,6 +152,9 @@ export type MemoryAlbum = {
   coverPhotoId: string | null;
   albumStyle: AlbumStyle;
   layoutBlocks?: MemoryLayoutBlock[];
+  encrypted?: boolean;
+  ciphertext?: string;
+  iv?: string;
   createdAt: string;
   updatedAt: string;
 };

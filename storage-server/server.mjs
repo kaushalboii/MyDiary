@@ -1940,7 +1940,7 @@ app.post("/api/memories", requireAuth, async (req, res) => {
     return;
   }
 
-  if (!title && !note && paragraphs.length === 0 && photoCheck.photos.length === 0) {
+  if (!title && !note && paragraphs.length === 0 && photoCheck.photos.length === 0 && !body.ciphertext) {
     res.status(400).json({ error: "Add a photo, a keepsake note, a title, or words to save this memory." });
     return;
   }
@@ -1976,6 +1976,11 @@ app.post("/api/memories", requireAuth, async (req, res) => {
           ? body.albumStyle
           : "polaroid",
       ...(layoutBlocks && layoutBlocks.length > 0 ? { layoutBlocks } : {}),
+      ...(body.encrypted ? {
+        encrypted: true,
+        ciphertext: String(body.ciphertext || ""),
+        iv: String(body.iv || ""),
+      } : {}),
       createdAt: now,
       updatedAt: now,
     };
@@ -2027,7 +2032,7 @@ app.put("/api/memories/:id", requireAuth, async (req, res) => {
     const nextParagraphs =
       body.paragraphs !== undefined ? normalizeParagraphs(body.paragraphs) : current.paragraphs;
 
-    if (!nextTitle && !nextNote && nextParagraphs.length === 0 && photos.length === 0) {
+    if (!nextTitle && !nextNote && nextParagraphs.length === 0 && photos.length === 0 && !body.ciphertext) {
       return { error: "Keep at least a photo, title, note, or paragraph in this memory." };
     }
 
@@ -2059,6 +2064,11 @@ app.put("/api/memories/:id", requireAuth, async (req, res) => {
             ? nextLayoutBlocks
             : undefined
           : current.layoutBlocks,
+      ...(body.encrypted ? {
+        encrypted: true,
+        ciphertext: String(body.ciphertext || ""),
+        iv: String(body.iv || ""),
+      } : {}),
       updatedAt: new Date().toISOString(),
     };
 

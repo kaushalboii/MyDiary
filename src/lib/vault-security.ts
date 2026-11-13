@@ -441,3 +441,55 @@ export async function wipeLocalDiaryData(): Promise<void> {
   window.dispatchEvent(new CustomEvent("mydiary:storage-config-changed"));
 }
 
+// --- Zero-Knowledge Military-Grade AES-256-GCM Memory Encryption ---
+let cachedUserKey: CryptoKey | null = null;
+const E2EE_SALT_PREFIX = "mydiary-e2ee-salt-v1:";
+
+export async function setActiveUserEncryptionKey(username: string, pass: string): Promise<CryptoKey | null> {
+  if (typeof window === "undefined" || !username || !pass) return null;
+  const subtle = requireWebCrypto();
+  const cleanUser = username.toLowerCase().trim();
+  const saltHash = await subtle.digest("SHA-256", new TextEncoder().encode(E2EE_SALT_PREFIX + cleanUser));
+  const salt = new Uint8Array(saltHash).slice(0, 16);
+  cachedUserKey = await deriveAesKey(pass, salt, PBKDF2_ITERATIONS, ["encrypt", "decrypt"]);
+  return cachedUserKey;
+}
+
+export function getActiveUserEncryptionKey(): CryptoKey | null {
+  return cachedUserKey;
+}
+
+export function clearActiveUserEncryptionKey(): void {
+  cachedUserKey = null;
+}
+
+export async function encryptMemoryPayload(
+  payload: { title: string; note: string; paragraphs: string[]; layoutBlocks?: unknown[] },
+  key: CryptoKey,
+): Promise<{ ciphertext: string; iv: string }> {
+  const subtle = requireWebCrypto();
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(JSON.stringify(payload));
+  const cipherBuffer = await subtle.encrypt({ name: "AES-GCM", iv }, key, encoded);
+  return {
+    ciphertext: bytesToBase64(new Uint8Array(cipherBuffer)),
+    iv: bytesToBase64(iv),
+  };
+}
+
+export async function decryptMemoryPayload(
+  ciphertext: string,
+  iv: string,
+  key: CryptoKey,
+): Promise<{ title: string; note: string; paragraphs: string[]; layoutBlocks?: unknown[] } | null> {
+  try {
+    const subtle = requireWebCrypto();
+    const cipherBytes = base64ToBytes(ciphertext);
+    const ivBytes = base64ToBytes(iv);
+    const decrypted = await subtle.decrypt({ name: "AES-GCM", iv: ivBytes }, key, cipherBytes);
+    return JSON.parse(new TextDecoder().decode(decrypted));
+  } catch {
+    return null;
+  }
+}
+

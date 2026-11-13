@@ -16,6 +16,9 @@ import type {
 import {
   AUTH_REQUIRED_EVENT,
   AUTH_SESSION_KEY,
+  decryptMemoryPayload,
+  encryptMemoryPayload,
+  getActiveUserEncryptionKey,
   getUnlockedVaultSecrets,
   hasVaultEnvelope,
   isVaultUnlocked,
@@ -866,7 +869,25 @@ export async function fetchMemories(params?: {
 
   try {
     const res = await serverFetch<{ memories: MemoryAlbum[] }>(`/api/memories${query}`);
-    return { memories: res.memories, mode: "server" };
+    const encKey = getActiveUserEncryptionKey();
+    const memories = await Promise.all(
+      res.memories.map(async (m) => {
+        if (m.encrypted && m.ciphertext && m.iv && encKey) {
+          const dec = await decryptMemoryPayload(m.ciphertext, m.iv, encKey);
+          if (dec) {
+            return {
+              ...m,
+              title: dec.title || m.title,
+              note: dec.note || m.note,
+              paragraphs: Array.isArray(dec.paragraphs) ? dec.paragraphs : m.paragraphs,
+              layoutBlocks: Array.isArray(dec.layoutBlocks) ? (dec.layoutBlocks as import("./types").MemoryLayoutBlock[]) : m.layoutBlocks,
+            };
+          }
+        }
+        return m;
+      }),
+    );
+    return { memories, mode: "server" };
   } catch (err) {
     if (isStorageAuthError(err)) throw err;
     let list = await getAllFromStore<MemoryAlbum>("memories");
@@ -893,7 +914,21 @@ export async function fetchMemory(
     const res = await serverFetch<{ memory: MemoryAlbum }>(
       `/api/memories/${encodeURIComponent(memoryId)}`,
     );
-    return { memory: res.memory, mode: "server" };
+    let memory = res.memory;
+    const encKey = getActiveUserEncryptionKey();
+    if (memory?.encrypted && memory.ciphertext && memory.iv && encKey) {
+      const dec = await decryptMemoryPayload(memory.ciphertext, memory.iv, encKey);
+      if (dec) {
+        memory = {
+          ...memory,
+          title: dec.title || memory.title,
+          note: dec.note || memory.note,
+          paragraphs: Array.isArray(dec.paragraphs) ? dec.paragraphs : memory.paragraphs,
+          layoutBlocks: Array.isArray(dec.layoutBlocks) ? (dec.layoutBlocks as import("./types").MemoryLayoutBlock[]) : memory.layoutBlocks,
+        };
+      }
+    }
+    return { memory, mode: "server" };
   } catch (err) {
     if (isStorageAuthError(err)) throw err;
     const list = await getAllFromStore<MemoryAlbum>("memories");
@@ -977,19 +1012,55 @@ export type SaveMemoryInput = {
   coverPhotoId: string | null;
   albumStyle: AlbumStyle;
   layoutBlocks?: import("./types").MemoryLayoutBlock[];
+  encrypted?: boolean;
+  ciphertext?: string;
+  iv?: string;
 };
 
 export async function createMemory(
   input: SaveMemoryInput,
 ): Promise<{ memory: MemoryAlbum; mode: StorageMode }> {
   try {
+    let payload = { ...input };
+    const encKey = getActiveUserEncryptionKey();
+    if (encKey) {
+      const enc = await encryptMemoryPayload(
+        {
+          title: input.title,
+          note: input.note,
+          paragraphs: input.paragraphs,
+          layoutBlocks: input.layoutBlocks,
+        },
+        encKey,
+      );
+      payload = {
+        ...payload,
+        encrypted: true,
+        ciphertext: enc.ciphertext,
+        iv: enc.iv,
+        title: "Encrypted Entry",
+        note: "",
+        paragraphs: [],
+        layoutBlocks: [],
+      };
+    }
+
     const res = await serverFetch<{ memory: MemoryAlbum }>("/api/memories", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: JSON.stringify(payload),
     });
     clearCachedServerBooks();
-    return { memory: res.memory, mode: "server" };
+    return {
+      memory: {
+        ...res.memory,
+        title: input.title,
+        note: input.note,
+        paragraphs: input.paragraphs,
+        layoutBlocks: input.layoutBlocks,
+      },
+      mode: "server",
+    };
   } catch (err) {
     if (isStorageAuthError(err) || isStorageClientError(err)) throw err;
     const now = new Date().toISOString();
@@ -1009,12 +1080,36 @@ export async function updateMemory(
   input: Partial<SaveMemoryInput>,
 ): Promise<{ memory: MemoryAlbum; mode: StorageMode }> {
   try {
+    let payload = { ...input };
+    const encKey = getActiveUserEncryptionKey();
+    if (encKey && (input.title !== undefined || input.note !== undefined || input.paragraphs !== undefined || input.layoutBlocks !== undefined)) {
+      const enc = await encryptMemoryPayload(
+        {
+          title: input.title ?? "",
+          note: input.note ?? "",
+          paragraphs: input.paragraphs ?? [],
+          layoutBlocks: input.layoutBlocks,
+        },
+        encKey,
+      );
+      payload = {
+        ...payload,
+        encrypted: true,
+        ciphertext: enc.ciphertext,
+        iv: enc.iv,
+        title: "Encrypted Entry",
+        note: "",
+        paragraphs: [],
+        layoutBlocks: [],
+      };
+    }
+
     const res = await serverFetch<{ memory: MemoryAlbum }>(
       `/api/memories/${encodeURIComponent(memoryId)}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify(payload),
       },
     );
     clearCachedServerBooks();
