@@ -396,21 +396,25 @@ export function FreeformPageSurface({
               {block.kind === "photo" && photo && (
                 <figure
                   className={`m-0 ${
-                    memory.albumStyle === "filmstrip"
-                      ? "filmstrip-frame"
-                      : memory.albumStyle === "grid"
-                        ? "border border-[var(--hairline)] bg-[var(--paper-light)] p-2 shadow-sm"
-                        : compact
-                          ? "polaroid-frame p-1.5! pb-3!"
-                          : "polaroid-frame"
+                    memory.albumStyle === "portrait"
+                      ? "border-0 p-0 bg-transparent shadow-xl rounded-2xl overflow-hidden"
+                      : memory.albumStyle === "filmstrip"
+                        ? "filmstrip-frame"
+                        : memory.albumStyle === "grid"
+                          ? "border border-[var(--hairline)] bg-[var(--paper-light)] p-2 shadow-sm"
+                          : compact
+                            ? "polaroid-frame p-1.5! pb-3!"
+                            : "polaroid-frame"
                   }`}
                   style={{
                     transform: `rotate(${
                       block.rotation !== undefined
                         ? `${block.rotation}deg`
-                        : memory.albumStyle === "polaroid"
-                          ? PHOTO_DEFAULT_TILTS[photoIndex % PHOTO_DEFAULT_TILTS.length]
-                          : "0deg"
+                        : memory.albumStyle === "portrait"
+                          ? "0deg"
+                          : memory.albumStyle === "polaroid"
+                            ? PHOTO_DEFAULT_TILTS[photoIndex % PHOTO_DEFAULT_TILTS.length]
+                            : "0deg"
                     })`,
                   }}
                 >
@@ -431,24 +435,28 @@ export function FreeformPageSurface({
                       alt={photo.caption || `Photo ${photoIndex + 1}`}
                       draggable={false}
                       className={`w-full ${
-                        memory.albumStyle === "filmstrip"
-                          ? compact
-                            ? "max-h-24 object-contain"
-                            : "max-h-56 object-contain"
-                          : memory.albumStyle === "grid"
-                            ? "aspect-[4/3] object-cover"
-                            : "aspect-square object-cover"
+                        memory.albumStyle === "portrait"
+                          ? "aspect-[3/4] sm:aspect-[4/5] object-cover"
+                          : memory.albumStyle === "filmstrip"
+                            ? compact
+                              ? "max-h-24 object-contain"
+                              : "max-h-56 object-contain"
+                            : memory.albumStyle === "grid"
+                              ? "aspect-[4/3] object-cover"
+                              : "aspect-square object-cover"
                       }`}
                     />
                   </button>
-                  {(photo.caption || memory.albumStyle !== "grid") && (
+                  {(photo.caption || (memory.albumStyle !== "grid" && memory.albumStyle !== "portrait")) && (
                     <figcaption
                       className={`px-1 text-center italic ${
                         compact ? "mt-1 text-[9px]" : "mt-2 text-xs"
                       } ${
                         memory.albumStyle === "filmstrip"
                           ? "text-[#dfd7c7]"
-                          : "text-[var(--page-ink-muted)]"
+                          : memory.albumStyle === "portrait"
+                            ? "mt-2.5 font-serif text-xs tracking-wider text-[var(--page-ink-muted)]"
+                            : "text-[var(--page-ink-muted)]"
                       }`}
                     >
                       {photo.caption || `${memory.date} · Frame ${photoIndex + 1}`}

@@ -103,6 +103,11 @@ const ALBUM_STYLES: Array<{
   desc: string;
 }> = [
   {
+    id: "portrait",
+    name: "Wedding Album",
+    desc: "Border-free fine art portraits & luxury multi-photo spreads",
+  },
+  {
     id: "polaroid",
     name: "Archival Polaroid",
     desc: "Tactile tilted frames with cream borders & serif captions",
@@ -2020,7 +2025,7 @@ export function VolumeEditorModal({
                 <label className="mb-1 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
                   Album Framing Style
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {ALBUM_STYLES.map((st) => (
                     <button
                       key={st.id}

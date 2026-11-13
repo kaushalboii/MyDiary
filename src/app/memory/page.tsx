@@ -305,11 +305,13 @@ function MemoryAlbumContent() {
                           </span>
                         </div>
                         <span className="text-[10px] font-semibold tracking-widest uppercase text-[var(--ink-soft)]">
-                          {memory.albumStyle === "filmstrip"
-                            ? "Contact Sheet"
-                            : memory.albumStyle === "grid"
-                              ? "Editorial Grid"
-                              : "Archival Polaroids"}
+                          {memory.albumStyle === "portrait"
+                            ? "Wedding Album"
+                            : memory.albumStyle === "filmstrip"
+                              ? "Contact Sheet"
+                              : memory.albumStyle === "grid"
+                                ? "Editorial Grid"
+                                : "Archival Polaroids"}
                         </span>
                       </div>
 
@@ -384,6 +386,71 @@ function MemoryAlbumContent() {
                       </figure>
                     ))}
                   </div>
+                ) : memory.albumStyle === "portrait" || memory.photos.length === 1 ? (
+                  memory.photos.length === 1 ? (
+                    <div className="flex flex-col items-center justify-center py-4">
+                      <figure className="m-0 w-full max-w-lg mx-auto flex flex-col items-center">
+                        <button
+                          type="button"
+                          onClick={() => setLightboxIndex(0)}
+                          className="group relative block w-full overflow-hidden rounded-2xl shadow-2xl transition duration-500 hover:scale-[1.015] cursor-pointer bg-[var(--paper-deep)]"
+                        >
+                          <img
+                            src={resolveMediaUrl(memory.photos[0].url)}
+                            alt={memory.photos[0].caption || "Wedding Portrait"}
+                            className="aspect-[3/4] sm:aspect-[4/5] max-h-[70vh] w-full object-cover transition duration-500 group-hover:brightness-105"
+                          />
+                        </button>
+                        {memory.photos[0].caption && (
+                          <figcaption className="mt-3 px-2 text-center font-serif text-sm italic tracking-wider text-[var(--page-ink-muted)]">
+                            {memory.photos[0].caption}
+                          </figcaption>
+                        )}
+                      </figure>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 py-2">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {memory.photos.slice(0, 2).map((photo, idx) => (
+                          <figure key={photo.id} className="m-0">
+                            <button
+                              type="button"
+                              onClick={() => setLightboxIndex(idx)}
+                              className="group relative block w-full overflow-hidden rounded-xl shadow-lg transition duration-500 hover:scale-[1.02] cursor-pointer bg-[var(--paper-deep)]"
+                            >
+                              <img
+                                src={resolveMediaUrl(photo.url)}
+                                alt={photo.caption || `Photo ${idx + 1}`}
+                                className="aspect-[4/3] w-full object-cover"
+                              />
+                            </button>
+                          </figure>
+                        ))}
+                      </div>
+                      {memory.photos.length > 2 && (
+                        <div className={`grid gap-3 ${memory.photos.length - 2 === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+                          {memory.photos.slice(2).map((photo, sliceIdx) => {
+                            const idx = sliceIdx + 2;
+                            return (
+                              <figure key={photo.id} className="m-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setLightboxIndex(idx)}
+                                  className="group relative block w-full overflow-hidden rounded-xl shadow-md transition duration-500 hover:scale-[1.02] cursor-pointer bg-[var(--paper-deep)]"
+                                >
+                                  <img
+                                    src={resolveMediaUrl(photo.url)}
+                                    alt={photo.caption || `Photo ${idx + 1}`}
+                                    className="aspect-[3/4] sm:aspect-[2/3] w-full object-cover"
+                                  />
+                                </button>
+                              </figure>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
                 ) : (
                   <div className="grid gap-6 sm:grid-cols-2">
                     {memory.photos.map((photo, idx) => (

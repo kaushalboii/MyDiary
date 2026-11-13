@@ -291,6 +291,7 @@ export function buildDefaultLayoutBlocks(
 
   const photos = mem.photos || [];
   const imagesOnly = isImagesOnlyMemory(mem);
+  const isPortraitAlbum = (mem as { albumStyle?: string }).albumStyle === "portrait" || photos.length === 1;
   const photoTilts = [-2, 2, -1.5, 2.5];
 
   photos.forEach((photo, idx) => {
@@ -306,11 +307,11 @@ export function buildDefaultLayoutBlocks(
             kind: "photo",
             photoId: photo.id,
             side,
-            x: 12,
-            y: 12,
-            w: 76,
+            x: isPortraitAlbum ? 6 : 12,
+            y: isPortraitAlbum ? 6 : 12,
+            w: isPortraitAlbum ? 88 : 76,
             z: zCounter++,
-            rotation: photoTilts[idx % photoTilts.length],
+            rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
           }),
         );
       } else {
@@ -326,7 +327,7 @@ export function buildDefaultLayoutBlocks(
             y: 7 + row * 38,
             w: 44,
             z: zCounter++,
-            rotation: photoTilts[idx % photoTilts.length],
+            rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
           }),
         );
       }
@@ -339,11 +340,11 @@ export function buildDefaultLayoutBlocks(
           kind: "photo",
           photoId: photo.id,
           side: "right",
-          x: photos.length === 1 ? 10 : col === 0 ? 5 : 51,
-          y: photos.length === 1 ? 10 : 7 + row * 38,
-          w: photos.length === 1 ? 80 : 44,
+          x: photos.length === 1 ? 6 : col === 0 ? 5 : 51,
+          y: photos.length === 1 ? 6 : 7 + row * 38,
+          w: photos.length === 1 ? 88 : 44,
           z: zCounter++,
-          rotation: photoTilts[idx % photoTilts.length],
+          rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
         }),
       );
     }

@@ -105,7 +105,7 @@ export type DiaryBook = {
   latestMemoryTitle?: string | null;
 };
 
-export type AlbumStyle = "polaroid" | "grid" | "filmstrip";
+export type AlbumStyle = "portrait" | "polaroid" | "grid" | "filmstrip";
 
 export type MemoryMood =
   | "Nostalgic"

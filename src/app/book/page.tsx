@@ -332,6 +332,188 @@ function BookMemoriesContent() {
           </div>
         );
       }
+      // Wedding Album / Borderless Fine Art Portrait Showcase
+      const isPortraitLayout =
+        mem.albumStyle === "portrait" || photoItems.length === 1;
+
+      if (isPortraitLayout) {
+        if (photoItems.length === 1) {
+          const { photo, idx } = photoItems[0];
+          return (
+            <div className="my-auto flex flex-1 flex-col items-center justify-center py-1 sm:py-2 w-full">
+              <figure className="m-0 w-full max-w-sm sm:max-w-md mx-auto flex flex-col items-center">
+                <button
+                  type="button"
+                  data-no-flip="true"
+                  onClick={() => setLightboxState({ memory: mem, index: idx })}
+                  className="group relative block w-full overflow-hidden rounded-xl sm:rounded-2xl shadow-xl sm:shadow-2xl transition duration-500 hover:scale-[1.015] cursor-pointer bg-[var(--paper-deep)]"
+                >
+                  <img
+                    src={resolveMediaUrl(photo.url)}
+                    alt={photo.caption || `Wedding Portrait`}
+                    className="aspect-[3/4] sm:aspect-[4/5] max-h-[58vh] sm:max-h-[500px] w-full object-cover transition duration-500 group-hover:brightness-105"
+                  />
+                </button>
+                {photo.caption && (
+                  <figcaption className="mt-3 px-2 text-center font-serif text-xs italic tracking-wider text-[var(--page-ink-muted)]">
+                    {photo.caption}
+                  </figcaption>
+                )}
+              </figure>
+            </div>
+          );
+        }
+
+        if (photoItems.length === 2) {
+          return (
+            <div className="my-auto grid grid-cols-2 gap-2.5 sm:gap-3.5 w-full py-1 sm:py-2">
+              {photoItems.map(({ photo, idx }) => (
+                <figure key={photo.id} className="m-0 flex flex-col items-center">
+                  <button
+                    type="button"
+                    data-no-flip="true"
+                    onClick={() => setLightboxState({ memory: mem, index: idx })}
+                    className="group relative block w-full overflow-hidden rounded-xl shadow-lg transition duration-500 hover:scale-[1.02] cursor-pointer bg-[var(--paper-deep)]"
+                  >
+                    <img
+                      src={resolveMediaUrl(photo.url)}
+                      alt={photo.caption || `Wedding frame ${idx + 1}`}
+                      className="aspect-[3/4] sm:aspect-[4/5] w-full object-cover transition duration-500 group-hover:brightness-105"
+                    />
+                  </button>
+                  {photo.caption && (
+                    <figcaption className="mt-2 px-1 text-center font-serif text-[11px] italic text-[var(--page-ink-muted)]">
+                      {photo.caption}
+                    </figcaption>
+                  )}
+                </figure>
+              ))}
+            </div>
+          );
+        }
+
+        if (photoItems.length === 3) {
+          return (
+            <div className="my-auto grid grid-cols-3 gap-2 sm:gap-2.5 w-full py-1 sm:py-2">
+              {photoItems.map(({ photo, idx }) => (
+                <figure key={photo.id} className="m-0 flex flex-col items-center">
+                  <button
+                    type="button"
+                    data-no-flip="true"
+                    onClick={() => setLightboxState({ memory: mem, index: idx })}
+                    className="group relative block w-full overflow-hidden rounded-lg shadow-md transition duration-500 hover:scale-[1.02] cursor-pointer bg-[var(--paper-deep)]"
+                  >
+                    <img
+                      src={resolveMediaUrl(photo.url)}
+                      alt={photo.caption || `Wedding frame ${idx + 1}`}
+                      className="aspect-[3/4] sm:aspect-[2/3] w-full object-cover transition duration-500 group-hover:brightness-105"
+                    />
+                  </button>
+                  {photo.caption && (
+                    <figcaption className="mt-1.5 px-0.5 text-center font-serif text-[10px] italic text-[var(--page-ink-muted)] truncate w-full">
+                      {photo.caption}
+                    </figcaption>
+                  )}
+                </figure>
+              ))}
+            </div>
+          );
+        }
+
+        if (photoItems.length === 4) {
+          return (
+            <div className="my-auto grid grid-cols-2 gap-2 sm:gap-2.5 w-full py-1 sm:py-2">
+              {photoItems.map(({ photo, idx }) => (
+                <figure key={photo.id} className="m-0 flex flex-col items-center">
+                  <button
+                    type="button"
+                    data-no-flip="true"
+                    onClick={() => setLightboxState({ memory: mem, index: idx })}
+                    className="group relative block w-full overflow-hidden rounded-lg shadow-md transition duration-500 hover:scale-[1.02] cursor-pointer bg-[var(--paper-deep)]"
+                  >
+                    <img
+                      src={resolveMediaUrl(photo.url)}
+                      alt={photo.caption || `Wedding frame ${idx + 1}`}
+                      className="aspect-[4/3] w-full object-cover transition duration-500 group-hover:brightness-105"
+                    />
+                  </button>
+                  {photo.caption && (
+                    <figcaption className="mt-1 px-1 text-center font-serif text-[10px] italic text-[var(--page-ink-muted)] truncate w-full">
+                      {photo.caption}
+                    </figcaption>
+                  )}
+                </figure>
+              ))}
+            </div>
+          );
+        }
+
+        // 5 or more photos: Wedding Album Hero + Multi-frame spread (matching luxury albums)
+        const topRow = photoItems.slice(0, 2);
+        const bottomRow = photoItems.slice(2, 5);
+        const extraRow = photoItems.slice(5);
+        return (
+          <div className="my-auto flex flex-col gap-2 sm:gap-2.5 w-full py-1 sm:py-2">
+            <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
+              {topRow.map(({ photo, idx }) => (
+                <figure key={photo.id} className="m-0">
+                  <button
+                    type="button"
+                    data-no-flip="true"
+                    onClick={() => setLightboxState({ memory: mem, index: idx })}
+                    className="group relative block w-full overflow-hidden rounded-lg shadow-md transition duration-500 hover:scale-[1.02] cursor-pointer bg-[var(--paper-deep)]"
+                  >
+                    <img
+                      src={resolveMediaUrl(photo.url)}
+                      alt={photo.caption || `Wedding frame ${idx + 1}`}
+                      className="aspect-[4/3] w-full object-cover transition duration-500 group-hover:brightness-105"
+                    />
+                  </button>
+                </figure>
+              ))}
+            </div>
+            <div className={`grid gap-2 sm:gap-2.5 ${bottomRow.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+              {bottomRow.map(({ photo, idx }) => (
+                <figure key={photo.id} className="m-0">
+                  <button
+                    type="button"
+                    data-no-flip="true"
+                    onClick={() => setLightboxState({ memory: mem, index: idx })}
+                    className="group relative block w-full overflow-hidden rounded-lg shadow-md transition duration-500 hover:scale-[1.02] cursor-pointer bg-[var(--paper-deep)]"
+                  >
+                    <img
+                      src={resolveMediaUrl(photo.url)}
+                      alt={photo.caption || `Wedding frame ${idx + 1}`}
+                      className="aspect-[3/4] sm:aspect-[2/3] w-full object-cover transition duration-500 group-hover:brightness-105"
+                    />
+                  </button>
+                </figure>
+              ))}
+            </div>
+            {extraRow.length > 0 && (
+              <div className="grid grid-cols-3 gap-2">
+                {extraRow.map(({ photo, idx }) => (
+                  <figure key={photo.id} className="m-0">
+                    <button
+                      type="button"
+                      data-no-flip="true"
+                      onClick={() => setLightboxState({ memory: mem, index: idx })}
+                      className="group relative block w-full overflow-hidden rounded-lg shadow-md transition duration-500 hover:scale-[1.02] cursor-pointer bg-[var(--paper-deep)]"
+                    >
+                      <img
+                        src={resolveMediaUrl(photo.url)}
+                        alt={photo.caption || `Wedding frame ${idx + 1}`}
+                        className="aspect-square w-full object-cover transition duration-500 group-hover:brightness-105"
+                      />
+                    </button>
+                  </figure>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      }
+
       return (
         <div
           className={`grid gap-5 ${
@@ -668,6 +850,10 @@ function BookMemoriesContent() {
         };
       }
 
+      const isWeddingPortrait =
+        mem.albumStyle === "portrait" ||
+        (mem.photos.length === 1 && mem.albumStyle !== "filmstrip" && mem.albumStyle !== "grid");
+
       const imagesOnly = isImagesOnlyMemory(mem);
       if (imagesOnly) {
         const indexed = mem.photos.map((photo, pIdx) => ({ photo, idx: pIdx }));
@@ -696,33 +882,46 @@ function BookMemoriesContent() {
           ),
           right: (
             <div className="flex flex-1 flex-col justify-between">
-              <div>
-                <div className="mb-5 flex items-center justify-between border-b border-[var(--hairline)] pb-2.5 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)]">
-                  <span className="inline-flex items-center gap-1.5">
-                    <Images className="h-3.5 w-3.5" style={{ color: pageAccent }} />
-                    {mem.photos.length} {mem.photos.length === 1 ? "Photograph" : "Photographs"}
-                  </span>
-                  <span>
-                    {mem.albumStyle === "filmstrip"
-                      ? "Contact Sheet"
-                      : mem.albumStyle === "grid"
-                        ? "Editorial Grid"
-                        : "Polaroids"}
-                  </span>
+              {rightPhotos.length > 0 ? (
+                <div className={`flex flex-1 flex-col ${isWeddingPortrait ? "justify-center my-auto" : ""}`}>
+                  {!isWeddingPortrait ? (
+                    <div className="mb-5 flex items-center justify-between border-b border-[var(--hairline)] pb-2.5 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)]">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Images className="h-3.5 w-3.5" style={{ color: pageAccent }} />
+                        {mem.photos.length} {mem.photos.length === 1 ? "Photograph" : "Photographs"}
+                      </span>
+                      <span>
+                        {mem.albumStyle === "filmstrip"
+                          ? "Contact Sheet"
+                          : mem.albumStyle === "grid"
+                            ? "Editorial Grid"
+                            : "Polaroids"}
+                      </span>
+                    </div>
+                  ) : mem.photos.length > 1 ? (
+                    <div className="mb-3 flex items-center justify-between text-[10px] font-semibold tracking-[0.2em] uppercase text-[var(--ink-soft)] opacity-70">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Images className="h-3.5 w-3.5" style={{ color: pageAccent }} />
+                        Wedding Album · {mem.photos.length} Photographs
+                      </span>
+                    </div>
+                  ) : null}
+                  {renderPhotoCollection(mem, rightPhotos)}
                 </div>
-                {rightPhotos.length > 0 ? (
-                  renderPhotoCollection(mem, rightPhotos)
-                ) : (
-                  <div className="flex min-h-[240px] flex-col items-center justify-center text-center opacity-55">
-                    <div
-                      className="h-2 w-2 rotate-45"
-                      style={{ backgroundColor: pageAccent }}
-                      aria-hidden="true"
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="mt-8 border-t border-[var(--hairline)] pt-3.5 text-right text-xs italic text-[var(--ink-soft)]">
+              ) : (
+                <div className="flex min-h-[240px] flex-col items-center justify-center text-center opacity-55">
+                  <div
+                    className="h-2 w-2 rotate-45"
+                    style={{ backgroundColor: pageAccent }}
+                    aria-hidden="true"
+                  />
+                </div>
+              )}
+              <div
+                className={`text-right text-xs italic text-[var(--ink-soft)] ${
+                  isWeddingPortrait ? "mt-auto pt-2 opacity-80" : "mt-8 border-t border-[var(--hairline)] pt-3.5"
+                }`}
+              >
                 {pageRightStr}
               </div>
             </div>
@@ -803,20 +1002,29 @@ function BookMemoriesContent() {
         right: (
           <div className="flex flex-1 flex-col justify-between">
             {indexedRightPhotos.length > 0 ? (
-              <div>
-                <div className="mb-5 flex items-center justify-between border-b border-[var(--hairline)] pb-2.5 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)]">
-                  <span className="inline-flex items-center gap-1.5">
-                    <Images className="h-3.5 w-3.5" style={{ color: pageAccent }} />
-                    Photographs · {mem.photos.length}
-                  </span>
-                  <span>
-                    {mem.albumStyle === "filmstrip"
-                      ? "Contact Sheet"
-                      : mem.albumStyle === "grid"
-                        ? "Editorial Grid"
-                        : "Polaroids"}
-                  </span>
-                </div>
+              <div className={`flex flex-1 flex-col ${isWeddingPortrait ? "justify-center my-auto" : ""}`}>
+                {!isWeddingPortrait ? (
+                  <div className="mb-5 flex items-center justify-between border-b border-[var(--hairline)] pb-2.5 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)]">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Images className="h-3.5 w-3.5" style={{ color: pageAccent }} />
+                      Photographs · {mem.photos.length}
+                    </span>
+                    <span>
+                      {mem.albumStyle === "filmstrip"
+                        ? "Contact Sheet"
+                        : mem.albumStyle === "grid"
+                          ? "Editorial Grid"
+                          : "Polaroids"}
+                    </span>
+                  </div>
+                ) : mem.photos.length > 1 ? (
+                  <div className="mb-3 flex items-center justify-between text-[10px] font-semibold tracking-[0.2em] uppercase text-[var(--ink-soft)] opacity-70">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Images className="h-3.5 w-3.5" style={{ color: pageAccent }} />
+                      Wedding Album · {mem.photos.length} Photographs
+                    </span>
+                  </div>
+                ) : null}
                 {renderPhotoCollection(mem, indexedRightPhotos)}
               </div>
             ) : (
@@ -835,7 +1043,11 @@ function BookMemoriesContent() {
               </div>
             )}
 
-            <div className="mt-8 border-t border-[var(--hairline)] pt-3.5 text-right text-xs italic text-[var(--ink-soft)]">
+            <div
+              className={`text-right text-xs italic text-[var(--ink-soft)] ${
+                isWeddingPortrait ? "mt-auto pt-2 opacity-80" : "mt-8 border-t border-[var(--hairline)] pt-3.5"
+              }`}
+            >
               {pageRightStr}
             </div>
           </div>

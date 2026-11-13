@@ -64,6 +64,11 @@ const ALBUM_STYLES: Array<{
   desc: string;
 }> = [
   {
+    id: "portrait",
+    name: "Wedding Album",
+    desc: "Border-free fine art portraits & luxury multi-photo spreads",
+  },
+  {
     id: "polaroid",
     name: "Archival Polaroid",
     desc: "Tactile tilted frames with cream borders & serif captions",
@@ -708,7 +713,7 @@ export function MemoryComposer({
                 <label className="mb-2.5 block text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
                   Album Presentation Style
                 </label>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   {ALBUM_STYLES.map((style) => (
                     <button
                       key={style.id}

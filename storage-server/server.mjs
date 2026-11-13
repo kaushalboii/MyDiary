@@ -2057,7 +2057,7 @@ app.post("/api/memories", requireAuth, async (req, res) => {
           ? body.coverPhotoId
           : photos[0]?.id || null,
       albumStyle:
-        body.albumStyle === "grid" || body.albumStyle === "filmstrip"
+        body.albumStyle === "portrait" || body.albumStyle === "grid" || body.albumStyle === "filmstrip"
           ? body.albumStyle
           : "polaroid",
       ...(layoutBlocks && layoutBlocks.length > 0 ? { layoutBlocks } : {}),
@@ -2138,6 +2138,7 @@ app.put("/api/memories/:id", requireAuth, async (req, res) => {
             ? current.coverPhotoId
             : photos[0]?.id || null,
       albumStyle:
+        body.albumStyle === "portrait" ||
         body.albumStyle === "polaroid" ||
         body.albumStyle === "grid" ||
         body.albumStyle === "filmstrip"
@@ -2299,7 +2300,9 @@ app.post("/api/sync", requireAuth, async (req, res) => {
             ? incomingMemory.coverPhotoId
             : photos[0]?.id || null,
         albumStyle:
-          incomingMemory.albumStyle === "grid" || incomingMemory.albumStyle === "filmstrip"
+          incomingMemory.albumStyle === "portrait" ||
+          incomingMemory.albumStyle === "grid" ||
+          incomingMemory.albumStyle === "filmstrip"
             ? incomingMemory.albumStyle
             : "polaroid",
         ...(syncedBlocks && syncedBlocks.length > 0 ? { layoutBlocks: syncedBlocks } : {}),
