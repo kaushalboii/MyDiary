@@ -224,6 +224,7 @@ export function FreeformPageSurface({
               top: `${block.y}%`,
               width: `${block.w}%`,
               zIndex: isDragging ? 80 : (block.z ?? 1),
+              touchAction: editing ? "none" : undefined,
             }}
             className={`freeform-block ${
               editing

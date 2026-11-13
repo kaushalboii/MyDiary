@@ -609,6 +609,29 @@ function BookMemoriesContent() {
               {welcomeText}
             </p>
 
+            <div className="mt-5 flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                data-no-flip="true"
+                onClick={() => {
+                  if (!isUserAuthenticated()) {
+                    window.dispatchEvent(
+                      new CustomEvent(AUTH_REQUIRED_EVENT, {
+                        detail: { message: "Sign in to customize this volume and edit memories." },
+                      }),
+                    );
+                    return;
+                  }
+                  setEditorInitialTab("cover");
+                  setEditingVolume(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-3.5 py-1.5 text-[10px] font-semibold tracking-wider text-[var(--ink)] uppercase hover:border-[var(--ink)] cursor-pointer"
+              >
+                <SlidersHorizontal className="h-3 w-3" />
+                <span>Customize Book</span>
+              </button>
+            </div>
+
             {memories.length > 0 ? (
               <div className="mt-8 border-t border-[var(--hairline)] pt-5 text-left">
                 <div className="mb-2.5 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)]">
@@ -730,21 +753,48 @@ function BookMemoriesContent() {
         draftBlocksByMemory[mem.id] ||
         (hasCustomLayout || isArranging ? syncLayoutBlocksWithMemory(mem) : null);
 
-      const spreadToolbarFooterLeft = !isUserAuthenticated() ? null : (
-        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3 text-xs text-[var(--ink-soft)]">
+      const spreadToolbarFooterLeft = (
+        <div data-no-flip="true" className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3 text-xs text-[var(--ink-soft)]">
           <div className="flex flex-wrap items-center gap-3">
-            <Link
-              href={`/compose?bookId=${encodeURIComponent(book.id)}&edit=${encodeURIComponent(mem.id)}`}
-              className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] no-underline hover:underline"
-            >
-              <Edit3 className="h-3.5 w-3.5" />
-              <span>Edit</span>
-            </Link>
+            {isUserAuthenticated() ? (
+              <Link
+                href={`/compose?bookId=${encodeURIComponent(book.id)}&edit=${encodeURIComponent(mem.id)}`}
+                data-no-flip="true"
+                className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] no-underline hover:underline"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+                <span>Edit</span>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                data-no-flip="true"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent(AUTH_REQUIRED_EVENT, {
+                      detail: { message: "Sign in to edit this memory." },
+                    }),
+                  );
+                }}
+                className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] cursor-pointer hover:underline"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+                <span>Edit</span>
+              </button>
+            )}
             <button
               type="button"
               data-no-flip="true"
               data-testid={`arrange-memory-${mem.id}`}
               onClick={() => {
+                if (!isUserAuthenticated()) {
+                  window.dispatchEvent(
+                    new CustomEvent(AUTH_REQUIRED_EVENT, {
+                      detail: { message: "Sign in to arrange memory blocks." },
+                    }),
+                  );
+                  return;
+                }
                 if (isArranging) {
                   setArrangingMemoryId(null);
                   setSelectedBlockId(null);
@@ -779,19 +829,90 @@ function BookMemoriesContent() {
                 <span>Reset</span>
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => void handleDeleteMemory(mem)}
-              disabled={deletingMemoryId === mem.id}
-              className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--accent)] cursor-pointer hover:underline disabled:opacity-50"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              <span>{deletingMemoryId === mem.id ? "Removing..." : "Remove"}</span>
-            </button>
+            {isUserAuthenticated() && (
+              <button
+                type="button"
+                data-no-flip="true"
+                onClick={() => void handleDeleteMemory(mem)}
+                disabled={deletingMemoryId === mem.id}
+                className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--accent)] cursor-pointer hover:underline disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>{deletingMemoryId === mem.id ? "Removing..." : "Remove"}</span>
+              </button>
+            )}
           </div>
           <span className="italic">
             {savingLayoutId === mem.id ? "Saving…" : pageLeftStr}
           </span>
+        </div>
+      );
+
+      const spreadToolbarFooterRight = (
+        <div data-no-flip="true" className="sm:hidden mt-auto pt-2.5 border-t border-[var(--hairline)]/50 flex items-center justify-between text-xs text-[var(--ink-soft)]">
+          <div className="flex items-center gap-3">
+            {isUserAuthenticated() ? (
+              <Link
+                href={`/compose?bookId=${encodeURIComponent(book.id)}&edit=${encodeURIComponent(mem.id)}`}
+                data-no-flip="true"
+                className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] no-underline hover:underline"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+                <span>Edit</span>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                data-no-flip="true"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent(AUTH_REQUIRED_EVENT, {
+                      detail: { message: "Sign in to edit this memory." },
+                    }),
+                  );
+                }}
+                className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] cursor-pointer hover:underline"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+                <span>Edit</span>
+              </button>
+            )}
+            <button
+              type="button"
+              data-no-flip="true"
+              onClick={() => {
+                if (!isUserAuthenticated()) {
+                  window.dispatchEvent(
+                    new CustomEvent(AUTH_REQUIRED_EVENT, {
+                      detail: { message: "Sign in to arrange memory blocks." },
+                    }),
+                  );
+                  return;
+                }
+                if (isArranging) {
+                  setArrangingMemoryId(null);
+                  setSelectedBlockId(null);
+                } else {
+                  setDraftBlocksByMemory((prev) => ({
+                    ...prev,
+                    [mem.id]:
+                      prev[mem.id] ||
+                      (mem.layoutBlocks?.length
+                        ? syncLayoutBlocksWithMemory(mem)
+                        : buildDefaultLayoutBlocks(mem)),
+                  }));
+                  setArrangingMemoryId(mem.id);
+                }
+              }}
+              className={`inline-flex items-center gap-1 font-semibold tracking-wider uppercase cursor-pointer hover:underline ${
+                isArranging ? "text-[var(--accent)]" : "text-[var(--ink)]"
+              }`}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span>{isArranging ? "Done" : "Arrange"}</span>
+            </button>
+          </div>
+          <span className="text-[11px] italic opacity-75">{pageRightStr}</span>
         </div>
       );
 
@@ -917,8 +1038,9 @@ function BookMemoriesContent() {
                   />
                 </div>
               )}
+              {spreadToolbarFooterRight}
               <div
-                className={`text-right text-xs italic text-[var(--ink-soft)] ${
+                className={`hidden sm:block text-right text-xs italic text-[var(--ink-soft)] ${
                   isWeddingPortrait ? "mt-auto pt-2 opacity-80" : "mt-8 border-t border-[var(--hairline)] pt-3.5"
                 }`}
               >
@@ -1043,8 +1165,9 @@ function BookMemoriesContent() {
               </div>
             )}
 
+            {spreadToolbarFooterRight}
             <div
-              className={`text-right text-xs italic text-[var(--ink-soft)] ${
+              className={`hidden sm:block text-right text-xs italic text-[var(--ink-soft)] ${
                 isWeddingPortrait ? "mt-auto pt-2 opacity-80" : "mt-8 border-t border-[var(--hairline)] pt-3.5"
               }`}
             >
@@ -1112,6 +1235,29 @@ function BookMemoriesContent() {
         </Link>
 
         <div className="header-controls-cluster">
+          {/* Always visible Customize button on mobile header so mobile users can edit without searching */}
+          <button
+            type="button"
+            onClick={() => {
+              if (!isUserAuthenticated()) {
+                window.dispatchEvent(
+                  new CustomEvent(AUTH_REQUIRED_EVENT, {
+                    detail: { message: "Sign in to customize this volume and edit memories." },
+                  }),
+                );
+                return;
+              }
+              setEditorInitialTab("cover");
+              setEditingVolume(true);
+            }}
+            className="sm:hidden inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--pill-bg)] px-3 py-1.5 text-[10px] font-semibold tracking-wider text-[var(--ink)] uppercase transition hover:border-[var(--ink)] cursor-pointer"
+            aria-label="Customize Book"
+            title="Customize Book"
+          >
+            <SlidersHorizontal className="h-3 w-3" />
+            <span>Customize</span>
+          </button>
+
           <ExpandableDock
             ariaLabel="Book controls"
             onStorageConnected={() => void loadData(true)}
@@ -1141,25 +1287,29 @@ function BookMemoriesContent() {
               ))}
             </select>
 
-            {isUserAuthenticated() && (
-              <>
-                <span className="top-dock__divider" aria-hidden="true" />
+            <span className="top-dock__divider" aria-hidden="true" />
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditorInitialTab("cover");
-                    setEditingVolume(true);
-                  }}
-                  className="top-dock__btn top-dock__btn--primary"
-                  aria-label="Customize Book & Memories"
-                  title="Customize Book & Memories"
-                >
-                  <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Customize</span>
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (!isUserAuthenticated()) {
+                  window.dispatchEvent(
+                    new CustomEvent(AUTH_REQUIRED_EVENT, {
+                      detail: { message: "Sign in to customize this volume and edit memories." },
+                    }),
+                  );
+                  return;
+                }
+                setEditorInitialTab("cover");
+                setEditingVolume(true);
+              }}
+              className="top-dock__btn top-dock__btn--primary"
+              aria-label="Customize Book & Memories"
+              title="Customize Book & Memories"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Customize</span>
+            </button>
           </ExpandableDock>
 
           <ThemeToggle />

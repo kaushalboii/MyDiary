@@ -4,9 +4,10 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, BookOpen, ChevronDown, ChevronUp, Feather, Images, PenLine, Plus } from "lucide-react";
+import { ArrowUpRight, BookOpen, ChevronDown, ChevronUp, Feather, Images, PenLine, Plus, SlidersHorizontal } from "lucide-react";
 import { defaultBooks } from "@/lib/default-books";
 import {
+  AUTH_REQUIRED_EVENT,
   createBook,
   deleteBook,
   fetchBooks,
@@ -413,6 +414,28 @@ function ShelfExperienceInner() {
               <span>Inspect</span>
             </button>
 
+            <button
+              type="button"
+              className="top-dock__btn"
+              data-testid="customize-active"
+              onClick={() => {
+                if (!isUserAuthenticated()) {
+                  window.dispatchEvent(
+                    new CustomEvent(AUTH_REQUIRED_EVENT, {
+                      detail: { message: "Sign in to customize this volume." },
+                    }),
+                  );
+                  return;
+                }
+                setEditorState({ mode: "edit", book: activeBook });
+              }}
+              aria-label={`Customize ${activeBook.title}`}
+              title={`Customize ${activeBook.title}`}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Customize</span>
+            </button>
+
             {isUserAuthenticated() && (
               <button
                 type="button"
@@ -671,17 +694,41 @@ function ShelfExperienceInner() {
                 )}
               </div>
 
-              <Link
-                className="official-link"
-                data-testid="open-volume-memories"
-                href={`/book?id=${encodeURIComponent(selectedBook.id)}`}
-              >
-                <span className="inline-flex items-center gap-2">
-                  <BookOpen className="h-3.5 w-3.5" />
-                  <span>Open Book & Memories</span>
-                </span>
-                <span aria-hidden="true">→</span>
-              </Link>
+              <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                <Link
+                  className="official-link flex-1"
+                  data-testid="open-volume-memories"
+                  href={`/book?id=${encodeURIComponent(selectedBook.id)}`}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <BookOpen className="h-3.5 w-3.5" />
+                    <span>Open Book & Memories</span>
+                  </span>
+                  <span aria-hidden="true">→</span>
+                </Link>
+
+                <button
+                  type="button"
+                  data-testid="customize-book-shelf"
+                  onClick={() => {
+                    if (!isUserAuthenticated()) {
+                      window.dispatchEvent(
+                        new CustomEvent(AUTH_REQUIRED_EVENT, {
+                          detail: { message: "Sign in to customize this volume and edit memories." },
+                        }),
+                      );
+                      return;
+                    }
+                    setEditorState({ mode: "edit", book: selectedBook });
+                  }}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-4 py-3 text-xs font-semibold tracking-wider text-[var(--ink)] uppercase transition hover:border-[var(--ink)] hover:bg-[var(--paper)] cursor-pointer"
+                  aria-label={`Customize ${selectedBook.title}`}
+                  title={`Customize ${selectedBook.title}`}
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                  <span>Customize</span>
+                </button>
+              </div>
             </div>
 
             <div className="focus-controls" aria-label="Inspection controls">
