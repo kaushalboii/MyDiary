@@ -957,7 +957,7 @@ export function StorageSettingsModal({
                 <form onSubmit={handleSignInOrRegister} className="space-y-4 border border-[var(--hairline)] bg-[var(--paper-light)] p-4">
                   <div className="flex items-center justify-between">
                     <h3 className="m-0 font-serif text-lg">
-                      {authFormMode === "signin" ? "Sign In to Account" : "Join With Verification"}
+                      {authFormMode === "signin" ? "Sign In to Account" : "Create Account"}
                     </h3>
                     <button
                       type="button"
@@ -966,7 +966,7 @@ export function StorageSettingsModal({
                       }
                       className="text-xs font-semibold uppercase tracking-wider text-[var(--accent)] cursor-pointer"
                     >
-                      {authFormMode === "signin" ? "Have an Invite Code?" : "Back to Sign In"}
+                      {authFormMode === "signin" ? "Need an account? Create one" : "Already have an account? Sign In"}
                     </button>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -993,14 +993,7 @@ export function StorageSettingsModal({
                         type="text"
                         value={displayName}
                         onChange={(e) => setDisplayName(e.target.value)}
-                        placeholder="Display name"
-                        className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
-                      />
-                      <input
-                        type="text"
-                        value={inviteCodeInput}
-                        onChange={(e) => setInviteCodeInput(e.target.value.toUpperCase())}
-                        placeholder="Invite code (MYD-XXXX-XXXX)"
+                        placeholder="Display name (optional)"
                         className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
                       />
                     </div>
@@ -1011,7 +1004,7 @@ export function StorageSettingsModal({
                     className="inline-flex items-center gap-2 bg-[var(--ink)] px-4 py-2 text-xs font-semibold tracking-wider text-[var(--paper-light)] uppercase cursor-pointer"
                   >
                     <UserPlus className="h-3.5 w-3.5" />
-                    <span>{authBusy ? "Submitting..." : authFormMode === "signin" ? "Sign In" : "Verify & Join"}</span>
+                    <span>{authBusy ? "Submitting..." : authFormMode === "signin" ? "Sign In" : "Create Account"}</span>
                   </button>
                 </form>
               )

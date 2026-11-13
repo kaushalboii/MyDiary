@@ -1340,12 +1340,6 @@ app.post("/api/auth/register", (req, res) => {
   if (checkRateLimitBlocked(req, res, "register")) return;
 
   const store = readUsersStore();
-  if (store.users.length === 0) {
-    return res.status(400).json({
-      error: "Owner setup has not finished yet. Create the owner account first.",
-    });
-  }
-
   const body = req.body || {};
   const username = normalizeUsername(body.username);
   const displayName = String(body.displayName || username).trim().slice(0, 64);
@@ -1364,87 +1358,53 @@ app.post("/api/auth/register", (req, res) => {
     return res.status(409).json({ error: "That username is already registered." });
   }
 
+  const isFirstUser = store.users.length === 0;
+  const role = isFirstUser ? "owner" : "member";
+  const nowIso = new Date().toISOString();
+
   if (inviteCode) {
     const inviteStore = readInvitesStore();
     const codeHash = hashInviteCode(inviteCode);
-    const nowIso = new Date().toISOString();
     const invite = inviteStore.invites.find(
       (inv) =>
         !inv.usedBy &&
         (!inv.expiresAt || inv.expiresAt > nowIso) &&
         timingSafeEqualStr(inv.codeHash, codeHash),
     );
-    if (!invite) {
-      return failAuthWithRateLimit(req, res, 401, "Invalid or expired invite verification code.", "register");
+    if (invite) {
+      invite.usedBy = `usr_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+      invite.usedByUsername = username;
+      invite.usedAt = nowIso;
+      writeInvitesStore(inviteStore);
     }
-
-    const member = {
-      id: `usr_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`,
-      username,
-      displayName: displayName || username,
-      passwordHash: hashPassword(password),
-      role: "member",
-      status: "active",
-      invitedBy: invite.createdBy,
-      createdAt: nowIso,
-      lastLoginAt: nowIso,
-    };
-
-    invite.usedBy = member.id;
-    invite.usedByUsername = member.username;
-    invite.usedAt = nowIso;
-    writeInvitesStore(inviteStore);
-
-    store.users.push(member);
-    writeUsersStore(store);
-    readDb(member.id);
-    clearAuthFailures(req, "register");
-
-    const sessionToken = signSessionToken(member);
-    res.status(201).json({
-      pendingVerification: false,
-      sessionToken,
-      user: toPublicUser(member),
-    });
-    return;
   }
 
-  if (!ALLOW_ACCESS_REQUESTS) {
-    return failAuthWithRateLimit(
-      req,
-      res,
-      403,
-      "A valid owner invite code is required to register.",
-      "register",
-    );
-  }
-
-  const pendingCount = store.users.filter((u) => u.status === "pending").length;
-  if (pendingCount >= 25) {
-    return res.status(429).json({
-      error: "Too many unverified requests are pending. Use an invite code instead.",
-    });
-  }
-
-  recordAuthFailure(getClientIpKey(req, "register"));
-  const pendingMember = {
+  const newUser = {
     id: `usr_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`,
     username,
     displayName: displayName || username,
     passwordHash: hashPassword(password),
-    role: "member",
-    status: "pending",
+    role,
+    status: "active",
     invitedBy: null,
-    createdAt: new Date().toISOString(),
-    lastLoginAt: null,
+    createdAt: nowIso,
+    lastLoginAt: nowIso,
   };
-  store.users.push(pendingMember);
-  writeUsersStore(store);
 
-  res.status(202).json({
-    pendingVerification: true,
-    user: toPublicUser(pendingMember),
-    message: "Account request submitted. Ask the archive owner to verify and activate your access.",
+  if (isFirstUser) {
+    migrateLegacyDataToOwner(newUser.id);
+  }
+
+  store.users.push(newUser);
+  writeUsersStore(store);
+  readDb(newUser.id);
+  clearAuthFailures(req, "register");
+
+  const sessionToken = signSessionToken(newUser);
+  res.status(201).json({
+    pendingVerification: false,
+    sessionToken,
+    user: toPublicUser(newUser),
   });
 });
 
