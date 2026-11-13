@@ -12,21 +12,29 @@ An editorial **3D physical memory library & interactive flipbook diary** built w
 
 ## 💖 Sponsor & Support
 
-MyDiary is an independent open-source project. If you love using MyDiary, find it inspiring, or want to support ongoing development and server maintenance, please consider sponsoring!
+MyDiary is an independent open-source creation by **[M Kaushal Maran](https://github.com/kaushalboii)**. If you love using MyDiary, find it inspiring, or want to support ongoing development, physical book aesthetics, and cloud sync infrastructure, please consider sponsoring!
 
-<p align="center">
-  <iframe src="https://github.com/sponsors/kaushalboii/button" title="Sponsor kaushalboii" height="32" width="114" style="border: 0; border-radius: 6px;"></iframe>
+<div align="center">
+
+<a href="https://github.com/sponsors/kaushalboii">
+  <img src="https://img.shields.io/badge/Sponsor%20@kaushalboii-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub" height="42" />
+</a>
+
+<br /><br />
+
+<a href="https://github.com/sponsors/kaushalboii">
+  <img src="https://img.shields.io/badge/GitHub%20Sponsors-M%20Kaushal%20Maran-181717?style=flat-square&logo=github&logoColor=white" alt="GitHub Sponsors Profile" />
+</a>
+&nbsp;
+<a href="https://github.com/sponsors/kaushalboii">
+  <img src="https://img.shields.io/badge/Sponsorship%20Tiers-Custom%20%26%20Monthly-2ea44f?style=flat-square&logo=github" alt="Sponsorship Tiers" />
+</a>
+
+<p>
+  <strong>Click above to sponsor via GitHub Sponsors. Every tier and one-time tip is deeply appreciated!</strong>
 </p>
 
-<p align="center">
-  <iframe src="https://github.com/sponsors/kaushalboii/card" title="Sponsor kaushalboii" height="225" width="600" style="border: 0;"></iframe>
-</p>
-
-<p align="center">
-  <a href="https://github.com/sponsors/kaushalboii">
-    <img src="https://img.shields.io/badge/Sponsor%20on%20GitHub-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor kaushalboii" />
-  </a>
-</p>
+</div>
 
 ---
 
@@ -122,9 +130,22 @@ Inside the web app, navigate to **Menu → Security & Members**, enter your priv
 
 ---
 
-## 👤 Author
+## 👤 Author & Creator
 
 **Created with ❤️ by [M Kaushal Maran](https://github.com/kaushalboii)**
 
 - GitHub: [@kaushalboii](https://github.com/kaushalboii)
 - Repository: [https://github.com/kaushalboii/MyDiary](https://github.com/kaushalboii/MyDiary)
+
+---
+
+## 📄 License & Intellectual Property Ownership
+
+Copyright © 2026 **M Kaushal Maran**. All rights reserved.
+
+This project is licensed under the [MIT License](LICENSE).
+
+### What this means:
+- **Sole Ownership:** The original concept, 3D physical shelf & flipbook experience, editorial layouts, and source code are the original creation and intellectual property of **M Kaushal Maran**.
+- **Usage Rights:** Anyone is permitted to use, run, fork, study, and build upon this project for free.
+- **Mandatory Attribution:** Any copies, forks, or derivative distributions **must retain the original copyright notice and attribution to M Kaushal Maran**. Users and forks cannot claim ownership or creation of the original concept or project.

@@ -289,7 +289,7 @@ export function StorageSettingsModal({
           <p className="mx-auto mt-1 max-w-sm text-xs text-[var(--ink-soft)] leading-relaxed">
             MyDiary is free and open source. If you love this project, consider sponsoring M Kaushal Maran on GitHub Sponsors!
           </p>
-          <div className="mt-3 flex justify-center">
+          <div className="mt-3 flex flex-col items-center justify-center gap-2">
             <iframe
               src="https://github.com/sponsors/kaushalboii/button"
               title="Sponsor kaushalboii"
@@ -297,6 +297,14 @@ export function StorageSettingsModal({
               width="114"
               style={{ border: 0, borderRadius: "6px" }}
             />
+            <a
+              href="https://github.com/sponsors/kaushalboii"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-[var(--accent)] no-underline hover:underline"
+            >
+              <span>Visit GitHub Sponsors Profile →</span>
+            </a>
           </div>
         </div>
       </div>
