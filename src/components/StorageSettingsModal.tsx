@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   LogOut,
   RefreshCw,
@@ -118,9 +119,9 @@ export function StorageSettingsModal({
 
   const currentUser = authStatus?.user ?? health?.user ?? null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[120] flex items-center justify-center overflow-y-auto bg-black/40 p-4 sm:p-6 backdrop-blur-xs"
+      className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto bg-black/60 p-4 sm:p-6 backdrop-blur-xs"
       role="dialog"
       aria-modal="true"
       aria-label="Account and cloud storage"
@@ -129,7 +130,7 @@ export function StorageSettingsModal({
       }}
     >
       <div
-        className="stationery-card relative my-auto w-full max-w-lg p-6 sm:p-8"
+        className="stationery-card relative my-auto w-full max-w-lg p-6 sm:p-8 shadow-2xl"
         data-testid="security-storage-modal"
       >
         <button
@@ -279,6 +280,7 @@ export function StorageSettingsModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
