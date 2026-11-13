@@ -15,6 +15,7 @@ import {
   MapPin,
   PenLine,
   RotateCcw,
+  RotateCw,
   SlidersHorizontal,
   StickyNote,
   Trash2,
@@ -1293,6 +1294,97 @@ function BookMemoriesContent() {
           onChangeIndex={setActiveSpreadIndex}
           opening={loading}
         />
+
+        {memories.length > 0 && (
+          <div className="mt-8 border-t border-[var(--hairline)]/70 pt-5">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)]">
+              <span>Chapters & Memory Ribbon</span>
+              <span className="inline-flex items-center gap-1.5 opacity-75">
+                <RotateCw className="h-3 w-3" />
+                <span>Rotate phone for full-screen landscape view</span>
+              </span>
+            </div>
+
+            <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-thin">
+              {/* Card 0: Cover / Title Page */}
+              <button
+                type="button"
+                onClick={() => setActiveSpreadIndex(0)}
+                className={`flex shrink-0 items-center gap-2.5 rounded-lg border p-2 transition text-left cursor-pointer ${
+                  safeSpreadIndex === 0
+                    ? "border-[var(--ink)] bg-[var(--paper-deep)] ring-1 ring-[var(--ink)]"
+                    : "border-[var(--hairline)] bg-[var(--paper-light)]/70 hover:border-[var(--ink-soft)]"
+                }`}
+              >
+                <div
+                  className="h-12 w-9 rounded shrink-0 shadow-xs flex items-center justify-center font-serif text-[11px] font-bold"
+                  style={{
+                    backgroundColor: book.cover,
+                    color: book.accent,
+                  }}
+                >
+                  01
+                </div>
+                <div className="flex flex-col pr-1.5 max-w-[120px]">
+                  <span className="text-xs font-serif font-semibold text-[var(--ink)] truncate">
+                    {book.title}
+                  </span>
+                  <span className="text-[10px] text-[var(--ink-soft)] truncate">
+                    Opening & Contents
+                  </span>
+                  <span className="text-[10px] font-medium text-[var(--accent)] mt-0.5">
+                    pp. 01–02
+                  </span>
+                </div>
+              </button>
+
+              {/* Memory Cards */}
+              {memories.map((mem, idx) => {
+                const spreadIdx = idx + 1;
+                const isCurrent = safeSpreadIndex === spreadIdx;
+                const coverPhoto = mem.photos[0];
+                const leftP = (idx + 1) * 2 + 1;
+                const rightP = (idx + 1) * 2 + 2;
+
+                return (
+                  <button
+                    key={mem.id}
+                    type="button"
+                    onClick={() => setActiveSpreadIndex(spreadIdx)}
+                    className={`flex shrink-0 items-center gap-2.5 rounded-lg border p-2 transition text-left cursor-pointer ${
+                      isCurrent
+                        ? "border-[var(--ink)] bg-[var(--paper-deep)] ring-1 ring-[var(--ink)]"
+                        : "border-[var(--hairline)] bg-[var(--paper-light)]/70 hover:border-[var(--ink-soft)]"
+                    }`}
+                  >
+                    {coverPhoto ? (
+                      <img
+                        src={resolveMediaUrl(coverPhoto.url)}
+                        alt={getMemoryDisplayTitle(mem)}
+                        className="h-12 w-12 rounded object-cover shrink-0 shadow-xs bg-black/10"
+                      />
+                    ) : (
+                      <div className="h-12 w-12 rounded shrink-0 bg-[var(--paper-deep)] flex items-center justify-center text-xs font-serif text-[var(--ink-soft)]">
+                        {String(idx + 1).padStart(2, "0")}
+                      </div>
+                    )}
+                    <div className="flex flex-col pr-1.5 max-w-[140px]">
+                      <span className="text-xs font-serif font-semibold text-[var(--ink)] truncate">
+                        {getMemoryDisplayTitle(mem)}
+                      </span>
+                      <span className="text-[10px] text-[var(--ink-soft)] truncate">
+                        {mem.date} · {mem.mood}
+                      </span>
+                      <span className="text-[10px] font-medium text-[var(--accent)] mt-0.5">
+                        pp. {String(leftP).padStart(2, "0")}–{String(rightP).padStart(2, "0")}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </main>
 
       {lightboxState && lightboxState.memory.photos[lightboxState.index] && (

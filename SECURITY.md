@@ -46,3 +46,4 @@ If you discover a security vulnerability within MyDiary, please report it privat
 2. **Direct Contact:** Open an issue marked with the `security` label or reach out to [@kaushalboii](https://github.com/kaushalboii).
 
 Please do not disclose security issues publicly until a patch has been published. All valid vulnerability reports will be addressed promptly.
+

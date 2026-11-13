@@ -767,8 +767,8 @@ export function FlipBookReader({
               ...pageVars,
             }}
           >
-            {/* Stationary Spread Base — exact invariant height & 50/50 split */}
-            <div className="grid h-[580px] lg:h-[630px] w-full grid-cols-2 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-lg">
+            {/* Stationary Spread Base — adaptive height on tall viewports & exact 50/50 split */}
+            <div className="grid min-h-[540px] h-[clamp(540px,64dvh,740px)] w-full grid-cols-2 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-lg">
               {/* Left Base Page */}
               <div
                 data-testid="flipbook-page-left"

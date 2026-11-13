@@ -1443,6 +1443,8 @@ html[data-vault="locked"] .vault-protected-shell {
 
 .diary-page {
   min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   overflow-x: clip;
   background:
     radial-gradient(circle at 18% 8%, var(--ambient-glow), transparent 44%),
@@ -1470,7 +1472,11 @@ html[data-vault="locked"] .vault-protected-shell {
 .diary-container {
   width: min(1220px, 100%);
   margin: 0 auto;
-  padding: clamp(24px, 4vw, 48px) clamp(18px, 4vw, 44px) 84px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(20px, 3vw, 40px) clamp(16px, 3vw, 44px) 56px;
 }
 
 .flip-page-scroll {
