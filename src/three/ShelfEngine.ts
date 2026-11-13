@@ -474,7 +474,7 @@ export class ShelfEngine {
     }
     if (this.backgroundTaskQueue.length > 0) {
       // Defer background hydration on initial load so FCP/LCP and Lighthouse complete cleanly with 0ms TBT
-      const delay = this.initialHydrationDone ? 60 : 2200;
+      const delay = this.initialHydrationDone ? 60 : 300;
       this.backgroundQueueTimer = window.setTimeout(
         this.pumpBackgroundQueue,
         delay,
@@ -550,22 +550,16 @@ export class ShelfEngine {
   public refreshTypographyTextures() {
     if (this.isDisposed || this.runtimeBooks.length === 0) return;
     this.clearBackgroundQueue();
-    const priorityIndex = this.selectedIndex ?? this.activeIndex;
-    const ordered = [...this.runtimeBooks].sort(
-      (a, b) =>
-        Math.abs(a.index - priorityIndex) - Math.abs(b.index - priorityIndex),
-    );
-    for (const runtime of ordered) {
+    for (const runtime of this.runtimeBooks) {
       runtime.hasSpineTexture = false;
-      runtime.hasCoverTextures = false;
-      if (Math.abs(runtime.index - priorityIndex) <= 3) {
-        this.applySpineTexture(runtime);
-        if (runtime.index === priorityIndex) {
-          this.applyCoverTextures(runtime);
-        }
-      }
+      this.applySpineTexture(runtime);
     }
-    this.scheduleCoverHydration(priorityIndex);
+    const priorityIndex = this.selectedIndex ?? this.activeIndex;
+    const activeRuntime = this.runtimeBooks[priorityIndex];
+    if (activeRuntime) {
+      activeRuntime.hasCoverTextures = false;
+      this.applyCoverTextures(activeRuntime);
+    }
   }
 
   private clearBooksAndShelf() {
@@ -870,9 +864,7 @@ export class ShelfEngine {
       const runtime = this.createBook(book, index, cursor);
       this.runtimeBooks.push(runtime);
       this.shelfGroup.add(runtime.slot);
-      if (Math.abs(index - initialIndex) <= 1) {
-        this.applySpineTexture(runtime);
-      }
+      this.applySpineTexture(runtime);
       if (index === initialIndex) {
         this.applyCoverTextures(runtime);
       }

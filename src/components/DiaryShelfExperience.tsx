@@ -237,6 +237,9 @@ function ShelfExperienceInner() {
       const hasCached = Boolean(loadCachedServerBooks()?.length);
       const [{ ShelfEngine }] = await Promise.all([
         import("@/three/ShelfEngine"),
+        typeof document !== "undefined" && document.fonts?.ready
+          ? document.fonts.ready
+          : Promise.resolve(),
         !hasCached && initialFetchRef.current
           ? Promise.race([
               initialFetchRef.current,
