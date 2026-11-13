@@ -886,23 +886,36 @@ app.use((req, res, next) => {
   next();
 });
 
+function normalizeOrigin(o) {
+  if (!o) return "";
+  try {
+    const u = new URL(o.startsWith("http") ? o : `https://${o}`);
+    return u.origin;
+  } catch {
+    return o.trim().replace(/\/+$/, "");
+  }
+}
+
 const allowedOriginsRaw = (process.env.ALLOWED_ORIGINS || "").trim();
 const explicitAllowedOrigins = allowedOriginsRaw
   .split(",")
-  .map((o) => o.trim().replace(/\/+$/, ""))
+  .map((o) => normalizeOrigin(o))
   .filter(Boolean);
 
 function isOriginAllowed(origin) {
   if (!origin) return true;
-  const cleanOrigin = origin.trim().replace(/\/+$/, "");
+  const cleanOrigin = normalizeOrigin(origin);
+  // Always permit official GitHub Pages origin & local development
+  if (cleanOrigin === "https://kaushalboii.github.io") return true;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(cleanOrigin)) return true;
+
   if (explicitAllowedOrigins.length > 0) {
     if (explicitAllowedOrigins.includes("*")) {
       return process.env.ALLOW_INSECURE_PUBLIC === "true";
     }
     return explicitAllowedOrigins.includes(cleanOrigin);
   }
-  if (cleanOrigin === "https://kaushalboii.github.io") return true;
-  return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(cleanOrigin);
+  return false;
 }
 
 app.use(
