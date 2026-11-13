@@ -24,6 +24,7 @@ import {
   hasVaultEnvelope,
   isVaultUnlocked,
   scrubPlaintextConfigToken,
+  setActiveUserEncryptionKey,
   touchVaultActivity,
   updateUnlockedVaultToken,
 } from "./vault-security";
@@ -716,7 +717,15 @@ export async function fetchBooks(): Promise<{
     throw new StorageAuthError("Owner Vault is locked.", 401);
   }
   const config = loadStorageConfig();
+  const hasToken = Boolean(config.token?.trim());
   try {
+    // In guest or unauthenticated incognito mode without token, return cached books immediately to avoid noisy 401 console errors
+    if (!hasToken) {
+      const cached = loadCachedServerBooks();
+      if (cached && cached.length > 0) {
+        return { books: cached, mode: "server" };
+      }
+    }
     // Single fast network fetch without redundant health ping
     const booksData = await serverFetch<{ books: DiaryBook[] }>("/api/books", {}, config);
     const books = booksData.books;
@@ -1332,6 +1341,9 @@ export async function bootstrapOwnerAccount(
     },
     customConfig,
   );
+  if (res.user?.username && input.password) {
+    await setActiveUserEncryptionKey(res.user.username, input.password);
+  }
   if (res.sessionToken) {
     saveSessionToken(res.sessionToken);
   }
@@ -1351,6 +1363,9 @@ export async function loginAccount(
     },
     customConfig,
   );
+  if (res.user?.username && input.password) {
+    await setActiveUserEncryptionKey(res.user.username, input.password);
+  }
   if (res.sessionToken) {
     saveSessionToken(res.sessionToken);
   }
@@ -1370,6 +1385,9 @@ export async function loginWithGoogle(
     },
     customConfig,
   );
+  if (res.user?.username && res.googleSub) {
+    await setActiveUserEncryptionKey(res.user.username, res.googleSub);
+  }
   if (res.sessionToken) {
     saveSessionToken(res.sessionToken);
   }
@@ -1404,6 +1422,9 @@ export async function registerAccount(
     },
     customConfig,
   );
+  if (res.user?.username && input.password) {
+    await setActiveUserEncryptionKey(res.user.username, input.password);
+  }
   if (res.sessionToken) {
     saveSessionToken(res.sessionToken);
   }

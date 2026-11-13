@@ -44,6 +44,7 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
   const [showGoogleSetup, setShowGoogleSetup] = useState(false);
 
   const checkSeqRef = useRef(0);
+  const gsiClientIdRef = useRef<string | null>(null);
 
   const evaluateGate = useCallback(async (forceServerAuth = false, customMsg?: string) => {
     const seq = ++checkSeqRef.current;
@@ -179,16 +180,19 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
         if (google?.accounts?.id) {
           clearInterval(interval);
           try {
-            google.accounts.id.initialize({
-              client_id: clientId,
-              callback: (res: { credential?: string }) => {
-                if (res.credential) {
-                  void handleGoogleCredentialResponse(res.credential);
-                }
-              },
-              auto_select: false,
-              cancel_on_tap_outside: true,
-            });
+            if (gsiClientIdRef.current !== clientId) {
+              google.accounts.id.initialize({
+                client_id: clientId,
+                callback: (res: { credential?: string }) => {
+                  if (res.credential) {
+                    void handleGoogleCredentialResponse(res.credential);
+                  }
+                },
+                auto_select: false,
+                cancel_on_tap_outside: true,
+              });
+              gsiClientIdRef.current = clientId;
+            }
 
             const container = document.getElementById("google-gsi-btn-mount");
             if (container) {

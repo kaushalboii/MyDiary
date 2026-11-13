@@ -875,6 +875,10 @@
   width: 100%;
 }
 
+.mobile-sheet-handle {
+  display: none;
+}
+
 .mobile-sheet-toggle {
   display: none;
 }
@@ -1765,10 +1769,14 @@ html[data-vault="locked"] .vault-protected-shell {
     top: auto;
     bottom: 0;
     width: 100%;
-    height: min(56dvh, 520px);
+    height: min(54dvh, 500px);
     opacity: 0;
     transform: translateY(100%);
     transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+    border-top-left-radius: 20px;
+    border-top-right-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.16);
   }
 
   .book-details::before {
@@ -1785,7 +1793,7 @@ html[data-vault="locked"] .vault-protected-shell {
   }
 
   .is-focused .book-details.is-collapsed {
-    transform: translateY(calc(100% - 48px));
+    transform: translateY(calc(100% - 50px));
   }
 
   .book-details.is-collapsed::before {
@@ -1801,15 +1809,42 @@ html[data-vault="locked"] .vault-protected-shell {
 
   .book-details__inner {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    padding: 9px 18px max(14px, env(safe-area-inset-bottom));
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    padding: 4px 18px max(14px, env(safe-area-inset-bottom));
     border-top: 1px solid var(--hairline);
     border-left: 0;
   }
 
-  .book-details__nav-row {
+  .mobile-sheet-handle {
     grid-column: 1 / -1;
     grid-row: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    padding: 6px 0 6px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-sheet-handle__pill {
+    display: block;
+    width: 38px;
+    height: 4.5px;
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--ink) 25%, transparent);
+    transition: background 0.18s ease, transform 0.18s ease;
+  }
+
+  .mobile-sheet-handle:hover .mobile-sheet-handle__pill,
+  .mobile-sheet-handle:active .mobile-sheet-handle__pill {
+    background: var(--ink);
+    transform: scaleX(1.2);
+  }
+
+  .book-details__nav-row {
+    grid-column: 1 / -1;
+    grid-row: 2;
     display: flex;
     align-items: center;
     justify-content: space-between;

@@ -423,18 +423,6 @@ function ShelfExperienceInner() {
                 <span>Add Book</span>
               </button>
             )}
-
-            <span className="top-dock__divider" aria-hidden="true" />
-
-            <Link
-              href={`/compose?bookId=${encodeURIComponent(activeBook.id)}`}
-              data-testid="write-memory"
-              className="top-dock__btn top-dock__btn--primary"
-              aria-label="Write Memory"
-            >
-              <PenLine className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Write Memory</span>
-            </Link>
           </ExpandableDock>
 
           <ThemeToggle />
@@ -529,6 +517,24 @@ function ShelfExperienceInner() {
       >
         {selectedBook ? (
           <div className="book-details__inner">
+            <div
+              className="mobile-sheet-handle"
+              onClick={() => {
+                const next = !sheetCollapsed;
+                setSheetCollapsed(next);
+                engineRef.current?.setInspectSheetCollapsed(next);
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label={
+                sheetCollapsed
+                  ? "Expand book details"
+                  : "Lower details to view full book"
+              }
+            >
+              <span className="mobile-sheet-handle__pill" />
+            </div>
+
             <div className="book-details__nav-row">
               <button
                 type="button"
@@ -536,6 +542,7 @@ function ShelfExperienceInner() {
                 data-testid="return-to-shelf"
                 onClick={() => {
                   setSheetCollapsed(false);
+                  engineRef.current?.setInspectSheetCollapsed(false);
                   engineRef.current?.returnToShelf();
                 }}
               >
@@ -546,8 +553,16 @@ function ShelfExperienceInner() {
               <button
                 type="button"
                 className="mobile-sheet-toggle"
-                onClick={() => setSheetCollapsed((prev) => !prev)}
-                aria-label={sheetCollapsed ? "Expand book details" : "Lower details to view full book"}
+                onClick={() => {
+                  const next = !sheetCollapsed;
+                  setSheetCollapsed(next);
+                  engineRef.current?.setInspectSheetCollapsed(next);
+                }}
+                aria-label={
+                  sheetCollapsed
+                    ? "Expand book details"
+                    : "Lower details to view full book"
+                }
               >
                 {sheetCollapsed ? (
                   <>

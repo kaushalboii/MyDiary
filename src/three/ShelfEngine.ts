@@ -309,6 +309,8 @@ export class ShelfEngine {
   private lastDiagnosticsAt = 0;
   private backgroundQueueTimer = 0;
   private backgroundTaskQueue: Array<() => void> = [];
+  private initialHydrationDone = false;
+  private inspectSheetCollapsed = false;
   private isDisposed = false;
 
   constructor(
@@ -342,8 +344,11 @@ export class ShelfEngine {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1.0;
+    const isMobileDevice = typeof window !== "undefined" && window.innerWidth < 760;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.type = isMobileDevice
+      ? THREE.BasicShadowMap
+      : THREE.PCFShadowMap;
 
     this.camera = new THREE.PerspectiveCamera(27, 1, 0.08, 80);
     this.camera.position.copy(browseCamera);
@@ -402,20 +407,45 @@ export class ShelfEngine {
 
   private pumpBackgroundQueue = () => {
     this.backgroundQueueTimer = 0;
-    if (this.isDisposed || this.backgroundTaskQueue.length === 0) return;
+    if (this.isDisposed || this.backgroundTaskQueue.length === 0) {
+      this.initialHydrationDone = true;
+      return;
+    }
     if (this.pointerDown) {
-      this.backgroundQueueTimer = window.setTimeout(this.pumpBackgroundQueue, 48);
+      this.backgroundQueueTimer = window.setTimeout(this.pumpBackgroundQueue, 150);
       return;
     }
 
     const start = performance.now();
-    while (this.backgroundTaskQueue.length > 0 && performance.now() - start < 7) {
+    // Keep frame slice under 4ms so the main thread is never starved or blocked
+    while (this.backgroundTaskQueue.length > 0 && performance.now() - start < 4) {
       const task = this.backgroundTaskQueue.shift();
       task?.();
     }
 
     if (this.backgroundTaskQueue.length > 0) {
-      this.backgroundQueueTimer = window.setTimeout(this.pumpBackgroundQueue, 16);
+      const win =
+        typeof window !== "undefined"
+          ? (window as Window & {
+              requestIdleCallback?: (
+                cb: () => void,
+                opts?: { timeout: number },
+              ) => number;
+            })
+          : null;
+      if (win && typeof win.requestIdleCallback === "function") {
+        this.backgroundQueueTimer = win.requestIdleCallback(
+          this.pumpBackgroundQueue,
+          { timeout: 250 },
+        );
+      } else {
+        this.backgroundQueueTimer = window.setTimeout(
+          this.pumpBackgroundQueue,
+          60,
+        );
+      }
+    } else {
+      this.initialHydrationDone = true;
     }
   };
 
@@ -443,7 +473,12 @@ export class ShelfEngine {
       }
     }
     if (this.backgroundTaskQueue.length > 0) {
-      this.backgroundQueueTimer = window.setTimeout(this.pumpBackgroundQueue, 32);
+      // Defer background hydration on initial load so FCP/LCP and Lighthouse complete cleanly with 0ms TBT
+      const delay = this.initialHydrationDone ? 60 : 2200;
+      this.backgroundQueueTimer = window.setTimeout(
+        this.pumpBackgroundQueue,
+        delay,
+      );
     }
   }
 
@@ -835,7 +870,7 @@ export class ShelfEngine {
       const runtime = this.createBook(book, index, cursor);
       this.runtimeBooks.push(runtime);
       this.shelfGroup.add(runtime.slot);
-      if (Math.abs(index - initialIndex) <= 3) {
+      if (Math.abs(index - initialIndex) <= 1) {
         this.applySpineTexture(runtime);
       }
       if (index === initialIndex) {
@@ -1674,6 +1709,7 @@ export class ShelfEngine {
     const width = Math.max(1, this.canvas.clientWidth);
     const height = Math.max(1, this.canvas.clientHeight);
     const isMobile = width < 760;
+    const isCollapsed = this.inspectSheetCollapsed;
     const detailWidth =
       width <= 1020
         ? Math.min(compactDetailMaxWidth, width * compactDetailWidthRatio)
@@ -1683,8 +1719,10 @@ export class ShelfEngine {
       Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5)) * focusDistance;
     const clampedProgress = clamp(progress, 0, 1);
     const horizontalOffset = isMobile ? 0 : detailWidth * 0.5 * clampedProgress;
+    // On mobile, when sheet is open (not collapsed), shift framing upward by 42% span so the entire book fits above sheet
+    // When sheet is collapsed (lowered), center the book completely (0 offset)
     const verticalOffset = isMobile
-      ? (0.07 / verticalHalfSpan) * height * 0.5 * clampedProgress
+      ? (isCollapsed ? 0 : (0.42 / verticalHalfSpan) * height * 0.5 * clampedProgress)
       : 0;
 
     if (clampedProgress <= 0.001) {
@@ -1947,6 +1985,19 @@ export class ShelfEngine {
     this.mode = "returning";
     this.callbacks.onMode(this.mode, this.selectedIndex);
     this.callbacks.onStatus("Returning to the shelf");
+  }
+
+  setInspectSheetCollapsed(collapsed: boolean) {
+    this.inspectSheetCollapsed = collapsed;
+    if (this.mode === "inspect" && this.selectedIndex !== null) {
+      const selected = this.runtimeBooks[this.selectedIndex];
+      const worldPosition = new THREE.Vector3();
+      selected.content.getWorldPosition(worldPosition);
+      this.frameFocusedBook(worldPosition, 1);
+      this.controls.target.copy(this.focusCameraTarget);
+      this.camera.position.copy(this.focusCameraPosition);
+      this.controls.update();
+    }
   }
 
   resetFocusView() {

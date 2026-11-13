@@ -36,6 +36,7 @@ import {
   fetchBooks,
   fetchMemory,
   isStorageAuthError,
+  loadCachedServerBooks,
   resolveMediaUrl,
   updateMemory,
   uploadPhotos,
@@ -122,7 +123,16 @@ export function MemoryComposer({
         res.books.some((b) => b.id === prev) ? prev : res.books[0]?.id || prev,
       );
     } catch (err) {
-      if (isStorageAuthError(err)) return;
+      if (isStorageAuthError(err)) {
+        const cached = loadCachedServerBooks();
+        if (cached && cached.length > 0) {
+          setBooks(cached);
+          setBookId((prev) =>
+            cached.some((b) => b.id === prev) ? prev : cached[0]?.id || prev,
+          );
+        }
+        return;
+      }
       throw err;
     }
   }, []);
