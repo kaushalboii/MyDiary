@@ -122,7 +122,7 @@ const desktopFocusX = -0.58;
 const desktopFocusZ = 1.66;
 const desktopFocusScale = 1.08;
 const mobileFocusZ = 1.4;
-const mobileFocusScale = 0.92;
+const mobileFocusScale = 0.86;
 const inspectionIdleLift = 0.014;
 const inspectionIdlePitch = THREE.MathUtils.degToRad(0.28);
 const inspectionIdleYaw = THREE.MathUtils.degToRad(0.48);
@@ -1684,7 +1684,7 @@ export class ShelfEngine {
     const clampedProgress = clamp(progress, 0, 1);
     const horizontalOffset = isMobile ? 0 : detailWidth * 0.5 * clampedProgress;
     const verticalOffset = isMobile
-      ? (0.28 / verticalHalfSpan) * height * 0.5 * clampedProgress
+      ? (0.07 / verticalHalfSpan) * height * 0.5 * clampedProgress
       : 0;
 
     if (clampedProgress <= 0.001) {
@@ -1713,7 +1713,7 @@ export class ShelfEngine {
     this.focusCameraTarget.copy(worldPosition);
     this.focusCameraPosition.set(
       worldPosition.x + (isMobile ? 0 : 0.58),
-      worldPosition.y + 0.12,
+      worldPosition.y + (isMobile ? 0.02 : 0.12),
       worldPosition.z + focusDistance,
     );
   }

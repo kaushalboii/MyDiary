@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, BookOpen, Feather, Images, PenLine, Plus, SlidersHorizontal } from "lucide-react";
+import { ArrowUpRight, BookOpen, ChevronDown, ChevronUp, Feather, Images, PenLine, Plus } from "lucide-react";
 import { defaultBooks } from "@/lib/default-books";
 import {
   createBook,
@@ -79,6 +79,7 @@ function ShelfExperienceInner() {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [mode, setMode] = useState<ShelfMode>("browse");
   const [ready, setReady] = useState(false);
+  const [sheetCollapsed, setSheetCollapsed] = useState(false);
   const [selectedMemories, setSelectedMemories] = useState<MemoryAlbum[]>([]);
   const [loadingMemories, setLoadingMemories] = useState(false);
   const [editorState, setEditorState] = useState<
@@ -231,6 +232,9 @@ function ShelfExperienceInner() {
           onMode: (nextMode, index) => {
             setMode(nextMode);
             setSelectedIndex(index);
+            if (nextMode === "browse") {
+              setSheetCollapsed(false);
+            }
           },
           onStatus: () => undefined,
           onReady: () => setReady(true),
@@ -489,7 +493,7 @@ function ShelfExperienceInner() {
       </nav>
 
       <aside
-        className="book-details"
+        className={`book-details ${sheetCollapsed ? "is-collapsed" : ""}`}
         aria-hidden={!isFocused}
         aria-label={
           selectedBook ? `Details for ${selectedBook.title}` : "Book details"
@@ -498,39 +502,49 @@ function ShelfExperienceInner() {
       >
         {selectedBook ? (
           <div className="book-details__inner">
-            <button
-              type="button"
-              className="back-button"
-              data-testid="return-to-shelf"
-              onClick={() => engineRef.current?.returnToShelf()}
-            >
-              <ArrowIcon direction="left" />
-              <span>Return to shelf</span>
-            </button>
+            <div className="book-details__nav-row">
+              <button
+                type="button"
+                className="back-button"
+                data-testid="return-to-shelf"
+                onClick={() => {
+                  setSheetCollapsed(false);
+                  engineRef.current?.returnToShelf();
+                }}
+              >
+                <ArrowIcon direction="left" />
+                <span>Return to shelf</span>
+              </button>
 
-            <div className="book-details__position">
-              <span>{String((selectedIndex ?? 0) + 1).padStart(2, "0")}</span>
-              <span>{String(books.length).padStart(2, "0")}</span>
+              <button
+                type="button"
+                className="mobile-sheet-toggle"
+                onClick={() => setSheetCollapsed((prev) => !prev)}
+                aria-label={sheetCollapsed ? "Expand book details" : "Lower details to view full book"}
+              >
+                {sheetCollapsed ? (
+                  <>
+                    <ChevronUp className="h-3 w-3" />
+                    <span>View Details</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-3 w-3" />
+                    <span>View Full Book</span>
+                  </>
+                )}
+              </button>
+
+              <div className="book-details__position">
+                <span>{String((selectedIndex ?? 0) + 1).padStart(2, "0")}</span>
+                <span>{String(books.length).padStart(2, "0")}</span>
+              </div>
             </div>
 
             <div className="book-details__copy">
-              <div className="flex items-center justify-between gap-2">
-                <p className="eyebrow m-0">
-                  {selectedBook.coverImprint || siteConfig.editionEyebrow}
-                </p>
-                {isUserAuthenticated() && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setEditorState({ mode: "edit", book: selectedBook })
-                    }
-                    className="inline-flex min-h-[28px] items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-3.5 py-1.5 text-[9px] font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
-                  >
-                    <SlidersHorizontal className="h-3 w-3" />
-                    <span>Customize Book</span>
-                  </button>
-                )}
-              </div>
+              <p className="eyebrow m-0">
+                {selectedBook.coverImprint || siteConfig.editionEyebrow}
+              </p>
 
               <h2 className="mt-3">{selectedBook.title}</h2>
               <p className="book-details__author">{selectedBook.subtitle}</p>
