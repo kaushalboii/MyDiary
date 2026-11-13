@@ -8,16 +8,12 @@ import {
   Lock,
   ShieldCheck,
   Trash2,
-  UserPlus,
   X,
 } from "lucide-react";
 import {
-  bootstrapOwnerAccount,
   getAuthStatus,
   loadStorageConfig,
-  loginAccount,
   loginWithGoogle,
-  registerAccount,
   saveSessionToken,
 } from "@/lib/storage-client";
 import type { AuthStatusResponse } from "@/lib/types";
@@ -35,7 +31,6 @@ import {
 } from "@/lib/vault-security";
 
 type GateMode = "none" | "vault-locked" | "server-auth";
-type ServerAuthTab = "signin" | "register";
 
 export function VaultLockGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -52,9 +47,6 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
 
   // Server authentication state (never displays backend URLs)
   const [authStatus, setAuthStatus] = useState<AuthStatusResponse | null>(null);
-  const [authTab, setAuthTab] = useState<ServerAuthTab>("signin");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
   const [customServerUrl, setCustomServerUrl] = useState("");
   const [authMessage, setAuthMessage] = useState<string | null>(null);
 
@@ -147,9 +139,8 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
       const detail = (event as CustomEvent<{ message?: string }>)?.detail;
       document.documentElement.dataset.vault = "locked";
       setError(null);
-      setPassword("");
       setAuthMessage(
-        detail?.message || "Please sign in with your diary account to continue.",
+        detail?.message || "Please sign in with Google to continue.",
       );
       setMode("server-auth");
       void evaluateGate(true, detail?.message);
@@ -314,101 +305,6 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
     }
   }
 
-  async function handleAccountSignIn(e: FormEvent) {
-    e.preventDefault();
-    const targetCfg = resolveEffectiveConfig();
-    if (!targetCfg.serverUrl) {
-      setError("Archive server is unreachable. Check your storage connection.");
-      return;
-    }
-    const cleanUser = username.trim().toLowerCase();
-    if (!cleanUser) {
-      setError("Please enter your username.");
-      return;
-    }
-    if (!password) {
-      setError("Please enter your password.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await loginAccount(
-        { username: cleanUser, password },
-        targetCfg,
-      );
-      if (res.sessionToken) {
-        saveSessionToken(res.sessionToken);
-      }
-      await setActiveUserEncryptionKey(cleanUser, password);
-      setPassword("");
-      setAuthMessage(null);
-      document.documentElement.dataset.vault = "open";
-      setMode("none");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid username or password.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleAccountRegister(e: FormEvent) {
-    e.preventDefault();
-    const targetCfg = resolveEffectiveConfig();
-    if (!targetCfg.serverUrl) {
-      setError("Archive server is unreachable. Check your storage connection.");
-      return;
-    }
-    const cleanUser = username.trim().toLowerCase();
-    if (!cleanUser) {
-      setError("Please choose a username.");
-      return;
-    }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      let sessionToken = "";
-      if (authStatus?.needsOwnerSetup) {
-        const res = await bootstrapOwnerAccount(
-          {
-            username: cleanUser,
-            displayName: cleanUser,
-            password,
-          },
-          targetCfg,
-        );
-        sessionToken = res.sessionToken;
-      } else {
-        const res = await registerAccount(
-          {
-            username: cleanUser,
-            displayName: cleanUser,
-            password,
-          },
-          targetCfg,
-        );
-        sessionToken = res.sessionToken || "";
-      }
-
-      if (sessionToken) {
-        saveSessionToken(sessionToken);
-      }
-      await setActiveUserEncryptionKey(cleanUser, password);
-      setPassword("");
-      setAuthMessage(null);
-      document.documentElement.dataset.vault = "open";
-      setMode("none");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function handleWipeBrowserData() {
     setBusy(true);
     setError(null);
@@ -533,7 +429,7 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
         data-testid="vault-gate"
         aria-label="Private Archive Sign In"
       >
-        <section className="vault-gate-card relative">
+        <section className="vault-gate-card relative text-center">
           <button
             type="button"
             onClick={() => {
@@ -545,28 +441,35 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
           >
             <X size={18} />
           </button>
-          <div className="vault-gate-emblem" aria-hidden="true">
+          <div className="vault-gate-emblem mx-auto" aria-hidden="true">
             <ShieldCheck size={22} />
           </div>
           <p className="diary-kicker">PRIVATE MEMORY ARCHIVE</p>
-          <h1 className="diary-title vault-gate-title">
-            {authTab === "signin" ? "Sign In to Your Diary" : "Create Your Account"}
-          </h1>
-          <p className="diary-muted vault-gate-subtitle">
-            {authTab === "signin"
-              ? "Enter your credentials to unlock and read your private memory archive."
-              : "Create an isolated account to store and encrypt your personal memories."}
+          <h1 className="diary-title vault-gate-title">Sign In with Google</h1>
+          <p className="diary-muted vault-gate-subtitle max-w-sm mx-auto">
+            {authMessage ||
+              "Sign in with your Google account to unlock and read your private encrypted memories."}
           </p>
 
           {/* Google 1-Click Sign-In with 2FA / OTP */}
-          <div className="mb-4 flex flex-col items-center w-full">
-            {googleClientId.trim() ? (
-              <div id="google-gsi-btn-mount" className="flex justify-center min-h-[44px] w-full" />
-            ) : (
+          <div className="my-6 flex flex-col items-center w-full">
+            <div id="google-gsi-btn-mount" className="flex justify-center min-h-[44px] w-full">
               <button
                 type="button"
-                onClick={() => setShowGoogleSetup((prev) => !prev)}
-                className="flex w-full items-center justify-center gap-2.5 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-4 py-2.5 text-xs font-semibold tracking-wide text-[var(--ink)] shadow-sm hover:border-[var(--ink)] cursor-pointer transition-all"
+                onClick={() => {
+                  const google = (window as unknown as {
+                    google?: { accounts?: { id?: { prompt: () => void } } };
+                  })?.google;
+                  if (google?.accounts?.id) {
+                    google.accounts.id.prompt();
+                  } else if (googleClientId.trim()) {
+                    initGoogleGsi(googleClientId.trim());
+                  } else {
+                    setShowGoogleSetup(true);
+                  }
+                }}
+                disabled={busy}
+                className="flex w-full max-w-[300px] items-center justify-center gap-3 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-5 py-3 text-xs font-semibold tracking-wide text-[var(--ink)] shadow-sm hover:border-[var(--ink)] cursor-pointer transition-all"
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24">
                   <path
@@ -586,17 +489,17 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                   />
                 </svg>
-                <span>Continue with Google (Instant &amp; OTP 2FA)</span>
+                <span>{busy ? "Verifying..." : "Continue with Google (Instant & OTP)"}</span>
               </button>
-            )}
+            </div>
 
             {showGoogleSetup && !googleClientId.trim() && (
-              <div className="mt-3 w-full rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] p-3 text-xs text-left">
+              <div className="mt-4 w-full max-w-[340px] rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] p-3.5 text-xs text-left">
                 <p className="m-0 font-semibold text-[var(--ink)]">
-                  Google One-Tap &amp; OTP Sign-In Setup:
+                  Google Client ID Required:
                 </p>
                 <p className="mt-1 mb-2 text-[11px] text-[var(--ink-soft)] leading-relaxed">
-                  Enter your free Google OAuth Client ID (or add <code>GOOGLE_CLIENT_ID</code> to GitHub repository secrets):
+                  Paste your Google OAuth Client ID or add <code>GOOGLE_CLIENT_ID</code> to GitHub Secrets:
                 </p>
                 <div className="flex gap-2">
                   <input
@@ -623,167 +526,19 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
                 </div>
               </div>
             )}
+          </div>
 
-            <div className="relative my-4 w-full text-center">
-              <span className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-[var(--hairline)]" />
-              </span>
-              <span className="relative bg-[var(--paper)] px-3 text-[10px] font-semibold tracking-widest text-[var(--ink-soft)] uppercase">
-                or continue with username
-              </span>
+          {error && (
+            <div className="notice-banner error my-3" role="alert" data-testid="vault-unlock-error">
+              {error}
             </div>
-          </div>
-
-          <div className="mb-5 flex rounded-full border border-[var(--hairline)] bg-[var(--paper)] p-1">
-            <button
-              type="button"
-              onClick={() => {
-                setAuthTab("signin");
-                setError(null);
-              }}
-              data-testid="auth-tab-signin"
-              className={`flex-1 rounded-full px-4 py-2 text-xs font-semibold tracking-wider uppercase cursor-pointer transition-colors ${
-                authTab === "signin"
-                  ? "bg-[var(--ink)] text-[var(--paper-light)]"
-                  : "text-[var(--ink-soft)] hover:text-[var(--ink)]"
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAuthTab("register");
-                setError(null);
-              }}
-              data-testid="auth-tab-register"
-              className={`flex-1 rounded-full px-4 py-2 text-xs font-semibold tracking-wider uppercase cursor-pointer transition-colors ${
-                authTab === "register"
-                  ? "bg-[var(--ink)] text-[var(--paper-light)]"
-                  : "text-[var(--ink-soft)] hover:text-[var(--ink)]"
-              }`}
-            >
-              Create Account
-            </button>
-          </div>
-
-          {authTab === "signin" ? (
-            <form onSubmit={(e) => void handleAccountSignIn(e)} className="vault-gate-form">
-              <label className="field-block">
-                <span>Username</span>
-                <input
-                  type="text"
-                  autoComplete="username"
-                  autoFocus
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter your username"
-                  data-testid="auth-username-input"
-                  required
-                />
-              </label>
-
-              <label className="field-block">
-                <span>Password</span>
-                <div className="vault-input-wrap">
-                  <input
-                    type={showSecret ? "text" : "password"}
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter your password"
-                    data-testid="auth-password-input"
-                    required
-                  />
-                  <button
-                    type="button"
-                    className="vault-reveal-btn"
-                    onClick={() => setShowSecret((v) => !v)}
-                    aria-label={showSecret ? "Hide password" : "Show password"}
-                  >
-                    {showSecret ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-              </label>
-
-              {error && (
-                <div className="notice-banner error" role="alert" data-testid="vault-unlock-error">
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={busy}
-                className="primary-btn vault-submit-btn"
-                data-testid="auth-submit-btn"
-              >
-                <Lock size={15} />
-                <span>{busy ? "Signing In..." : "Sign In & Open Diary"}</span>
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={(e) => void handleAccountRegister(e)} className="vault-gate-form">
-              <label className="field-block">
-                <span>Choose Username</span>
-                <input
-                  type="text"
-                  autoComplete="username"
-                  autoFocus
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="3–32 characters (e.g. kaushal)"
-                  data-testid="auth-username-input"
-                  required
-                />
-              </label>
-
-              <label className="field-block">
-                <span>Password (Min 8 characters)</span>
-                <div className="vault-input-wrap">
-                  <input
-                    type={showSecret ? "text" : "password"}
-                    autoComplete="new-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Choose a strong password"
-                    data-testid="auth-password-input"
-                    required
-                  />
-                  <button
-                    type="button"
-                    className="vault-reveal-btn"
-                    onClick={() => setShowSecret((v) => !v)}
-                    aria-label={showSecret ? "Hide password" : "Show password"}
-                  >
-                    {showSecret ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-              </label>
-
-              {error && (
-                <div className="notice-banner error" role="alert" data-testid="vault-unlock-error">
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={busy}
-                className="primary-btn vault-submit-btn"
-                data-testid="auth-submit-btn"
-              >
-                <UserPlus size={15} />
-                <span>{busy ? "Creating Account..." : "Create Account & Open Diary"}</span>
-              </button>
-            </form>
           )}
 
-          <details className="vault-gate-footer">
+          <details className="vault-gate-footer mt-4">
             <summary className="vault-wipe-trigger cursor-pointer list-none text-[11px]">
               Switch or set private archive endpoint
             </summary>
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-2 text-left">
               <label className="field-block">
                 <span>Archive Endpoint URL (masked for privacy)</span>
                 <input
@@ -802,7 +557,7 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
               setMode("none");
               document.documentElement.dataset.vault = "open";
             }}
-            className="mt-4 block w-full text-center text-xs text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer uppercase tracking-wider"
+            className="mt-5 block w-full text-center text-xs text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer uppercase tracking-wider"
           >
             ← Browse 3D Bookshelf as Guest
           </button>

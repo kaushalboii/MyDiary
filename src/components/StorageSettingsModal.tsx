@@ -24,16 +24,14 @@ import {
   X,
 } from "lucide-react";
 import {
-  bootstrapOwnerAccount,
+  AUTH_REQUIRED_EVENT,
   checkStorageHealth,
   createMemberInvite,
   fetchAdminMembers,
   getAuthStatus,
   getOfflineDraftCount,
   loadStorageConfig,
-  loginAccount,
   logoutAccount,
-  registerAccount,
   removeMemberAccount,
   revokeMemberInvite,
   saveSessionToken,
@@ -107,12 +105,6 @@ export function StorageSettingsModal({
 
   // Account & Members state
   const [authBusy, setAuthBusy] = useState(false);
-  const [authFormMode, setAuthFormMode] = useState<"signin" | "register">("signin");
-  const [username, setUsername] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [password, setPassword] = useState("");
-  const [inviteCodeInput, setInviteCodeInput] = useState("");
-  const [setupTokenInput, setSetupTokenInput] = useState("");
   const [accountNotice, setAccountNotice] = useState<string | null>(null);
   const [accountError, setAccountError] = useState<string | null>(null);
 
@@ -302,70 +294,6 @@ export function StorageSettingsModal({
       setVaultError(err instanceof Error ? err.message : "Incorrect passphrase.");
     } finally {
       setVaultBusy(false);
-    }
-  }
-
-  async function handleOwnerBootstrap(e: React.FormEvent) {
-    e.preventDefault();
-    setAuthBusy(true);
-    setAccountError(null);
-    setAccountNotice(null);
-    try {
-      await bootstrapOwnerAccount({
-        username: username.trim(),
-        displayName: displayName.trim() || username.trim(),
-        password,
-        setupToken: setupTokenInput.trim() || undefined,
-      });
-      setPassword("");
-      setSetupTokenInput("");
-      setAccountNotice("Owner account created. Your archive data is now isolated under your account.");
-      const updated = loadStorageConfig();
-      setConfig(updated);
-      await refreshConnectionAndAccount(updated);
-      onConnected?.();
-    } catch (err) {
-      setAccountError(err instanceof Error ? err.message : "Owner setup failed.");
-    } finally {
-      setAuthBusy(false);
-    }
-  }
-
-  async function handleSignInOrRegister(e: React.FormEvent) {
-    e.preventDefault();
-    setAuthBusy(true);
-    setAccountError(null);
-    setAccountNotice(null);
-    try {
-      if (authFormMode === "signin") {
-        await loginAccount({ username: username.trim(), password });
-        setPassword("");
-        setAccountNotice("Signed in to your private diary.");
-      } else {
-        const res = await registerAccount({
-          username: username.trim(),
-          displayName: displayName.trim() || username.trim(),
-          password,
-          inviteCode: inviteCodeInput.trim() || undefined,
-        });
-        setPassword("");
-        setInviteCodeInput("");
-        if (res.pendingVerification) {
-          setAccountNotice(
-            res.message || "Access request submitted. Waiting for archive owner verification.",
-          );
-          return;
-        }
-        setAccountNotice("Account verified and activated.");
-      }
-      const updated = loadStorageConfig();
-      setConfig(updated);
-      await refreshConnectionAndAccount(updated);
-      onConnected?.();
-    } catch (err) {
-      setAccountError(err instanceof Error ? err.message : "Authentication failed.");
-    } finally {
-      setAuthBusy(false);
     }
   }
 
@@ -899,115 +827,53 @@ export function StorageSettingsModal({
               <p className="text-xs font-medium text-[#466f4b]">{accountNotice}</p>
             ) : null}
 
-            {/* Owner Account Creation / Sign In when not signed in cleanly */}
+            {/* Google Sign In & Verification when not signed in */}
             {!currentUser && health ? (
-              authStatus?.needsOwnerSetup ? (
-                <form onSubmit={handleOwnerBootstrap} className="space-y-4 border border-[var(--hairline)] bg-[var(--paper-light)] p-4">
-                  <h3 className="m-0 font-serif text-lg">Claim Owner Account</h3>
-                  <p className="m-0 text-xs text-[var(--ink-soft)]">
-                    Set up your owner login to enable strict per-user diary isolation and member verification.
+              <div className="space-y-4 border border-[var(--hairline)] bg-[var(--paper-light)] p-5 text-center">
+                <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[var(--paper)] text-[var(--ink)] shadow-xs">
+                  <ShieldCheck className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="m-0 font-serif text-lg">Google Sign-In &amp; Verification</h3>
+                  <p className="mx-auto mt-1 max-w-md text-xs text-[var(--ink-soft)] leading-relaxed">
+                    Sign in with your Google account for secure, instant access to your private encrypted diary volumes. Google handles 2-step verification &amp; OTP securely.
                   </p>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <input
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder="Owner username (min 3 chars)"
-                      required
-                      className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
-                    />
-                    <input
-                      type="text"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="Display name"
-                      className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Password (min 8 chars)"
-                      required
-                      className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
-                    />
-                    {authStatus.needsSetupToken ? (
-                      <input
-                        type="password"
-                        value={setupTokenInput}
-                        onChange={(e) => setSetupTokenInput(e.target.value)}
-                        placeholder="Server setup key"
-                        required
-                        className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
-                      />
-                    ) : null}
-                  </div>
+                </div>
+                <div className="pt-2">
                   <button
-                    type="submit"
-                    disabled={authBusy}
-                    className="inline-flex items-center gap-2 bg-[var(--ink)] px-4 py-2 text-xs font-semibold tracking-wider text-[var(--paper-light)] uppercase cursor-pointer"
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      window.dispatchEvent(
+                        new CustomEvent(AUTH_REQUIRED_EVENT, {
+                          detail: { message: "Sign in with Google to access your private diary." },
+                        }),
+                      );
+                    }}
+                    className="inline-flex items-center justify-center gap-3 rounded-full border border-[var(--hairline)] bg-[var(--paper)] px-6 py-2.5 text-xs font-semibold tracking-wide text-[var(--ink)] shadow-xs hover:border-[var(--ink)] cursor-pointer transition-all"
                   >
-                    <ShieldCheck className="h-3.5 w-3.5" />
-                    <span>{authBusy ? "Creating..." : "Activate Owner Security"}</span>
-                  </button>
-                </form>
-              ) : (
-                <form onSubmit={handleSignInOrRegister} className="space-y-4 border border-[var(--hairline)] bg-[var(--paper-light)] p-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="m-0 font-serif text-lg">
-                      {authFormMode === "signin" ? "Sign In to Account" : "Create Account"}
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setAuthFormMode((m) => (m === "signin" ? "register" : "signin"))
-                      }
-                      className="text-xs font-semibold uppercase tracking-wider text-[var(--accent)] cursor-pointer"
-                    >
-                      {authFormMode === "signin" ? "Need an account? Create one" : "Already have an account? Sign In"}
-                    </button>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <input
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder="Username"
-                      required
-                      className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
-                    />
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Password"
-                      required
-                      className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
-                    />
-                  </div>
-                  {authFormMode === "register" ? (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <input
-                        type="text"
-                        value={displayName}
-                        onChange={(e) => setDisplayName(e.target.value)}
-                        placeholder="Display name (optional)"
-                        className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
+                    <svg className="h-4 w-4" viewBox="0 0 24 24">
+                      <path
+                        fill="#4285F4"
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
                       />
-                    </div>
-                  ) : null}
-                  <button
-                    type="submit"
-                    disabled={authBusy}
-                    className="inline-flex items-center gap-2 bg-[var(--ink)] px-4 py-2 text-xs font-semibold tracking-wider text-[var(--paper-light)] uppercase cursor-pointer"
-                  >
-                    <UserPlus className="h-3.5 w-3.5" />
-                    <span>{authBusy ? "Submitting..." : authFormMode === "signin" ? "Sign In" : "Create Account"}</span>
+                      <path
+                        fill="#34A853"
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                      />
+                    </svg>
+                    <span>Continue with Google</span>
                   </button>
-                </form>
-              )
+                </div>
+              </div>
             ) : null}
 
             {/* Owner-Only Invite Generation & Member Verification Console */}
