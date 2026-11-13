@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://kaushalboii.github.io/MyDiary/sitemap.xml

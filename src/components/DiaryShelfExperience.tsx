@@ -219,15 +219,17 @@ function ShelfExperienceInner() {
 
       // Yield to the main thread until idle so FCP, LCP, and interactive UI paint cleanly before WebGL starts
       await new Promise<void>((resolve) => {
-        if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-          (window as unknown as { requestIdleCallback: (fn: () => void, opts: { timeout: number }) => void }).requestIdleCallback(
-            () => resolve(),
-            { timeout: 800 },
-          );
+        if (typeof window === "undefined") {
+          resolve();
+          return;
+        }
+        const win = window as Window & {
+          requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number;
+        };
+        if (typeof win.requestIdleCallback === "function") {
+          win.requestIdleCallback(() => resolve(), { timeout: 800 });
         } else {
-          window.requestAnimationFrame(() => {
-            window.setTimeout(resolve, 60);
-          });
+          window.setTimeout(resolve, 60);
         }
       });
       if (cancelled || !canvasRef.current) return;
