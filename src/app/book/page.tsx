@@ -60,6 +60,7 @@ import {
 import { AUTH_REQUIRED_EVENT, restoreActiveUserEncryptionKey } from "@/lib/vault-security";
 import type {
   AlbumPhoto,
+  AlbumStyle,
   DiaryBook,
   MemoryAlbum,
   MemoryLayoutBlock,
@@ -288,8 +289,159 @@ function BookMemoriesContent() {
     }
   }, []);
 
+  const handleToggleFrameStyle = useCallback(
+    async (memId: string, currentStyle?: AlbumStyle) => {
+      const nextStyle: AlbumStyle = currentStyle === "borderless" ? "polaroid" : "borderless";
+      setMemories((prev) =>
+        prev.map((m) => (m.id === memId ? { ...m, albumStyle: nextStyle } : m)),
+      );
+      try {
+        await updateMemory(memId, { albumStyle: nextStyle });
+      } catch {
+        // Fallback silently if offline
+      }
+    },
+    [],
+  );
+
   const renderPhotoCollection = useCallback(
     (mem: MemoryAlbum, photoItems: { photo: AlbumPhoto; idx: number }[]) => {
+      if (mem.albumStyle === "borderless") {
+        if (photoItems.length === 1) {
+          const { photo, idx } = photoItems[0];
+          return (
+            <div className="my-auto flex flex-col items-center justify-center py-1 sm:py-2 w-full">
+              <figure className="m-0 w-full max-w-md mx-auto rounded-xl overflow-hidden shadow-lg border-0 p-0 bg-transparent">
+                <button
+                  type="button"
+                  data-no-flip="true"
+                  onClick={() => setLightboxState({ memory: mem, index: idx })}
+                  className="block w-full overflow-hidden rounded-xl bg-[var(--paper-deep)] cursor-pointer"
+                >
+                  <img
+                    src={resolveMediaUrl(photo.url)}
+                    alt={photo.caption || `Photo ${idx + 1}`}
+                    className="aspect-[4/3] max-h-[42vh] sm:max-h-[340px] w-full object-cover transition duration-300 hover:scale-[1.02]"
+                  />
+                </button>
+                {photo.caption && (
+                  <figcaption className="mt-2 text-center text-xs italic text-[var(--page-ink-muted)]">
+                    {photo.caption}
+                  </figcaption>
+                )}
+              </figure>
+            </div>
+          );
+        }
+
+        if (photoItems.length === 2) {
+          return (
+            <div className="my-auto grid grid-cols-2 gap-2.5 sm:gap-3.5 w-full py-1">
+              {photoItems.map(({ photo, idx }) => (
+                <figure key={photo.id} className="m-0 rounded-xl overflow-hidden shadow-md border-0 p-0 bg-transparent">
+                  <button
+                    type="button"
+                    data-no-flip="true"
+                    onClick={() => setLightboxState({ memory: mem, index: idx })}
+                    className="block w-full overflow-hidden rounded-xl bg-[var(--paper-deep)] cursor-pointer"
+                  >
+                    <img
+                      src={resolveMediaUrl(photo.url)}
+                      alt={photo.caption || `Photo ${idx + 1}`}
+                      className="aspect-[4/3] max-h-[32vh] sm:max-h-[260px] w-full object-cover transition duration-300 hover:scale-[1.02]"
+                    />
+                  </button>
+                  {photo.caption && (
+                    <figcaption className="mt-1.5 px-1 text-center text-[11px] italic text-[var(--page-ink-muted)] truncate">
+                      {photo.caption}
+                    </figcaption>
+                  )}
+                </figure>
+              ))}
+            </div>
+          );
+        }
+
+        if (photoItems.length === 3) {
+          const [hero, ...others] = photoItems;
+          return (
+            <div className="my-auto flex flex-col gap-2.5 sm:gap-3 w-full py-1">
+              <figure key={hero.photo.id} className="m-0 rounded-xl overflow-hidden shadow-md border-0 p-0 bg-transparent">
+                <button
+                  type="button"
+                  data-no-flip="true"
+                  onClick={() => setLightboxState({ memory: mem, index: hero.idx })}
+                  className="block w-full overflow-hidden rounded-xl bg-[var(--paper-deep)] cursor-pointer"
+                >
+                  <img
+                    src={resolveMediaUrl(hero.photo.url)}
+                    alt={hero.photo.caption || `Photo ${hero.idx + 1}`}
+                    className="aspect-[16/9] sm:aspect-[16/10] max-h-[22vh] sm:max-h-[175px] w-full object-cover transition duration-300 hover:scale-[1.02]"
+                  />
+                </button>
+                {hero.photo.caption && (
+                  <figcaption className="mt-1 px-1 text-[11px] italic text-[var(--page-ink-muted)] truncate">
+                    {hero.photo.caption}
+                  </figcaption>
+                )}
+              </figure>
+              <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+                {others.map(({ photo, idx }) => (
+                  <figure key={photo.id} className="m-0 rounded-xl overflow-hidden shadow-md border-0 p-0 bg-transparent">
+                    <button
+                      type="button"
+                      data-no-flip="true"
+                      onClick={() => setLightboxState({ memory: mem, index: idx })}
+                      className="block w-full overflow-hidden rounded-xl bg-[var(--paper-deep)] cursor-pointer"
+                    >
+                      <img
+                        src={resolveMediaUrl(photo.url)}
+                        alt={photo.caption || `Photo ${idx + 1}`}
+                        className="aspect-[4/3] max-h-[20vh] sm:max-h-[160px] w-full object-cover transition duration-300 hover:scale-[1.02]"
+                      />
+                    </button>
+                    {photo.caption && (
+                      <figcaption className="mt-1 px-1 text-[10px] italic text-[var(--page-ink-muted)] truncate">
+                        {photo.caption}
+                      </figcaption>
+                    )}
+                  </figure>
+                ))}
+              </div>
+            </div>
+          );
+        }
+
+        // 4 photos: clean frameless 2x2 grid
+        return (
+          <div className="my-auto grid grid-cols-2 gap-2.5 sm:gap-3.5 w-full py-1">
+            {photoItems.map(({ photo, idx }) => (
+              <figure
+                key={photo.id}
+                className="m-0 rounded-xl overflow-hidden shadow-md border-0 p-0 bg-transparent transition duration-300 hover:shadow-lg"
+              >
+                <button
+                  type="button"
+                  data-no-flip="true"
+                  onClick={() => setLightboxState({ memory: mem, index: idx })}
+                  className="block w-full overflow-hidden rounded-xl bg-[var(--paper-deep)] cursor-pointer"
+                >
+                  <img
+                    src={resolveMediaUrl(photo.url)}
+                    alt={photo.caption || `Photo ${idx + 1}`}
+                    className="aspect-square max-h-[22vh] sm:max-h-[175px] w-full object-cover transition duration-300 hover:scale-[1.03]"
+                  />
+                </button>
+                {photo.caption && (
+                  <figcaption className="mt-1 px-1 text-center text-[10px] italic text-[var(--page-ink-muted)] truncate">
+                    {photo.caption}
+                  </figcaption>
+                )}
+              </figure>
+            ))}
+          </div>
+        );
+      }
       if (mem.albumStyle === "filmstrip") {
         return (
           <div className="space-y-3.5">
@@ -1121,6 +1273,22 @@ function BookMemoriesContent() {
                   <LayoutGrid className="h-3.5 w-3.5" />
                   <span>Arrange</span>
                 </button>
+                {isUserAuthenticated() && mem.photos?.length > 0 && (
+                  <button
+                    type="button"
+                    data-no-flip="true"
+                    onClick={() => void handleToggleFrameStyle(mem.id, mem.albumStyle)}
+                    className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink-soft)] cursor-pointer hover:text-[var(--ink)] hover:underline"
+                    title={
+                      mem.albumStyle === "borderless"
+                        ? "Outer frame is OFF. Click to switch to Polaroid outer frame"
+                        : "Outer frame is ON. Click to switch to Frameless Grid (no outer frame)"
+                    }
+                  >
+                    <SlidersHorizontal className="h-3.5 w-3.5 text-[var(--accent)]" />
+                    <span>{mem.albumStyle === "borderless" ? "Frameless" : "Polaroid"}</span>
+                  </button>
+                )}
                 {hasCustomLayout && (
                   <button
                     type="button"
@@ -1204,6 +1372,22 @@ function BookMemoriesContent() {
                       <RotateCcw className="h-3 w-3" />
                       <span>Reset</span>
                     </button>
+                    {mem.photos?.length > 0 && (
+                      <button
+                        type="button"
+                        data-no-flip="true"
+                        onClick={() => void handleToggleFrameStyle(mem.id, mem.albumStyle)}
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-2.5 py-1 text-[11px] font-semibold text-[var(--ink)] tracking-wider uppercase hover:border-[var(--ink)] cursor-pointer transition-colors"
+                        title={
+                          mem.albumStyle === "borderless"
+                            ? "Switch to Polaroid outer frame"
+                            : "Switch to Frameless Grid (no outer frame)"
+                        }
+                      >
+                        <SlidersHorizontal className="h-3 w-3 text-[var(--accent)]" />
+                        <span>{mem.albumStyle === "borderless" ? "Frameless" : "Polaroid"}</span>
+                      </button>
+                    )}
                   </div>
                   <span className="text-[10px] text-[var(--ink-soft)] tracking-wide hidden sm:inline">
                     Drag items to position · resize with +/-
@@ -1238,6 +1422,22 @@ function BookMemoriesContent() {
                     Right Page Layout
                   </span>
                   <div className="flex items-center gap-2">
+                    {mem.photos?.length > 0 && (
+                      <button
+                        type="button"
+                        data-no-flip="true"
+                        onClick={() => void handleToggleFrameStyle(mem.id, mem.albumStyle)}
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-2.5 py-1 text-[10px] font-semibold text-[var(--ink)] tracking-wider uppercase hover:border-[var(--ink)] cursor-pointer transition-colors"
+                        title={
+                          mem.albumStyle === "borderless"
+                            ? "Switch to Polaroid outer frame"
+                            : "Switch to Frameless Grid (no outer frame)"
+                        }
+                      >
+                        <SlidersHorizontal className="h-3 w-3 text-[var(--accent)]" />
+                        <span>{mem.albumStyle === "borderless" ? "Frameless" : "Polaroid"}</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       data-no-flip="true"

@@ -410,21 +410,23 @@ export function FreeformPageSurface({
               {block.kind === "photo" && photo && (
                 <figure
                   className={`m-0 ${
-                    memory.albumStyle === "portrait"
-                      ? "border-0 p-0 bg-transparent shadow-xl rounded-2xl overflow-hidden"
-                      : memory.albumStyle === "filmstrip"
-                        ? "filmstrip-frame"
-                        : memory.albumStyle === "grid"
-                          ? "border border-[var(--hairline)] bg-[var(--paper-light)] p-2 shadow-sm"
-                          : compact
-                            ? "polaroid-frame p-1.5! pb-3!"
-                            : "polaroid-frame"
+                    memory.albumStyle === "borderless"
+                      ? "border-0 p-0 bg-transparent shadow-md rounded-xl overflow-hidden"
+                      : memory.albumStyle === "portrait"
+                        ? "border-0 p-0 bg-transparent shadow-xl rounded-2xl overflow-hidden"
+                        : memory.albumStyle === "filmstrip"
+                          ? "filmstrip-frame"
+                          : memory.albumStyle === "grid"
+                            ? "border border-[var(--hairline)] bg-[var(--paper-light)] p-2 shadow-sm"
+                            : compact
+                              ? "polaroid-frame p-1.5! pb-3!"
+                              : "polaroid-frame"
                   }`}
                   style={{
                     transform: `rotate(${
                       block.rotation !== undefined
                         ? `${block.rotation}deg`
-                        : memory.albumStyle === "portrait"
+                        : memory.albumStyle === "borderless" || memory.albumStyle === "portrait"
                           ? "0deg"
                           : memory.albumStyle === "polaroid"
                             ? PHOTO_DEFAULT_TILTS[photoIndex % PHOTO_DEFAULT_TILTS.length]
@@ -442,18 +444,22 @@ export function FreeformPageSurface({
                       }
                       onPhotoClick?.(photoIndex);
                     }}
-                    className="block w-full overflow-hidden bg-[var(--paper-deep)] cursor-pointer"
+                    className={`block w-full overflow-hidden cursor-pointer ${
+                      memory.albumStyle === "borderless" || memory.albumStyle === "portrait"
+                        ? "rounded-xl bg-[var(--paper-deep)]"
+                        : "bg-[var(--paper-deep)]"
+                    }`}
                   >
                     <img
                       src={resolveMediaUrl(photo.url)}
                       alt={photo.caption || `Photo ${photoIndex + 1}`}
                       draggable={false}
                       className={`w-full ${
-                        memory.albumStyle === "portrait"
+                        memory.albumStyle === "borderless" || memory.albumStyle === "portrait"
                           ? sidePhotoBlocks.length > 1 && block.w > 60
                             ? "aspect-[16/10] sm:aspect-[16/9] max-h-[26vh] sm:max-h-[190px] object-cover"
                             : sidePhotoBlocks.length > 1
-                              ? "aspect-[4/3] sm:aspect-[3/4] max-h-[24vh] sm:max-h-[180px] object-cover"
+                              ? "aspect-square sm:aspect-square max-h-[24vh] sm:max-h-[175px] object-cover"
                               : "aspect-[3/4] sm:aspect-[4/5] max-h-[50vh] sm:max-h-[420px] object-cover"
                           : memory.albumStyle === "filmstrip"
                             ? compact
@@ -471,14 +477,14 @@ export function FreeformPageSurface({
                       }`}
                     />
                   </button>
-                  {(photo.caption || (memory.albumStyle !== "grid" && memory.albumStyle !== "portrait")) && (
+                  {(photo.caption || (memory.albumStyle !== "grid" && memory.albumStyle !== "portrait" && memory.albumStyle !== "borderless")) && (
                     <figcaption
                       className={`px-1 text-center italic ${
                         compact ? "mt-1 text-[9px]" : "mt-2 text-xs"
                       } ${
                         memory.albumStyle === "filmstrip"
                           ? "text-[#dfd7c7]"
-                          : memory.albumStyle === "portrait"
+                          : memory.albumStyle === "portrait" || memory.albumStyle === "borderless"
                             ? "mt-2.5 font-serif text-xs tracking-wider text-[var(--page-ink-muted)]"
                             : "text-[var(--page-ink-muted)]"
                       }`}

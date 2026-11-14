@@ -533,7 +533,10 @@ export function buildDefaultLayoutBlocks(
   const photos = mem.photos || [];
   if (photos.length === 0) return blocks;
 
-  const isPortraitAlbum = (mem as { albumStyle?: string }).albumStyle === "portrait" || photos.length === 1;
+  const isPortraitAlbum =
+    (mem as { albumStyle?: string }).albumStyle === "portrait" ||
+    (mem as { albumStyle?: string }).albumStyle === "borderless" ||
+    photos.length === 1;
   const photoTilts = [-2, 2, -1.5, 2.5];
 
   // Up to 4 photos: ALL photos placed on side: "right" (the same page)

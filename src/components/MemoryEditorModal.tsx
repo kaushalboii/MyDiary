@@ -31,9 +31,9 @@ const ALBUM_STYLES: Array<{
   desc: string;
 }> = [
   {
-    id: "portrait",
-    name: "Wedding Album",
-    desc: "Border-free fine art portraits & luxury multi-photo spreads",
+    id: "borderless",
+    name: "Frameless Grid",
+    desc: "Clean borderless photos with no outer frame or card padding",
   },
   {
     id: "polaroid",
@@ -41,9 +41,14 @@ const ALBUM_STYLES: Array<{
     desc: "Tactile tilted frames with cream borders & serif captions",
   },
   {
+    id: "portrait",
+    name: "Wedding Album",
+    desc: "Border-free fine art portraits & luxury multi-photo spreads",
+  },
+  {
     id: "grid",
-    name: "Editorial Grid",
-    desc: "Clean gallery layout with featured hero framing",
+    name: "Editorial Mat",
+    desc: "Matted museum framing with hairline borders",
   },
   {
     id: "filmstrip",

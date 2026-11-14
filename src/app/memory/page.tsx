@@ -305,13 +305,15 @@ function MemoryAlbumContent() {
                           </span>
                         </div>
                         <span className="text-[10px] font-semibold tracking-widest uppercase text-[var(--ink-soft)]">
-                          {memory.albumStyle === "portrait"
-                            ? "Wedding Album"
-                            : memory.albumStyle === "filmstrip"
-                              ? "Contact Sheet"
-                              : memory.albumStyle === "grid"
-                                ? "Editorial Grid"
-                                : "Archival Polaroids"}
+                          {memory.albumStyle === "borderless"
+                            ? "Frameless Grid"
+                            : memory.albumStyle === "portrait"
+                              ? "Wedding Album"
+                              : memory.albumStyle === "filmstrip"
+                                ? "Contact Sheet"
+                                : memory.albumStyle === "grid"
+                                  ? "Editorial Grid"
+                                  : "Archival Polaroids"}
                         </span>
                       </div>
 
@@ -349,6 +351,32 @@ function MemoryAlbumContent() {
                           </span>
                         </div>
                       </div>
+                    ))}
+                  </div>
+                ) : memory.albumStyle === "borderless" ? (
+                  <div className="grid gap-3.5 sm:grid-cols-2">
+                    {memory.photos.map((photo, idx) => (
+                      <figure
+                        key={photo.id}
+                        className="m-0 rounded-xl overflow-hidden shadow-md border-0 p-0 bg-transparent transition duration-300 hover:shadow-xl"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setLightboxIndex(idx)}
+                          className="block w-full overflow-hidden rounded-xl bg-[var(--paper-deep)] cursor-pointer"
+                        >
+                          <img
+                            src={resolveMediaUrl(photo.url)}
+                            alt={photo.caption || `Album photo ${idx + 1}`}
+                            className="aspect-square w-full object-cover transition duration-300 hover:scale-[1.03]"
+                          />
+                        </button>
+                        {photo.caption && (
+                          <figcaption className="mt-2 text-center text-xs italic text-[var(--page-ink-muted)]">
+                            {photo.caption}
+                          </figcaption>
+                        )}
+                      </figure>
                     ))}
                   </div>
                 ) : memory.albumStyle === "grid" ? (
