@@ -11,6 +11,7 @@ import {
   acceptSharedBook,
   approveCollaboratorRequest,
   autoSyncOfflineDataIfAny,
+  cancelOutgoingBookRequest,
   createBook,
   createBookInvitePayload,
   deleteBook,
@@ -1797,7 +1798,7 @@ function ShelfExperienceInner() {
                     {myOutgoingRequests.map(({ book, status }) => (
                       <div
                         key={`outgoing-${book.id}`}
-                        className="flex items-center justify-between rounded-lg border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-xs"
+                        className="flex items-center justify-between gap-2 rounded-lg border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-xs"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div
@@ -1810,9 +1811,22 @@ function ShelfExperienceInner() {
                             </span>
                           </div>
                         </div>
-                        <span className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold shrink-0">
-                          {status}
-                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold">
+                            {status}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await cancelOutgoingBookRequest(book.id);
+                              await refreshBooks();
+                            }}
+                            className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[10px] text-[var(--ink-soft)] hover:text-red-600 transition cursor-pointer"
+                            title="Cancel / remove this join request"
+                          >
+                            ✕ Cancel
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

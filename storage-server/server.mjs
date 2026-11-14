@@ -2133,7 +2133,12 @@ app.post("/api/books/:id/request-access", async (req, res) => {
   let resolved = findBookAnywhere(bookId);
 
   if (!resolved && body.bookData && body.bookData.title) {
-    const targetScope = auth.scopeId || LEGACY_SCOPE_ID;
+    const { users } = readUsersStore();
+    const ownerEmailClean = String(body.bookData.ownerEmail || "").toLowerCase().trim();
+    const ownerUser = ownerEmailClean
+      ? users.find((u) => u.email?.toLowerCase().trim() === ownerEmailClean)
+      : null;
+    const targetScope = ownerUser ? ownerUser.id : (auth.scopeId || LEGACY_SCOPE_ID);
     await mutateDb((db) => {
       const existing = db.books.find((b) => b.id === bookId);
       if (!existing) {
@@ -2142,7 +2147,7 @@ app.post("/api/books/:id/request-access", async (req, res) => {
           id: bookId,
           isShared: true,
           ownerId: body.bookData.ownerId || targetScope,
-          ownerEmail: body.bookData.ownerEmail || userEmail,
+          ownerEmail: body.bookData.ownerEmail || (ownerUser ? ownerUser.email : userEmail),
         });
       }
     }, targetScope);

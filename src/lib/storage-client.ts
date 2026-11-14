@@ -643,6 +643,12 @@ export function removeFromSharedRegistry(bookId: string) {
   }
 }
 
+export async function cancelOutgoingBookRequest(bookId: string): Promise<void> {
+  removeFromSharedRegistry(bookId);
+  await deleteFromStore("books", bookId).catch(() => {});
+  notifySharedRequestBroadcast();
+}
+
 export function createBookInvitePayload(book: DiaryBook): string {
   try {
     const minimal = {
@@ -1447,6 +1453,24 @@ export async function updateBook(
     return { book: res.book, books: list, mode: "server" };
   } catch (err) {
     if (isStorageAuthError(err)) throw err;
+
+    // If server returned 404, this book was created offline; seamlessly create it on the server now!
+    if (err instanceof Error && (err.message.includes("404") || err.message.toLowerCase().includes("not found"))) {
+      try {
+        const createRes = await serverFetch<{ book: DiaryBook; books?: DiaryBook[] }>("/api/books", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: bookId, ...patch }),
+        });
+        const list = createRes.books ?? (await fetchBooks()).books;
+        saveCachedServerBooks(list);
+        if (createRes.book.isShared) {
+          saveToSharedRegistry(createRes.book);
+        }
+        return { book: createRes.book, books: list, mode: "server" };
+      } catch {}
+    }
+
     await seedOfflineBooksIfEmpty();
     const books = await getOfflineBooks();
     const currentIdx = books.findIndex((b) => b.id === bookId);
@@ -1517,14 +1541,25 @@ export async function deleteBook(
     });
     saveCachedServerBooks(res.books);
     removeFromSharedRegistry(bookId);
+    notifySharedRequestBroadcast();
     return { books: res.books, mode: "server" };
   } catch (err) {
     if (isStorageAuthError(err)) throw err;
     await seedOfflineBooksIfEmpty();
     const books = await getOfflineBooks();
-    if (books.length <= 1) {
-      throw new Error("Keep at least one book on the shelf.");
+    await deleteFromStore("books", bookId);
+    const nextIds = books.map((b) => b.id).filter((id) => id !== bookId);
+    saveOfflineOrder(nextIds);
+    removeFromSharedRegistry(bookId);
+    notifySharedRequestBroadcast();
+
+    // If server 404'd, also prune it from cached server books
+    const cached = loadCachedServerBooks();
+    if (cached) {
+      const pruned = cached.filter((b) => b.id !== bookId);
+      saveCachedServerBooks(pruned);
     }
+
     const currentBook = books.find((b) => b.id === bookId);
     const currentUser = getCachedUser();
     const isOwner =
@@ -1532,11 +1567,6 @@ export async function deleteBook(
       (!currentBook?.ownerEmail ||
         (currentUser &&
           currentBook.ownerEmail.toLowerCase().trim() === currentUser.email?.toLowerCase().trim()));
-
-    await deleteFromStore("books", bookId);
-    const nextIds = books.map((b) => b.id).filter((id) => id !== bookId);
-    saveOfflineOrder(nextIds);
-    removeFromSharedRegistry(bookId);
 
     // Only delete memories if this was the creator/owner deleting their personal book.
     // If a collaborator leaves, all memories remain preserved and locked.
