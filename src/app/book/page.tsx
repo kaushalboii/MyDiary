@@ -14,6 +14,7 @@ import {
   Images,
   LayoutGrid,
   MapPin,
+  MoreHorizontal,
   PenLine,
   RotateCcw,
   SlidersHorizontal,
@@ -100,6 +101,17 @@ function BookMemoriesContent() {
     Record<string, MemoryLayoutBlock[]>
   >({});
   const [savingLayoutId, setSavingLayoutId] = useState<string | null>(null);
+  const [openMenuMemoryId, setOpenMenuMemoryId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!openMenuMemoryId) return;
+    function handleClickOutside(e: PointerEvent) {
+      if ((e.target as HTMLElement).closest("[data-memory-menu]")) return;
+      setOpenMenuMemoryId(null);
+    }
+    window.addEventListener("pointerdown", handleClickOutside);
+    return () => window.removeEventListener("pointerdown", handleClickOutside);
+  }, [openMenuMemoryId]);
   const [lightboxState, setLightboxState] = useState<{
     memory: MemoryAlbum;
     index: number;
@@ -1245,74 +1257,110 @@ function BookMemoriesContent() {
                     <span>Edit</span>
                   </button>
                 )}
-                <button
-                  type="button"
-                  data-no-flip="true"
-                  data-testid={`arrange-memory-${mem.id}`}
-                  onClick={() => {
-                    if (!isUserAuthenticated()) {
-                      window.dispatchEvent(
-                        new CustomEvent(AUTH_REQUIRED_EVENT, {
-                          detail: { message: "Sign in to arrange memory blocks." },
-                        }),
-                      );
-                      return;
-                    }
-                    setDraftBlocksByMemory((prev) => ({
-                      ...prev,
-                      [mem.id]:
-                        prev[mem.id] ||
-                        (mem.layoutBlocks?.length
-                          ? syncLayoutBlocksWithMemory(mem)
-                          : buildDefaultLayoutBlocks(mem)),
-                    }));
-                    setArrangingMemoryId(mem.id);
-                  }}
-                  className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] cursor-pointer hover:underline"
-                >
-                  <LayoutGrid className="h-3.5 w-3.5" />
-                  <span>Arrange</span>
-                </button>
-                {isUserAuthenticated() && mem.photos?.length > 0 && (
+
+                <div className="relative" data-no-flip="true" data-memory-menu="true">
                   <button
                     type="button"
                     data-no-flip="true"
-                    onClick={() => void handleToggleFrameStyle(mem.id, mem.albumStyle)}
-                    className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink-soft)] cursor-pointer hover:text-[var(--ink)] hover:underline"
-                    title={
-                      mem.albumStyle === "borderless"
-                        ? "Outer frame is OFF. Click to switch to Polaroid outer frame"
-                        : "Outer frame is ON. Click to switch to Frameless Grid (no outer frame)"
-                    }
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenMenuMemoryId((prev) => (prev === mem.id ? null : mem.id));
+                    }}
+                    className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer hover:underline py-0.5 px-1 rounded transition-colors"
+                    title="Page Options Menu"
                   >
-                    <SlidersHorizontal className="h-3.5 w-3.5 text-[var(--accent)]" />
-                    <span>{mem.albumStyle === "borderless" ? "Frameless" : "Polaroid"}</span>
+                    <MoreHorizontal className="h-3.5 w-3.5" />
+                    <span>Options</span>
                   </button>
-                )}
-                {hasCustomLayout && (
-                  <button
-                    type="button"
-                    data-no-flip="true"
-                    onClick={() => void handleResetLayout(mem.id)}
-                    className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink-soft)] cursor-pointer hover:text-[var(--ink)]"
-                    title="Restore automatic page placement"
-                  >
-                    <RotateCcw className="h-3 w-3" />
-                    <span>Reset</span>
-                  </button>
-                )}
-                {isUserAuthenticated() && (
-                  <button
-                    type="button"
-                    data-no-flip="true"
-                    onClick={() => void handleDeleteMemory(mem)}
-                    disabled={deletingMemoryId === mem.id}
-                    className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--accent)] cursor-pointer hover:underline disabled:opacity-50"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>{deletingMemoryId === mem.id ? "Removing..." : "Remove"}</span>
-                  </button>
-                )}
+
+                  {openMenuMemoryId === mem.id && (
+                    <div
+                      data-no-flip="true"
+                      className="absolute bottom-full left-0 mb-2 w-52 rounded-xl border border-[var(--hairline)] bg-[var(--paper)]/98 p-1.5 shadow-2xl backdrop-blur-md z-40 text-xs animate-in fade-in zoom-in-95 duration-150"
+                    >
+                      <button
+                        type="button"
+                        data-no-flip="true"
+                        data-testid={`arrange-memory-${mem.id}`}
+                        onClick={() => {
+                          setOpenMenuMemoryId(null);
+                          if (!isUserAuthenticated()) {
+                            window.dispatchEvent(
+                              new CustomEvent(AUTH_REQUIRED_EVENT, {
+                                detail: { message: "Sign in to arrange memory blocks." },
+                              }),
+                            );
+                            return;
+                          }
+                          setDraftBlocksByMemory((prev) => ({
+                            ...prev,
+                            [mem.id]:
+                              prev[mem.id] ||
+                              (mem.layoutBlocks?.length
+                                ? syncLayoutBlocksWithMemory(mem)
+                                : buildDefaultLayoutBlocks(mem)),
+                          }));
+                          setArrangingMemoryId(mem.id);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-medium text-[var(--ink)] hover:bg-[var(--paper-deep)] cursor-pointer transition-colors"
+                      >
+                        <LayoutGrid className="h-3.5 w-3.5 text-[var(--ink-soft)]" />
+                        <span>Arrange Page</span>
+                      </button>
+
+                      {isUserAuthenticated() && mem.photos?.length > 0 && (
+                        <button
+                          type="button"
+                          data-no-flip="true"
+                          onClick={() => {
+                            setOpenMenuMemoryId(null);
+                            void handleToggleFrameStyle(mem.id, mem.albumStyle);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-medium text-[var(--ink)] hover:bg-[var(--paper-deep)] cursor-pointer transition-colors"
+                        >
+                          <SlidersHorizontal className="h-3.5 w-3.5 text-[var(--accent)]" />
+                          <span>
+                            {mem.albumStyle === "borderless" ? "Use Polaroid Frame" : "Use Frameless Grid"}
+                          </span>
+                        </button>
+                      )}
+
+                      {hasCustomLayout && (
+                        <button
+                          type="button"
+                          data-no-flip="true"
+                          onClick={() => {
+                            setOpenMenuMemoryId(null);
+                            void handleResetLayout(mem.id);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-medium text-[var(--ink-soft)] hover:text-[var(--ink)] hover:bg-[var(--paper-deep)] cursor-pointer transition-colors"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                          <span>Reset Layout</span>
+                        </button>
+                      )}
+
+                      {isUserAuthenticated() && (
+                        <>
+                          <div className="my-1 border-t border-[var(--hairline)]" />
+                          <button
+                            type="button"
+                            data-no-flip="true"
+                            onClick={() => {
+                              setOpenMenuMemoryId(null);
+                              void handleDeleteMemory(mem);
+                            }}
+                            disabled={deletingMemoryId === mem.id}
+                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-medium text-[var(--accent)] hover:bg-[var(--paper-deep)] cursor-pointer transition-colors disabled:opacity-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            <span>{deletingMemoryId === mem.id ? "Removing..." : "Remove Memory"}</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>
