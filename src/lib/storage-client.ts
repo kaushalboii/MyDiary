@@ -1097,6 +1097,7 @@ export async function fetchMemory(
 
 export async function uploadPhotos(
   files: File[],
+  bookId?: string,
 ): Promise<{ files: AlbumPhoto[]; mode: StorageMode }> {
   if (!files.length) return { files: [], mode: "server" };
   if (hasVaultEnvelope()) {
@@ -1113,7 +1114,11 @@ export async function uploadPhotos(
     const formData = new FormData();
     files.forEach((file) => formData.append("photos", file));
 
-    const response = await fetch(`${base}/api/upload`, {
+    const uploadUrl = bookId
+      ? `${base}/api/upload?bookId=${encodeURIComponent(bookId)}`
+      : `${base}/api/upload`;
+
+    const response = await fetch(uploadUrl, {
       method: "POST",
       headers: authHeaders(config),
       body: formData,

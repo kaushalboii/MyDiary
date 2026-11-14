@@ -8,13 +8,17 @@ import {
   ArrowRight,
   BookOpen,
   Check,
+  CheckCircle2,
+  Heart,
   ImagePlus,
   Loader2,
   PenLine,
+  Share2,
   Shuffle,
   Sparkles,
   Star,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import {
@@ -240,7 +244,7 @@ const SIZE_PRESETS = [
   { name: "Tall Quarto", thickness: 0.22, height: 2.38, width: 1.32 },
 ];
 
-type EditorTab = "cover" | "wordings" | "memory" | "size";
+type EditorTab = "cover" | "wordings" | "collaborate" | "memory" | "size";
 
 export function VolumeEditorModal({
   mode = "edit",
@@ -316,6 +320,17 @@ export function VolumeEditorModal({
   const [description, setDescription] = useState(book.description);
   const [quote, setQuote] = useState(book.quote);
   const [quoteBy, setQuoteBy] = useState(book.quoteBy);
+
+  // Co-Author & Shared Book
+  const [collaboratorEmail, setCollaboratorEmail] = useState<string>(() => {
+    if (typeof book.collaboratorEmail === "string" && book.collaboratorEmail.trim()) {
+      return book.collaboratorEmail.trim();
+    }
+    if (Array.isArray(book.collaborators) && book.collaborators.length > 0) {
+      return book.collaborators[0] || "";
+    }
+    return "";
+  });
 
   // Outer Cover Look
   const [cover, setCover] = useState(book.cover);
@@ -416,6 +431,9 @@ export function VolumeEditorModal({
     height,
     thickness,
     width,
+    collaboratorEmail: collaboratorEmail.trim() ? collaboratorEmail.trim().toLowerCase() : null,
+    collaborators: collaboratorEmail.trim() ? [collaboratorEmail.trim().toLowerCase()] : [],
+    isShared: Boolean(collaboratorEmail.trim()) || Boolean(book.isShared),
   };
 
   async function handleCoverUpload(files: FileList | null) {
@@ -424,7 +442,7 @@ export function VolumeEditorModal({
     setUploadingCover(true);
     setError(null);
     try {
-      const res = await uploadPhotos([file]);
+      const res = await uploadPhotos([file], book?.id);
       const uploaded = res.files[0];
       if (uploaded?.url) {
         setCoverImage(uploaded.url);
@@ -453,7 +471,7 @@ export function VolumeEditorModal({
     setError(null);
     setMemoryUploading(true);
     try {
-      const res = await uploadPhotos(imageFiles);
+      const res = await uploadPhotos(imageFiles, book?.id);
       setMemoryPhotos((prev) => {
         const next = [...prev, ...res.files];
         if (!memoryCoverPhotoId && next[0]) setMemoryCoverPhotoId(next[0].id);
@@ -577,6 +595,9 @@ export function VolumeEditorModal({
         thickness,
         width,
         positionIndex,
+        collaboratorEmail: collaboratorEmail.trim() ? collaboratorEmail.trim().toLowerCase() : null,
+        collaborators: collaboratorEmail.trim() ? [collaboratorEmail.trim().toLowerCase()] : [],
+        isShared: Boolean(collaboratorEmail.trim()),
       });
       onClose();
     } catch (err) {
@@ -929,7 +950,7 @@ export function VolumeEditorModal({
 
         {/* Minimal Tabs */}
         <div
-          className={`mb-5 grid ${mode === "create" ? "grid-cols-3" : "grid-cols-4"} border border-[var(--hairline)] bg-[var(--paper)]`}
+          className={`mb-5 grid ${mode === "create" ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2 sm:grid-cols-5"} border border-[var(--hairline)] bg-[var(--paper)]`}
           role="tablist"
         >
           {(
@@ -937,11 +958,13 @@ export function VolumeEditorModal({
               ? [
                   { id: "cover" as const, label: "Outer Look" },
                   { id: "wordings" as const, label: "Wordings & Page" },
+                  { id: "collaborate" as const, label: "Co-Author" },
                   { id: "size" as const, label: "Size & Shelf Spot" },
                 ]
               : [
                   { id: "cover" as const, label: "Outer Look" },
                   { id: "wordings" as const, label: "Wordings & Page" },
+                  { id: "collaborate" as const, label: "Co-Author" },
                   { id: "memory" as const, label: "Write Memory" },
                   { id: "size" as const, label: "Size & Shelf Spot" },
                 ]
@@ -1637,6 +1660,92 @@ export function VolumeEditorModal({
                     onChange={(e) => setQuote(e.target.value)}
                     className="w-full border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-sm"
                   />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {tab === "collaborate" && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] p-4 sm:p-5">
+                <div className="mb-2 flex items-center gap-2">
+                  <Users className="h-4 w-4 text-[var(--accent)]" />
+                  <h3 className="font-serif text-base font-semibold text-[var(--ink)]">
+                    Co-Author & Shared Memory Book
+                  </h3>
+                </div>
+                <p className="mb-4 font-serif text-xs italic leading-relaxed text-[var(--ink-soft)]">
+                  Connect two Google accounts to write memories and upload photos together into this exact book volume. When connected, the same volume appears on both bookshelves, and both accounts can view and upload memories.
+                </p>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-1.5 flex items-center justify-between text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
+                      <span>Partner / Co-Author Google Email (Optional)</span>
+                      {collaboratorEmail.trim() ? (
+                        <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 normal-case">
+                          <Check className="h-3 w-3" /> Connected Co-Author
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-[var(--ink-soft)] normal-case">
+                          Optional · Private by default
+                        </span>
+                      )}
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="email"
+                        value={collaboratorEmail}
+                        onChange={(e) => setCollaboratorEmail(e.target.value)}
+                        placeholder="e.g. partner@gmail.com"
+                        className="w-full rounded-lg border border-[var(--hairline)] bg-[var(--paper)] px-3.5 py-2.5 text-sm font-sans placeholder:italic placeholder:text-[var(--ink-soft)]/50 focus:border-[var(--ink)] focus:outline-none transition"
+                      />
+                      {collaboratorEmail.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => setCollaboratorEmail("")}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--ink-soft)] hover:text-[var(--accent)] cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <p className="mt-1.5 text-[11px] leading-normal text-[var(--ink-soft)]">
+                      Enter your partner&apos;s Google email. Leave blank to keep this volume personal to your account.
+                    </p>
+                  </div>
+
+                  {collaboratorEmail.trim() ? (
+                    <div className="flex items-start gap-2.5 rounded-lg border border-emerald-500/25 bg-emerald-500/10 p-3 text-xs text-emerald-800 dark:text-emerald-300">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <div className="space-y-1">
+                        <div className="font-semibold">Collaborative Book Enabled</div>
+                        <div className="text-[11px] leading-relaxed opacity-90">
+                          This volume will appear on both of your bookshelves when signed in with Google. Both of you can open this book, read entries, add new memories, and upload photos together.
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-2.5 rounded-lg border border-[var(--hairline)] bg-[var(--paper)]/60 p-3 text-xs text-[var(--ink-soft)]">
+                      <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[var(--ink-soft)]/50" />
+                      <div className="text-[11px] leading-relaxed">
+                        Default books and volumes without a co-author email remain strictly private to your personal bookshelf.
+                      </div>
+                    </div>
+                  )}
+
+                  {(book.ownerEmail || book.sharedBy) && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3 text-[11px] text-[var(--ink-soft)]">
+                      <span>
+                        Created by: <strong className="font-medium text-[var(--ink)]">{book.ownerEmail || book.sharedBy}</strong>
+                      </span>
+                      {book.isShared && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent)]">
+                          Shared Volume
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

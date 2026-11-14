@@ -115,7 +115,7 @@ export function MemoryEditorModal({
     setUploading(true);
     setError(null);
     try {
-      const res = await uploadPhotos(Array.from(files));
+      const res = await uploadPhotos(Array.from(files), memory?.bookId);
       setPhotos((prev) => [...prev, ...res.files]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to upload photos.");

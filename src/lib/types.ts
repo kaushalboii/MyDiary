@@ -99,6 +99,12 @@ export type DiaryBook = {
   width?: number;
   coverImage?: string;
   living?: boolean;
+  ownerId?: string | null;
+  ownerEmail?: string | null;
+  collaborators?: string[];
+  collaboratorEmail?: string | null;
+  isShared?: boolean;
+  sharedBy?: string | null;
   memoryCount?: number;
   photoCount?: number;
   latestMemoryDate?: string | null;
@@ -155,6 +161,8 @@ export type MemoryAlbum = {
   encrypted?: boolean;
   ciphertext?: string;
   iv?: string;
+  authorEmail?: string | null;
+  authorName?: string | null;
   createdAt: string;
   updatedAt: string;
 };

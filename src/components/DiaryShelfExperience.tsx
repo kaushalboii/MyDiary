@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, BookOpen, ChevronDown, ChevronUp, Feather, Images, PenLine, Plus, SlidersHorizontal } from "lucide-react";
+import { ArrowUpRight, BookOpen, ChevronDown, ChevronUp, Feather, Images, PenLine, Plus, SlidersHorizontal, Users } from "lucide-react";
 import { defaultBooks } from "@/lib/default-books";
 import {
   AUTH_REQUIRED_EVENT,
@@ -470,6 +470,12 @@ function ShelfExperienceInner() {
               {activeBook.memoryCount === 1 ? "MEMORY" : "MEMORIES"}
             </span>
           )}
+          {activeBook.isShared && (
+            <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-[var(--accent)]/35 bg-[var(--accent)]/10 px-2 py-0.5 text-[9px] font-semibold text-[var(--accent)] uppercase tracking-wider">
+              <Users className="h-2.5 w-2.5" />
+              <span>{activeBook.sharedBy ? `From ${activeBook.sharedBy}` : activeBook.collaboratorEmail ? `Shared with ${activeBook.collaboratorEmail.split("@")[0]}` : "Shared Volume"}</span>
+            </span>
+          )}
         </p>
         <h1>{activeBook.shortTitle}</h1>
         <p className="browse-caption__author">
@@ -616,6 +622,18 @@ function ShelfExperienceInner() {
 
               <h2 className="mt-3">{selectedBook.title}</h2>
               <p className="book-details__author">{selectedBook.subtitle}</p>
+              {selectedBook.isShared && (
+                <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2.5 py-1 text-[10px] font-semibold text-[var(--accent)]">
+                  <Users className="h-3 w-3" />
+                  <span>
+                    {selectedBook.sharedBy
+                      ? `Co-authored · Created by ${selectedBook.sharedBy}`
+                      : selectedBook.collaboratorEmail
+                        ? `Co-authored with ${selectedBook.collaboratorEmail}`
+                        : "Co-authored Volume"}
+                  </span>
+                </div>
+              )}
               {selectedBook.description && (
                 <p className="book-details__description">
                   {selectedBook.description}

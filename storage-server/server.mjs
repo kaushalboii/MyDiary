@@ -869,7 +869,147 @@ function applyBookPatch(current, patch, scopeId = LEGACY_SCOPE_ID) {
         ? clampNumber(patch.width, 1.0, 1.65, current.width ?? 1.3)
         : current.width,
     living: typeof patch.living === "boolean" ? patch.living : current.living,
+    collaboratorEmail:
+      typeof patch.collaboratorEmail === "string"
+        ? patch.collaboratorEmail.trim().toLowerCase()
+        : patch.collaboratorEmail === null
+          ? null
+          : current.collaboratorEmail ?? null,
+    collaborators:
+      Array.isArray(patch.collaborators)
+        ? patch.collaborators
+            .map((c) => (typeof c === "string" ? c.trim().toLowerCase() : ""))
+            .filter(Boolean)
+        : typeof patch.collaboratorEmail === "string" && patch.collaboratorEmail.trim()
+          ? [patch.collaboratorEmail.trim().toLowerCase()]
+          : patch.collaboratorEmail === null
+            ? []
+            : Array.isArray(current.collaborators)
+              ? current.collaborators
+              : [],
+    isShared:
+      typeof patch.isShared === "boolean"
+        ? patch.isShared
+        : (Array.isArray(patch.collaborators) && patch.collaborators.length > 0) ||
+          (typeof patch.collaboratorEmail === "string" && Boolean(patch.collaboratorEmail.trim()))
+          ? true
+          : Boolean(current.isShared),
+    ownerId:
+      current.ownerId ||
+      (typeof patch.ownerId === "string" && patch.ownerId ? patch.ownerId : undefined),
+    ownerEmail:
+      current.ownerEmail ||
+      (typeof patch.ownerEmail === "string" && patch.ownerEmail
+        ? patch.ownerEmail.trim().toLowerCase()
+        : undefined),
   };
+}
+
+const ALBUM_STYLES = new Set(["portrait", "polaroid", "grid", "borderless", "filmstrip"]);
+
+function isBookCollaborator(book, userEmail, userId) {
+  if (!book) return false;
+  const cleanEmail = typeof userEmail === "string" ? userEmail.trim().toLowerCase() : "";
+  const cleanId = typeof userId === "string" ? userId.trim() : "";
+
+  // 1. Is user the owner?
+  if (cleanId && book.ownerId && String(book.ownerId) === cleanId) return true;
+  if (cleanEmail && book.ownerEmail && String(book.ownerEmail).toLowerCase() === cleanEmail) return true;
+
+  // 2. Is user in collaborators array?
+  if (cleanEmail && Array.isArray(book.collaborators)) {
+    if (book.collaborators.some((c) => typeof c === "string" && c.trim().toLowerCase() === cleanEmail)) {
+      return true;
+    }
+  }
+
+  // 3. Is user in single collaboratorEmail?
+  if (cleanEmail && typeof book.collaboratorEmail === "string") {
+    if (book.collaboratorEmail.trim().toLowerCase() === cleanEmail) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function findBookScope(bookId, req) {
+  if (!bookId) return null;
+  const userScope = req.storageScope || LEGACY_SCOPE_ID;
+  const userEmail = req.authUser?.email || "";
+  const userId = req.authUser?.id || userScope;
+
+  // 1. Check user's own database
+  try {
+    const ownDb = readDb(userScope);
+    const ownBook = ownDb.books.find((b) => b.id === bookId);
+    if (ownBook) {
+      return {
+        scopeId: userScope,
+        isOwner: true,
+        book: ownBook,
+        ownerUser: req.authUser || null,
+      };
+    }
+  } catch {}
+
+  // 2. Scan other users' databases for shared books where user is a collaborator
+  if (userEmail || userId) {
+    const { users } = readUsersStore();
+    for (const u of users) {
+      if (u.id === userScope) continue;
+      try {
+        const otherDb = readDb(u.id);
+        const match = otherDb.books.find((b) => b.id === bookId);
+        if (match && isBookCollaborator(match, userEmail, userId)) {
+          return {
+            scopeId: u.id,
+            isOwner: false,
+            book: match,
+            ownerUser: u,
+          };
+        }
+      } catch {}
+    }
+  }
+
+  return null;
+}
+
+function findMemoryScope(memoryId, req) {
+  if (!memoryId) return null;
+  const userScope = req.storageScope || LEGACY_SCOPE_ID;
+  const userEmail = req.authUser?.email || "";
+  const userId = req.authUser?.id || userScope;
+
+  // 1. Check user's own DB
+  try {
+    const ownDb = readDb(userScope);
+    const ownMem = ownDb.memories.find((m) => m.id === memoryId);
+    if (ownMem) {
+      return { scopeId: userScope, isOwner: true, memory: ownMem };
+    }
+  } catch {}
+
+  // 2. Scan other users' DBs for memories in shared books where user is collaborator
+  if (userEmail || userId) {
+    const { users } = readUsersStore();
+    for (const u of users) {
+      if (u.id === userScope) continue;
+      try {
+        const otherDb = readDb(u.id);
+        const mem = otherDb.memories.find((m) => m.id === memoryId);
+        if (mem) {
+          const book = otherDb.books.find((b) => b.id === mem.bookId);
+          if (book && isBookCollaborator(book, userEmail, userId)) {
+            return { scopeId: u.id, isOwner: false, memory: mem, book };
+          }
+        }
+      } catch {}
+    }
+  }
+
+  return null;
 }
 
 const app = express();
@@ -1188,7 +1328,16 @@ app.get("/uploads/:filename", (req, res) => {
 
 const storage = multer.diskStorage({
   destination: (req, _file, cb) => {
-    const { uploadsDir } = getScopePaths(req.storageScope || LEGACY_SCOPE_ID);
+    let targetScope = req.storageScope || LEGACY_SCOPE_ID;
+    const requestedBookId = typeof req.query?.bookId === "string" ? req.query.bookId.trim() : "";
+    if (requestedBookId) {
+      const resolved = findBookScope(requestedBookId, req);
+      if (resolved) {
+        targetScope = resolved.scopeId;
+        req.uploadScope = resolved.scopeId;
+      }
+    }
+    const { uploadsDir } = getScopePaths(targetScope);
     cb(null, uploadsDir);
   },
   filename: (_req, file, cb) => {
@@ -1672,8 +1821,52 @@ app.get("/api/health", (req, res) => {
 });
 
 app.get("/api/books", requireAuth, (req, res) => {
-  const db = readDb(req.storageScope);
-  res.json({ books: enrichBooks(db, req.storageScope) });
+  const userScope = req.storageScope || LEGACY_SCOPE_ID;
+  const db = readDb(userScope);
+  const ownBooks = enrichBooks(db, userScope).map((b) => {
+    const hasCollab = Boolean(
+      (Array.isArray(b.collaborators) && b.collaborators.length > 0) ||
+      (typeof b.collaboratorEmail === "string" && b.collaboratorEmail.trim()) ||
+      b.isShared,
+    );
+    return {
+      ...b,
+      isShared: hasCollab,
+      ownerId: b.ownerId || req.authUser?.id || userScope,
+      ownerEmail: b.ownerEmail || req.authUser?.email || null,
+    };
+  });
+
+  const existingIds = new Set(ownBooks.map((b) => b.id));
+  const sharedBooks = [];
+
+  const userEmail = req.authUser?.email || "";
+  const userId = req.authUser?.id || userScope;
+
+  if (userEmail || userId) {
+    const { users } = readUsersStore();
+    for (const u of users) {
+      if (u.id === userScope) continue;
+      try {
+        const otherDb = readDb(u.id);
+        const otherEnriched = enrichBooks(otherDb, u.id);
+        for (const b of otherEnriched) {
+          if (!existingIds.has(b.id) && isBookCollaborator(b, userEmail, userId)) {
+            existingIds.add(b.id);
+            sharedBooks.push({
+              ...b,
+              isShared: true,
+              ownerId: u.id,
+              ownerEmail: u.email || u.username,
+              sharedBy: u.displayName || u.email || u.username,
+            });
+          }
+        }
+      } catch {}
+    }
+  }
+
+  res.json({ books: [...ownBooks, ...sharedBooks] });
 });
 
 app.post("/api/books", requireAuth, async (req, res) => {
@@ -1717,8 +1910,13 @@ app.post("/api/books", requireAuth, async (req, res) => {
       height: 2.12,
       thickness: 0.24,
       width: 1.3,
+      ownerId: req.authUser?.id || req.storageScope,
+      ownerEmail: req.authUser?.email || null,
     };
     const nextBook = applyBookPatch(baseTemplate, body, req.storageScope);
+    nextBook.ownerId = req.authUser?.id || req.storageScope;
+    nextBook.ownerEmail = req.authUser?.email || null;
+
     const rawPos = Number(body.positionIndex);
     const insertAt = Number.isFinite(rawPos)
       ? Math.min(db.books.length, Math.max(0, Math.round(rawPos)))
@@ -1769,11 +1967,19 @@ app.put("/api/books/:id", requireAuth, async (req, res) => {
     res.status(400).json({ error: "Unsupported cover image URL." });
     return;
   }
+
+  const resolved = findBookScope(bookId, req);
+  if (!resolved) {
+    res.status(404).json({ error: "Book volume not found." });
+    return;
+  }
+  const targetScope = resolved.scopeId;
+
   const result = await mutateDb((db) => {
     const idx = db.books.findIndex((b) => b.id === bookId);
     if (idx === -1) return null;
     const current = db.books[idx];
-    const next = applyBookPatch(current, patch, req.storageScope);
+    const next = applyBookPatch(current, patch, targetScope);
     db.books[idx] = next;
 
     if (typeof patch.positionIndex === "number" && Number.isFinite(patch.positionIndex)) {
@@ -1784,13 +1990,13 @@ app.put("/api/books/:id", requireAuth, async (req, res) => {
       }
     }
 
-    cleanupOrphanedUploads(db, req.storageScope);
-    const books = enrichBooks(db, req.storageScope);
+    cleanupOrphanedUploads(db, targetScope);
+    const books = enrichBooks(db, targetScope);
     return {
       book: books.find((b) => b.id === bookId),
       books,
     };
-  }, req.storageScope);
+  }, targetScope);
 
   if (!result) {
     res.status(404).json({ error: "Book volume not found." });
@@ -1805,6 +2011,38 @@ app.delete("/api/books/:id", requireAuth, async (req, res) => {
     res.status(400).json({ error: "Invalid book ID format." });
     return;
   }
+
+  const resolved = findBookScope(bookId, req);
+  if (!resolved) {
+    res.status(404).json({ error: "Book volume not found." });
+    return;
+  }
+
+  // If user is collaborator (not owner): leave/disconnect from book
+  if (!resolved.isOwner) {
+    await mutateDb((db) => {
+      const idx = db.books.findIndex((b) => b.id === bookId);
+      if (idx !== -1) {
+        const book = db.books[idx];
+        const userEmail = (req.authUser?.email || "").toLowerCase();
+        if (Array.isArray(book.collaborators)) {
+          book.collaborators = book.collaborators.filter((c) => c.toLowerCase() !== userEmail);
+        }
+        if (book.collaboratorEmail && book.collaboratorEmail.toLowerCase() === userEmail) {
+          book.collaboratorEmail = null;
+        }
+        if ((!book.collaborators || book.collaborators.length === 0) && !book.collaboratorEmail) {
+          book.isShared = false;
+        }
+      }
+    }, resolved.scopeId);
+
+    const userDb = readDb(req.storageScope);
+    res.json({ ok: true, books: enrichBooks(userDb, req.storageScope) });
+    return;
+  }
+
+  // Owner deleting book
   const result = await mutateDb((db) => {
     if (db.books.length <= 1) {
       return { error: "Keep at least one book on the shelf." };
@@ -1829,15 +2067,44 @@ app.delete("/api/books/:id", requireAuth, async (req, res) => {
 });
 
 app.get("/api/memories", requireAuth, (req, res) => {
-  const db = readDb(req.storageScope);
   const bookId = typeof req.query.bookId === "string" ? req.query.bookId.trim() : "";
   const query = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
   const mood = typeof req.query.mood === "string" ? req.query.mood.trim() : "";
 
-  let memories = [...db.memories];
+  let memories = [];
   if (bookId) {
-    memories = memories.filter((m) => m.bookId === bookId);
+    const resolved = findBookScope(bookId, req);
+    const targetScope = resolved ? resolved.scopeId : req.storageScope;
+    const db = readDb(targetScope);
+    memories = db.memories
+      .filter((m) => m.bookId === bookId)
+      .map((m) => signMemoryMedia(m, targetScope));
+  } else {
+    const ownDb = readDb(req.storageScope);
+    memories = ownDb.memories.map((m) => signMemoryMedia(m, req.storageScope));
+
+    const userEmail = req.authUser?.email || "";
+    const userId = req.authUser?.id || req.storageScope;
+    if (userEmail || userId) {
+      const { users } = readUsersStore();
+      for (const u of users) {
+        if (u.id === req.storageScope) continue;
+        try {
+          const otherDb = readDb(u.id);
+          const sharedBookIds = new Set(
+            otherDb.books.filter((b) => isBookCollaborator(b, userEmail, userId)).map((b) => b.id),
+          );
+          if (sharedBookIds.size > 0) {
+            const sharedMems = otherDb.memories
+              .filter((m) => sharedBookIds.has(m.bookId))
+              .map((m) => signMemoryMedia(m, u.id));
+            memories.push(...sharedMems);
+          }
+        } catch {}
+      }
+    }
   }
+
   if (mood && mood !== "All") {
     memories = memories.filter((m) => m.mood === mood);
   }
@@ -1863,7 +2130,7 @@ app.get("/api/memories", requireAuth, (req, res) => {
     return left.localeCompare(right);
   });
 
-  res.json({ memories: memories.map((m) => signMemoryMedia(m, req.storageScope)) });
+  res.json({ memories });
 });
 
 app.get("/api/memories/:id", requireAuth, (req, res) => {
@@ -1872,13 +2139,12 @@ app.get("/api/memories/:id", requireAuth, (req, res) => {
     res.status(400).json({ error: "Invalid memory ID format." });
     return;
   }
-  const db = readDb(req.storageScope);
-  const memory = db.memories.find((m) => m.id === memoryId);
-  if (!memory) {
+  const resolved = findMemoryScope(memoryId, req);
+  if (!resolved) {
     res.status(404).json({ error: "Memory not found." });
     return;
   }
-  res.json({ memory: signMemoryMedia(memory, req.storageScope) });
+  res.json({ memory: signMemoryMedia(resolved.memory, resolved.scopeId) });
 });
 
 app.post("/api/upload", requireAuth, upload.array("photos", 24), (req, res) => {
@@ -1897,11 +2163,12 @@ app.post("/api/upload", requireAuth, upload.array("photos", 24), (req, res) => {
     }
   }
 
-  const { uploadPrefix } = getScopePaths(req.storageScope);
+  const scope = req.uploadScope || req.storageScope || LEGACY_SCOPE_ID;
+  const { uploadPrefix } = getScopePaths(scope);
   const uploaded = files.map((file) => ({
     id: crypto.randomUUID(),
     filename: file.filename,
-    url: signMediaPath(`${uploadPrefix}/${file.filename}`, req.storageScope),
+    url: signMediaPath(`${uploadPrefix}/${file.filename}`, scope),
     originalName: file.originalname,
     size: file.size,
     mimeType: file.mimetype,
@@ -2024,7 +2291,14 @@ app.post("/api/memories", requireAuth, async (req, res) => {
     return;
   }
 
-  const photoCheck = sanitizeIncomingPhotos(body.photos, req.storageScope);
+  const resolved = findBookScope(bookId, req);
+  if (!resolved) {
+    res.status(404).json({ error: "Target book volume not found or access denied." });
+    return;
+  }
+  const targetScope = resolved.scopeId;
+
+  const photoCheck = sanitizeIncomingPhotos(body.photos, targetScope);
   if (photoCheck.error) {
     res.status(400).json({ error: photoCheck.error });
     return;
@@ -2062,7 +2336,10 @@ app.post("/api/memories", requireAuth, async (req, res) => {
           ? body.coverPhotoId
           : photos[0]?.id || null,
       albumStyle:
-        body.albumStyle === "portrait" || body.albumStyle === "grid" || body.albumStyle === "filmstrip"
+        body.albumStyle === "portrait" ||
+        body.albumStyle === "grid" ||
+        body.albumStyle === "borderless" ||
+        body.albumStyle === "filmstrip"
           ? body.albumStyle
           : "polaroid",
       ...(layoutBlocks && layoutBlocks.length > 0 ? { layoutBlocks } : {}),
@@ -2071,19 +2348,22 @@ app.post("/api/memories", requireAuth, async (req, res) => {
         ciphertext: String(body.ciphertext || ""),
         iv: String(body.iv || ""),
       } : {}),
+      authorEmail: req.authUser?.email || null,
+      authorName: req.authUser?.displayName || req.authUser?.username || null,
       createdAt: now,
       updatedAt: now,
     };
 
     db.memories.push(memory);
+    cleanupOrphanedUploads(db, targetScope);
     return { memory };
-  }, req.storageScope);
+  }, targetScope);
 
   if (created.error) {
     res.status(404).json({ error: created.error });
     return;
   }
-  res.status(201).json({ memory: signMemoryMedia(created.memory, req.storageScope) });
+  res.status(201).json({ memory: signMemoryMedia(created.memory, targetScope) });
 });
 
 app.put("/api/memories/:id", requireAuth, async (req, res) => {
@@ -2099,9 +2379,16 @@ app.put("/api/memories/:id", requireAuth, async (req, res) => {
     return;
   }
 
+  const resolved = findMemoryScope(memoryId, req);
+  if (!resolved) {
+    res.status(404).json({ error: "Memory not found." });
+    return;
+  }
+  const targetScope = resolved.scopeId;
+
   let sanitizedPhotos = null;
   if (body.photos !== undefined) {
-    const check = sanitizeIncomingPhotos(body.photos, req.storageScope);
+    const check = sanitizeIncomingPhotos(body.photos, targetScope);
     if (check.error) {
       res.status(400).json({ error: check.error });
       return;
@@ -2146,6 +2433,7 @@ app.put("/api/memories/:id", requireAuth, async (req, res) => {
         body.albumStyle === "portrait" ||
         body.albumStyle === "polaroid" ||
         body.albumStyle === "grid" ||
+        body.albumStyle === "borderless" ||
         body.albumStyle === "filmstrip"
           ? body.albumStyle
           : current.albumStyle,
@@ -2164,9 +2452,9 @@ app.put("/api/memories/:id", requireAuth, async (req, res) => {
     };
 
     db.memories[idx] = updated;
-    cleanupOrphanedUploads(db, req.storageScope);
+    cleanupOrphanedUploads(db, targetScope);
     return { memory: updated };
-  }, req.storageScope);
+  }, targetScope);
 
   if (!result) {
     res.status(404).json({ error: "Memory not found." });
@@ -2176,7 +2464,7 @@ app.put("/api/memories/:id", requireAuth, async (req, res) => {
     res.status(400).json({ error: result.error });
     return;
   }
-  res.json({ memory: signMemoryMedia(result.memory, req.storageScope) });
+  res.json({ memory: signMemoryMedia(result.memory, targetScope) });
 });
 
 app.delete("/api/memories/:id", requireAuth, async (req, res) => {
@@ -2185,13 +2473,20 @@ app.delete("/api/memories/:id", requireAuth, async (req, res) => {
     res.status(400).json({ error: "Invalid memory ID format." });
     return;
   }
+  const resolved = findMemoryScope(memoryId, req);
+  if (!resolved) {
+    res.status(404).json({ error: "Memory not found." });
+    return;
+  }
+  const targetScope = resolved.scopeId;
+
   const deleted = await mutateDb((db) => {
     const idx = db.memories.findIndex((m) => m.id === memoryId);
     if (idx === -1) return false;
     db.memories.splice(idx, 1);
-    cleanupOrphanedUploads(db, req.storageScope);
+    cleanupOrphanedUploads(db, targetScope);
     return true;
-  }, req.storageScope);
+  }, targetScope);
 
   if (!deleted) {
     res.status(404).json({ error: "Memory not found." });

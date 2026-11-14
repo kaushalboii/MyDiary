@@ -22,6 +22,7 @@ import {
   StickyNote,
   Trash2,
   UploadCloud,
+  Users,
   X,
 } from "lucide-react";
 import { ExpandableDock } from "@/components/ExpandableDock";
@@ -1694,10 +1695,27 @@ function BookMemoriesContent() {
               {books.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.title}
+                  {item.isShared ? " · Shared" : ""}
                   {(item.memoryCount ?? 0) > 0 ? ` (${item.memoryCount})` : ""}
                 </option>
               ))}
             </select>
+
+            {book.isShared && (
+              <span
+                className="hidden sm:inline-flex items-center gap-1 rounded-full border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent)]"
+                title={
+                  book.sharedBy
+                    ? `Co-authored · Created by ${book.sharedBy}`
+                    : book.collaboratorEmail
+                      ? `Co-authored with ${book.collaboratorEmail}`
+                      : "Co-authored Volume"
+                }
+              >
+                <Users className="h-3 w-3" />
+                <span>{book.sharedBy ? `From ${book.sharedBy}` : "Shared"}</span>
+              </span>
+            )}
 
             <span className="top-dock__divider" aria-hidden="true" />
 

@@ -235,7 +235,7 @@ export function MemoryComposer({
     setError(null);
     setUploading(true);
     try {
-      const res = await uploadPhotos(imageFiles);
+      const res = await uploadPhotos(imageFiles, bookId);
       setPhotos((prev) => {
         const next = [...prev, ...res.files];
         if (!coverPhotoId && next[0]) setCoverPhotoId(next[0].id);
