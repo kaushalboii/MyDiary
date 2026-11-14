@@ -180,8 +180,20 @@ export function BookMotifPreview({
             border: `1.2px solid ${book.accent}`,
             borderTopLeftRadius: 999,
             borderTopRightRadius: 999,
+            overflow: "hidden",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
           }}
-        />
+        >
+          {coverSrc ? (
+            <img
+              src={coverSrc}
+              alt="Arch artwork"
+              className="h-full w-full object-cover"
+            />
+          ) : null}
+        </div>
       )}
 
       {template === "sun-disc" && (

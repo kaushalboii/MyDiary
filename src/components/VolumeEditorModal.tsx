@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
@@ -40,6 +40,7 @@ import {
   createBookInvitePayload,
   createMemory,
   getCachedUser,
+  loadCachedMemories,
   resolveMediaUrl,
   uploadPhotos,
   type BookPatchInput,
@@ -165,7 +166,7 @@ const COVER_TEMPLATES: Array<{ id: CoverTemplate; label: string; hint: string }>
   { id: "side-spine-band", label: "Quarter Binding", hint: "Left cloth band & rule" },
   { id: "bordered-plaque", label: "Framed Plaque", hint: "Centered paper label plate" },
   { id: "clean-minimal", label: "Clean Minimal", hint: "Thin inset frame & mark" },
-  { id: "arch-frame", label: "Arch Frame", hint: "Soft museum archway" },
+  { id: "arch-frame", label: "Arch Frame", hint: "Museum archway • Custom photo inside arch" },
   { id: "top-header-band", label: "Header Cloth", hint: "Upper band title block" },
   { id: "sun-disc", label: "Sun Disc", hint: "Centered pastel circle" },
   { id: "horizon-rule", label: "Horizon Rules", hint: "Three quiet tapered lines" },
@@ -412,6 +413,22 @@ export function VolumeEditorModal({
   const [error, setError] = useState<string | null>(null);
   const [copiedInvite, setCopiedInvite] = useState(false);
 
+  const availablePhotos = useMemo(() => {
+    if (!book?.id) return [];
+    const mems = loadCachedMemories(book.id) || [];
+    const photos: AlbumPhoto[] = [];
+    for (const m of mems) {
+      if (Array.isArray(m.photos)) {
+        for (const p of m.photos) {
+          if (p.url && !photos.some((existing) => existing.url === p.url)) {
+            photos.push(p);
+          }
+        }
+      }
+    }
+    return photos;
+  }, [book?.id]);
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -645,9 +662,6 @@ export function VolumeEditorModal({
       const uploaded = res.files[0];
       if (uploaded?.url) {
         setCoverImage(uploaded.url);
-        if (coverTemplate !== "photo-card" && coverTemplate !== "bordered-plaque") {
-          setCoverTemplate("photo-card");
-        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not upload cover image.");
@@ -1387,15 +1401,30 @@ export function VolumeEditorModal({
                 </div>
               </div>
 
-              {/* Custom Front Cover Image Upload */}
-              <div className="border border-[var(--hairline)] bg-[var(--paper)] p-3.5">
+              {/* Custom Front Cover Image Upload / Arch Artwork */}
+              <div
+                className={`border p-3.5 transition ${
+                  coverTemplate === "arch-frame"
+                    ? "border-[var(--accent)] bg-[var(--paper-light)] ring-1 ring-[var(--accent)]/30"
+                    : "border-[var(--hairline)] bg-[var(--paper)]"
+                }`}
+              >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <div className="text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                      Custom Front Card Image (optional)
+                    <div className="text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)] flex items-center gap-1.5">
+                      {coverTemplate === "arch-frame" && (
+                        <Sparkles className="h-3 w-3 text-[var(--accent)]" />
+                      )}
+                      <span>
+                        {coverTemplate === "arch-frame"
+                          ? "Arch Frame Photograph / Artwork"
+                          : "Custom Front Card Image (optional)"}
+                      </span>
                     </div>
                     <p className="mt-0.5 text-xs text-[var(--ink-soft)]">
-                      Upload any photograph or artwork for the outer cover.
+                      {coverTemplate === "arch-frame"
+                        ? "Upload any image or memory photo to display fitted inside the museum arch."
+                        : "Upload any photograph or artwork for the outer cover."}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1410,14 +1439,22 @@ export function VolumeEditorModal({
                       type="button"
                       disabled={uploadingCover}
                       onClick={() => fileRef.current?.click()}
-                      className="inline-flex items-center gap-1.5 border border-[var(--ink)] bg-[var(--paper-light)] px-3 py-1.5 text-[11px] font-semibold tracking-wider uppercase cursor-pointer hover:bg-[var(--paper-deep)] disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 border border-[var(--ink)] bg-[var(--paper-light)] px-3 py-1.5 text-[11px] font-semibold tracking-wider uppercase cursor-pointer hover:bg-[var(--paper-deep)] disabled:opacity-50 shadow-sm"
                     >
                       {uploadingCover ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       ) : (
                         <ImagePlus className="h-3.5 w-3.5" />
                       )}
-                      <span>{coverImage ? "Replace Image" : "Upload Cover"}</span>
+                      <span>
+                        {coverImage
+                          ? coverTemplate === "arch-frame"
+                            ? "Change Arch Photo"
+                            : "Replace Image"
+                          : coverTemplate === "arch-frame"
+                          ? "Upload Arch Photo"
+                          : "Upload Cover"}
+                      </span>
                     </button>
                     {coverImage && (
                       <button
@@ -1431,26 +1468,84 @@ export function VolumeEditorModal({
                   </div>
                 </div>
 
+                {/* Available photos from this book's memories */}
+                {availablePhotos.length > 0 && (
+                  <div className="mt-3 border-t border-[var(--hairline)] pt-2.5">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ink-soft)] mb-1.5">
+                      Or pick a photo from this volume:
+                    </div>
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                      {availablePhotos.map((photo: AlbumPhoto) => {
+                        const isSelected = coverImage === photo.url;
+                        return (
+                          <button
+                            key={photo.id || photo.url}
+                            type="button"
+                            onClick={() => setCoverImage(photo.url)}
+                            className={`h-12 w-9 shrink-0 overflow-hidden border transition cursor-pointer ${
+                              isSelected
+                                ? "border-[var(--ink)] ring-2 ring-[var(--accent)]"
+                                : "border-black/15 hover:border-[var(--ink)] opacity-80 hover:opacity-100"
+                            }`}
+                            style={{
+                              borderTopLeftRadius: coverTemplate === "arch-frame" ? "999px" : "4px",
+                              borderTopRightRadius: coverTemplate === "arch-frame" ? "999px" : "4px",
+                            }}
+                            title="Place this photo on the cover"
+                          >
+                            <img
+                              src={resolveMediaUrl(photo.url)}
+                              alt="Memory photo option"
+                              className="h-full w-full object-cover"
+                            />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {coverImage && (
                   <div className="mt-3 flex items-center justify-between gap-3 border-t border-[var(--hairline)] pt-2.5">
-                    <div className="flex items-center gap-2.5">
-                      <img
-                        src={resolveMediaUrl(coverImage)}
-                        alt="Cover preview"
-                        className="h-10 w-8 border border-black/15 object-cover"
-                      />
-                      <span className="text-xs text-[var(--ink-soft)]">
-                        Custom cover artwork attached
-                      </span>
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="h-14 w-10 overflow-hidden shadow-sm shrink-0 border"
+                        style={{
+                          borderTopLeftRadius: coverTemplate === "arch-frame" ? "999px" : "4px",
+                          borderTopRightRadius: coverTemplate === "arch-frame" ? "999px" : "4px",
+                          borderColor: accent,
+                          backgroundColor: secondary,
+                        }}
+                      >
+                        <img
+                          src={resolveMediaUrl(coverImage)}
+                          alt="Cover preview"
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-xs font-semibold text-[var(--ink)] block">
+                          {coverTemplate === "arch-frame"
+                            ? "Arch photograph active"
+                            : "Custom cover artwork attached"}
+                        </span>
+                        <span className="text-[11px] text-[var(--ink-soft)]">
+                          {coverTemplate === "arch-frame"
+                            ? "Fitted directly into the museum arch frame"
+                            : "Custom cover image"}
+                        </span>
+                      </div>
                     </div>
-                    <label className="flex items-center gap-2 text-xs cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={showCoverTextWithImage}
-                        onChange={(e) => setShowCoverTextWithImage(e.target.checked)}
-                      />
-                      <span>Show title text</span>
-                    </label>
+                    {coverTemplate === "photo-card" && (
+                      <label className="flex items-center gap-2 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={showCoverTextWithImage}
+                          onChange={(e) => setShowCoverTextWithImage(e.target.checked)}
+                        />
+                        <span>Show title text</span>
+                      </label>
+                    )}
                   </div>
                 )}
               </div>
