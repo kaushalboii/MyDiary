@@ -21,6 +21,7 @@ import {
   isUserAuthenticated,
   loadCachedMemories,
   loadCachedServerBooks,
+  loadFromSharedRegistry,
   parseBookInvitePayload,
   requestBookAccess,
   resolveMediaUrl,
@@ -129,15 +130,69 @@ function ShelfExperienceInner() {
 
   // Find all pending requests across all books owned by the current user
   const allPendingRequests = useMemo(() => {
-    if (!userEmail) return [];
     const list: { book: DiaryBook; request: CollaboratorRequest }[] = [];
-    for (const book of books) {
-      const isOwner =
-        (book.ownerEmail && book.ownerEmail.toLowerCase().trim() === userEmail) ||
-        (!book.ownerEmail && !book.isShared);
-      if (isOwner && Array.isArray(book.pendingRequests)) {
+    const seen = new Set<string>();
+    const cleanUserEmail = userEmail ? userEmail.toLowerCase().trim() : "";
+
+    const candidateBooks = [...books];
+    if (typeof window !== "undefined") {
+      try {
+        const localShared = loadFromSharedRegistry();
+        for (const sb of localShared) {
+          if (!candidateBooks.some((b) => b.id === sb.id)) {
+            candidateBooks.push(sb);
+          }
+        }
+      } catch {}
+    }
+
+    for (const book of candidateBooks) {
+      if (Array.isArray(book.pendingRequests) && book.pendingRequests.length > 0) {
         for (const req of book.pendingRequests) {
-          list.push({ book, request: req });
+          const key = `${book.id}-${req.email?.toLowerCase().trim()}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            // If request is from someone else, it's an incoming request for this owner
+            if (!cleanUserEmail || req.email?.toLowerCase().trim() !== cleanUserEmail) {
+              list.push({ book, request: req });
+            }
+          }
+        }
+      }
+    }
+    return list;
+  }, [books, userEmail]);
+
+  // Outgoing requests sent by this user awaiting creator approval
+  const myOutgoingRequests = useMemo(() => {
+    const list: { book: DiaryBook; status: string }[] = [];
+    const cleanUserEmail = userEmail ? userEmail.toLowerCase().trim() : "";
+    const candidateBooks = [...books];
+    if (typeof window !== "undefined") {
+      try {
+        const localShared = loadFromSharedRegistry();
+        for (const sb of localShared) {
+          if (!candidateBooks.some((b) => b.id === sb.id)) {
+            candidateBooks.push(sb);
+          }
+        }
+      } catch {}
+    }
+    for (const book of candidateBooks) {
+      if (book.inviteStatus === "pending_approval" || book.inviteStatus === "pending") {
+        list.push({
+          book,
+          status: `Awaiting owner (${book.ownerEmail || "creator"}) approval`,
+        });
+      } else if (cleanUserEmail && Array.isArray(book.pendingRequests)) {
+        const myReq = book.pendingRequests.find(
+          (r) => r.email?.toLowerCase().trim() === cleanUserEmail,
+        );
+        if (myReq) {
+          list.push({
+            book,
+            status: `Awaiting owner (${book.ownerEmail || "creator"}) approval`,
+          });
         }
       }
     }
@@ -627,19 +682,23 @@ function ShelfExperienceInner() {
             securityOpen={storageOpen}
             onSecurityOpenChange={setStorageOpen}
             onStorageConnected={() => void refreshBooks()}
+            badgeCount={allPendingRequests.length}
           >
-            {allPendingRequests.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setNotificationsOpen(true)}
-                className="top-dock__btn text-amber-700 dark:text-amber-300 font-semibold"
-                aria-label="Pending Requests"
-                title="Pending Requests"
-              >
-                <Bell className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Requests ({allPendingRequests.length})</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setJoinModalOpen(true)}
+              className={`top-dock__btn ${allPendingRequests.length > 0 ? "font-bold text-amber-700 dark:text-amber-300" : ""}`}
+              aria-label="Accept Invites & Shared Books"
+              title="Accept Invites & Shared Books"
+            >
+              <Users className="h-3.5 w-3.5 text-[var(--accent)]" aria-hidden="true" />
+              <span>Accept Invites & Shared Books</span>
+              {allPendingRequests.length > 0 && (
+                <span className="ml-1 rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm animate-pulse">
+                  {allPendingRequests.length}
+                </span>
+              )}
+            </button>
             <Link
               href={`/book?id=${encodeURIComponent(activeBook.id)}`}
               data-testid="open-active"
@@ -1500,7 +1559,7 @@ function ShelfExperienceInner() {
           aria-modal="true"
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
         >
-          <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--paper-light)] p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--paper-light)] p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
             <button
               onClick={() => {
                 setJoinModalOpen(false);
@@ -1512,27 +1571,162 @@ function ShelfExperienceInner() {
               <X className="h-4 w-4" />
             </button>
 
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 shrink-0">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent)]/15 text-[var(--accent)]">
                 <Users className="h-5 w-5" />
               </div>
               <div>
                 <h3 className="font-serif text-lg font-bold text-[var(--ink)]">
-                  Add a Shared Book to Shelf
+                  Co-Author & Shared Books
                 </h3>
                 <p className="text-xs text-[var(--ink-soft)] m-0">
-                  Place a partner&apos;s memory book onto your bookshelf.
+                  Accept incoming co-author requests or connect partner volumes to your shelf.
                 </p>
               </div>
             </div>
 
-            <div className="mt-4 space-y-3">
-              <div>
+            <div className="mt-5 space-y-4 overflow-y-auto pr-1 flex-1">
+              {/* Section 1: Incoming Requests to Accept */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent)] flex items-center gap-1.5">
+                    <Bell className="h-3.5 w-3.5" />
+                    Pending Co-Author Requests ({allPendingRequests.length})
+                  </span>
+                  {allPendingRequests.length > 0 && (
+                    <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                      Needs Your Acceptance
+                    </span>
+                  )}
+                </div>
+
+                {allPendingRequests.length > 0 ? (
+                  <div className="space-y-2.5">
+                    {allPendingRequests.map(({ book, request }) => (
+                      <div
+                        key={`${book.id}-${request.email}`}
+                        className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3.5 space-y-3"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div
+                            className="grid h-14 w-10 shrink-0 place-items-center rounded border border-black/15 shadow-sm text-white/90"
+                            style={{ backgroundColor: book.cover || "#8c3f3d" }}
+                          >
+                            <BookOpen className="h-5 w-5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-serif text-base font-bold text-[var(--ink)] truncate">
+                                {book.title}
+                              </h4>
+                              <span className="text-[10px] text-[var(--ink-soft)] shrink-0 ml-2">
+                                {request.requestedAt
+                                  ? new Date(request.requestedAt).toLocaleTimeString([], {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                  : "Pending"}
+                              </span>
+                            </div>
+                            {book.subtitle && (
+                              <p className="font-serif text-xs italic text-[var(--ink-soft)] truncate mt-0.5">
+                                {book.subtitle}
+                              </p>
+                            )}
+                            <div className="mt-2 text-xs text-[var(--ink)] leading-snug">
+                              <span className="font-semibold">{request.name || request.email}</span>{" "}
+                              <span className="text-[var(--ink-soft)] font-mono">
+                                ({request.email})
+                              </span>{" "}
+                              requested to co-author this book with you.
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-amber-500/20">
+                          <button
+                            type="button"
+                            disabled={approvingEmail === request.email}
+                            onClick={() => void handleApproveRequest(book.id, request.email, "decline")}
+                            className="rounded-full border border-[var(--hairline)] px-3 py-1.5 text-xs font-medium text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer disabled:opacity-50"
+                          >
+                            Decline
+                          </button>
+                          <button
+                            type="button"
+                            disabled={approvingEmail === request.email}
+                            onClick={async () => {
+                              await handleApproveRequest(book.id, request.email, "approve");
+                              const idx = books.findIndex((b) => b.id === book.id);
+                              if (idx >= 0) {
+                                engineRef.current?.focusBook(idx);
+                                setSelectedIndex(idx);
+                                setActiveIndex(idx);
+                              }
+                            }}
+                            className="rounded-full bg-[var(--ink)] px-4 py-1.5 text-xs font-semibold text-[var(--paper-light)] hover:bg-[var(--walnut-deep)] transition cursor-pointer shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            <Check className="h-3.5 w-3.5 text-emerald-400" />
+                            <span>Accept & Place on Shelf</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-[var(--hairline)] bg-[var(--paper)] p-3 text-xs text-[var(--ink-soft)] flex items-center gap-2.5">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <div>
+                      <span className="font-semibold text-[var(--ink)] block">
+                        No pending incoming requests
+                      </span>
+                      <span>
+                        When a partner visits your invite link or requests to join, their request will appear right here with a 1-click Accept button.
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 2: Outgoing Requests */}
+              {myOutgoingRequests.length > 0 && (
+                <div className="space-y-2 pt-1 border-t border-[var(--hairline)]">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-soft)]">
+                    Your Outgoing Join Requests ({myOutgoingRequests.length})
+                  </span>
+                  <div className="space-y-1.5">
+                    {myOutgoingRequests.map(({ book, status }) => (
+                      <div
+                        key={`outgoing-${book.id}`}
+                        className="flex items-center justify-between rounded-lg border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-xs"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div
+                            className="h-6 w-4 rounded-sm border border-black/10 shrink-0"
+                            style={{ backgroundColor: book.cover || "#8c3f3d" }}
+                          />
+                          <div className="min-w-0">
+                            <span className="font-medium text-[var(--ink)] truncate block">
+                              {book.title}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold shrink-0">
+                          {status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Section 3: Import via Invite Link or Code */}
+              <div className="space-y-2.5 pt-3 border-t border-[var(--hairline)]">
                 <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-[var(--ink-soft)]">
-                  Paste Invite Link or Share Code:
+                  Import Partner Volume via Invite Link / Share Code:
                 </label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   value={joinInput}
                   onChange={(e) => {
                     setJoinInput(e.target.value);
@@ -1541,20 +1735,20 @@ function ShelfExperienceInner() {
                   placeholder="Paste https://kaushalboii.github.io/MyDiary/?invite=... or book code here"
                   className="w-full rounded-lg border border-[var(--hairline)] bg-[var(--paper)] p-2.5 text-xs font-mono placeholder:italic placeholder:font-sans placeholder:text-[var(--ink-soft)]/50 focus:border-[var(--ink)] focus:outline-none transition resize-none"
                 />
-              </div>
 
-              {joinError && (
-                <p className="text-xs font-medium text-[var(--accent)] m-0">
-                  {joinError}
+                {joinError && (
+                  <p className="text-xs font-medium text-[var(--accent)] m-0">
+                    {joinError}
+                  </p>
+                )}
+
+                <p className="text-[11px] leading-relaxed text-[var(--ink-soft)] m-0">
+                  💡 Pasting a link directly connects and places that volume onto your bookshelf.
                 </p>
-              )}
-
-              <p className="text-[11px] leading-relaxed text-[var(--ink-soft)] m-0">
-                💡 No Google sign-in needed. Pasting a share link imports that exact volume so it lives on your shelf.
-              </p>
+              </div>
             </div>
 
-            <div className="mt-5 flex items-center justify-end gap-2.5">
+            <div className="mt-5 flex items-center justify-end gap-2.5 shrink-0 pt-3 border-t border-[var(--hairline)]">
               <button
                 type="button"
                 onClick={() => {
@@ -1564,39 +1758,41 @@ function ShelfExperienceInner() {
                 }}
                 className="rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold uppercase text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer"
               >
-                Cancel
+                Close
               </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  let raw = joinInput.trim();
-                  if (!raw) {
-                    setJoinError("Please paste an invite link or code.");
-                    return;
-                  }
-                  if (raw.includes("invite=")) {
-                    try {
-                      const u = new URL(raw);
-                      raw = u.searchParams.get("invite") || raw;
-                    } catch {
-                      const match = raw.match(/invite=([^&]+)/);
-                      if (match) raw = match[1];
+              {joinInput.trim() && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    let raw = joinInput.trim();
+                    if (!raw) {
+                      setJoinError("Please paste an invite link or code.");
+                      return;
                     }
-                  }
-                  const parsed = parseBookInvitePayload(raw);
-                  if (!parsed) {
-                    setJoinError("Invalid link or code. Please check and try again.");
-                    return;
-                  }
-                  await handleAcceptInvite(parsed);
-                  setJoinModalOpen(false);
-                  setJoinInput("");
-                  setJoinError(null);
-                }}
-                className="rounded-full bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase hover:bg-[var(--walnut-deep)] transition cursor-pointer shadow-md"
-              >
-                Place on My Shelf
-              </button>
+                    if (raw.includes("invite=")) {
+                      try {
+                        const u = new URL(raw);
+                        raw = u.searchParams.get("invite") || raw;
+                      } catch {
+                        const match = raw.match(/invite=([^&]+)/);
+                        if (match) raw = match[1];
+                      }
+                    }
+                    const parsed = parseBookInvitePayload(raw);
+                    if (!parsed) {
+                      setJoinError("Invalid link or code. Please check and try again.");
+                      return;
+                    }
+                    await handleAcceptInvite(parsed);
+                    setJoinModalOpen(false);
+                    setJoinInput("");
+                    setJoinError(null);
+                  }}
+                  className="rounded-full bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase hover:bg-[var(--walnut-deep)] transition cursor-pointer shadow-md"
+                >
+                  Place on My Shelf
+                </button>
+              )}
             </div>
           </div>
         </div>

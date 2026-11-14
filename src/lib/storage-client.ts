@@ -76,7 +76,7 @@ const IDB_NAME = "mydiary_offline_fallback_v1";
 const IDB_VERSION = 1;
 const GOOGLE_USER_CACHE_KEY = "mydiary_google_user_v1";
 
-export const DEFAULT_STORAGE_URL = "";
+export const DEFAULT_STORAGE_URL = "https://4321-agq2i7yzuidu26jymgrfnit3ea.instabox.tech";
 
 export function parseGoogleCredential(credential: string): {
   sub: string;

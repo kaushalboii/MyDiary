@@ -12,6 +12,7 @@ export function ExpandableDock({
   onStorageConnected,
   securityOpen: controlledSecurityOpen,
   onSecurityOpenChange,
+  badgeCount,
 }: {
   ariaLabel?: string;
   label?: string;
@@ -20,6 +21,7 @@ export function ExpandableDock({
   onStorageConnected?: () => void;
   securityOpen?: boolean;
   onSecurityOpenChange?: (next: boolean) => void;
+  badgeCount?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [internalSecurityOpen, setInternalSecurityOpen] = useState(false);
@@ -93,6 +95,11 @@ export function ExpandableDock({
               <Menu className="h-3.5 w-3.5" aria-hidden="true" />
             )}
             <span>{open ? "Close" : label}</span>
+            {badgeCount && badgeCount > 0 ? (
+              <span className="ml-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white shadow animate-pulse">
+                {badgeCount}
+              </span>
+            ) : null}
           </button>
 
           {open ? (
