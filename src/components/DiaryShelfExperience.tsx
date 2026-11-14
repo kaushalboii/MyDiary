@@ -4,12 +4,13 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, BookOpen, Check, CheckCircle2, ChevronDown, ChevronUp, Feather, Images, Mail, PenLine, Plus, SlidersHorizontal, Sparkles, Users } from "lucide-react";
+import { ArrowUpRight, BookOpen, Check, CheckCircle2, ChevronDown, ChevronUp, Copy, Feather, Images, Mail, PenLine, Plus, Share2, SlidersHorizontal, Sparkles, Users, X } from "lucide-react";
 import { defaultBooks } from "@/lib/default-books";
 import {
   AUTH_REQUIRED_EVENT,
   acceptSharedBook,
   createBook,
+  createBookInvitePayload,
   deleteBook,
   fetchBooks,
   fetchMemories,
@@ -101,6 +102,11 @@ function ShelfExperienceInner() {
   >(null);
   const [storageOpen, setStorageOpen] = useState(false);
   const [pendingInvite, setPendingInvite] = useState<DiaryBook | null>(null);
+  const [sharingBook, setSharingBook] = useState<DiaryBook | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [joinModalOpen, setJoinModalOpen] = useState(false);
+  const [joinInput, setJoinInput] = useState("");
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   const booksRef = useRef(books);
   booksRef.current = books;
@@ -472,14 +478,6 @@ function ShelfExperienceInner() {
               className="top-dock__btn"
               data-testid="customize-active"
               onClick={() => {
-                if (!isUserAuthenticated()) {
-                  window.dispatchEvent(
-                    new CustomEvent(AUTH_REQUIRED_EVENT, {
-                      detail: { message: "Sign in to customize this volume." },
-                    }),
-                  );
-                  return;
-                }
                 setEditorState({ mode: "edit", book: activeBook });
               }}
               aria-label={`Customize ${activeBook.title}`}
@@ -489,19 +487,28 @@ function ShelfExperienceInner() {
               <span>Customize</span>
             </button>
 
-            {isUserAuthenticated() && (
-              <button
-                type="button"
-                data-testid="add-book"
-                onClick={() => setEditorState({ mode: "create" })}
-                className="top-dock__btn"
-                aria-label="Add Book"
-                title="Add Book"
-              >
-                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Add Book</span>
-              </button>
-            )}
+            <button
+              type="button"
+              data-testid="add-book"
+              onClick={() => setEditorState({ mode: "create" })}
+              className="top-dock__btn"
+              aria-label="Add Book"
+              title="Add Book"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Add Book</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setJoinModalOpen(true)}
+              className="top-dock__btn"
+              aria-label="Add Shared Book"
+              title="Add a partner's shared book to your shelf"
+            >
+              <Users className="h-3.5 w-3.5 text-[var(--accent)]" aria-hidden="true" />
+              <span>Add Shared Book</span>
+            </button>
           </ExpandableDock>
 
           <ThemeToggle />
@@ -803,14 +810,6 @@ function ShelfExperienceInner() {
                   type="button"
                   data-testid="customize-book-shelf"
                   onClick={() => {
-                    if (!isUserAuthenticated()) {
-                      window.dispatchEvent(
-                        new CustomEvent(AUTH_REQUIRED_EVENT, {
-                          detail: { message: "Sign in to customize this volume and edit memories." },
-                        }),
-                      );
-                      return;
-                    }
                     setEditorState({ mode: "edit", book: selectedBook });
                   }}
                   className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-4 py-3 text-xs font-semibold tracking-wider text-[var(--ink)] uppercase transition hover:border-[var(--ink)] hover:bg-[var(--paper)] cursor-pointer"
@@ -819,6 +818,17 @@ function ShelfExperienceInner() {
                 >
                   <SlidersHorizontal className="h-3.5 w-3.5" />
                   <span>Customize</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSharingBook(selectedBook)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-4 py-3 text-xs font-semibold tracking-wider text-[var(--accent)] uppercase transition hover:border-[var(--accent)] hover:bg-[var(--paper)] cursor-pointer"
+                  aria-label={`Share ${selectedBook.title}`}
+                  title={`Share ${selectedBook.title}`}
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                  <span>Share</span>
                 </button>
               </div>
             </div>
@@ -922,6 +932,201 @@ function ShelfExperienceInner() {
                 className="rounded-full bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase hover:bg-[var(--walnut-deep)] transition cursor-pointer shadow-md"
               >
                 Accept & Place on Shelf
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Direct Share Volume Modal */}
+      {sharingBook && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+        >
+          <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--paper-light)] p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <button
+              onClick={() => setSharingBook(null)}
+              className="absolute top-4 right-4 rounded-full p-1.5 text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div
+                className="grid h-12 w-10 shrink-0 place-items-center rounded-md border border-black/10 shadow-sm"
+                style={{ backgroundColor: sharingBook.cover || "#8c3f3d" }}
+              >
+                <BookOpen className="h-5 w-5 text-white/90" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] font-semibold tracking-widest uppercase text-[var(--accent)]">
+                  Share Memory Volume
+                </div>
+                <h3 className="font-serif text-lg font-bold text-[var(--ink)] truncate">
+                  {sharingBook.title}
+                </h3>
+                <p className="font-serif text-xs italic text-[var(--ink-soft)] truncate m-0">
+                  {sharingBook.subtitle || "Collaborative Diary"}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-[var(--ink-soft)]">
+                  Shareable Invite Link (No Sign-In Required)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${typeof window !== "undefined" ? window.location.origin + window.location.pathname : ""}?invite=${createBookInvitePayload(sharingBook)}`}
+                    className="flex-1 rounded-lg border border-[var(--hairline)] bg-[var(--paper)] px-3 py-2 text-xs font-mono text-[var(--ink)] focus:outline-none select-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const link = `${typeof window !== "undefined" ? window.location.origin + window.location.pathname : ""}?invite=${createBookInvitePayload(sharingBook)}`;
+                      void navigator.clipboard.writeText(link);
+                      setShareCopied(true);
+                      setTimeout(() => setShareCopied(false), 2500);
+                    }}
+                    className="rounded-lg bg-[var(--ink)] px-3.5 py-2 text-xs font-semibold text-[var(--paper-light)] hover:bg-[var(--walnut-deep)] transition cursor-pointer shrink-0"
+                  >
+                    {shareCopied ? "Copied!" : "Copy Link"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-xs text-emerald-800 dark:text-emerald-300">
+                <div className="font-semibold flex items-center gap-1.5">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>How your partner gets this book:</span>
+                </div>
+                <p className="mt-1 text-[11px] leading-relaxed opacity-90 m-0">
+                  Send this link to your partner or open it in your other browser/profile/incognito tab. It will instantly place <strong>“{sharingBook.title}”</strong> on their shelf without requiring Google sign-in!
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSharingBook(null)}
+                className="rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-5 py-2 text-xs font-semibold uppercase cursor-pointer hover:border-[var(--ink)]"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add / Join Shared Book Dialog */}
+      {joinModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+        >
+          <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--paper-light)] p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <button
+              onClick={() => {
+                setJoinModalOpen(false);
+                setJoinInput("");
+                setJoinError(null);
+              }}
+              className="absolute top-4 right-4 rounded-full p-1.5 text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent)]/15 text-[var(--accent)]">
+                <Users className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-serif text-lg font-bold text-[var(--ink)]">
+                  Add a Shared Book to Shelf
+                </h3>
+                <p className="text-xs text-[var(--ink-soft)] m-0">
+                  Place a partner&apos;s memory book onto your bookshelf.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-[var(--ink-soft)]">
+                  Paste Invite Link or Share Code:
+                </label>
+                <textarea
+                  rows={3}
+                  value={joinInput}
+                  onChange={(e) => {
+                    setJoinInput(e.target.value);
+                    setJoinError(null);
+                  }}
+                  placeholder="Paste https://kaushalboii.github.io/MyDiary/?invite=... or book code here"
+                  className="w-full rounded-lg border border-[var(--hairline)] bg-[var(--paper)] p-2.5 text-xs font-mono placeholder:italic placeholder:font-sans placeholder:text-[var(--ink-soft)]/50 focus:border-[var(--ink)] focus:outline-none transition resize-none"
+                />
+              </div>
+
+              {joinError && (
+                <p className="text-xs font-medium text-[var(--accent)] m-0">
+                  {joinError}
+                </p>
+              )}
+
+              <p className="text-[11px] leading-relaxed text-[var(--ink-soft)] m-0">
+                💡 No Google sign-in needed. Pasting a share link imports that exact volume so it lives on your shelf.
+              </p>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setJoinModalOpen(false);
+                  setJoinInput("");
+                  setJoinError(null);
+                }}
+                className="rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold uppercase text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  let raw = joinInput.trim();
+                  if (!raw) {
+                    setJoinError("Please paste an invite link or code.");
+                    return;
+                  }
+                  if (raw.includes("invite=")) {
+                    try {
+                      const u = new URL(raw);
+                      raw = u.searchParams.get("invite") || raw;
+                    } catch {
+                      const match = raw.match(/invite=([^&]+)/);
+                      if (match) raw = match[1];
+                    }
+                  }
+                  const parsed = parseBookInvitePayload(raw);
+                  if (!parsed) {
+                    setJoinError("Invalid link or code. Please check and try again.");
+                    return;
+                  }
+                  await handleAcceptInvite(parsed);
+                  setJoinModalOpen(false);
+                  setJoinInput("");
+                  setJoinError(null);
+                }}
+                className="rounded-full bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase hover:bg-[var(--walnut-deep)] transition cursor-pointer shadow-md"
+              >
+                Place on My Shelf
               </button>
             </div>
           </div>

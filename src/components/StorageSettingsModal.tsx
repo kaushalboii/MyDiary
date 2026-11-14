@@ -169,7 +169,7 @@ export function StorageSettingsModal({
                 <span
                   className="inline-block h-2.5 w-2.5 rounded-full"
                   style={{
-                    backgroundColor: currentUser || isUserAuthenticated() ? "#4e7c53" : "#b87a3d",
+                    backgroundColor: currentUser || isUserAuthenticated() ? "#4e7c53" : "#10b981",
                   }}
                 />
                 <span className="text-xs font-semibold tracking-wider uppercase">
@@ -177,9 +177,7 @@ export function StorageSettingsModal({
                     ? `${currentUser.displayName} (@${currentUser.username})`
                     : isUserAuthenticated()
                       ? "Diary Owner (Authenticated)"
-                      : health
-                        ? "Archive Connected · Sign In Required"
-                        : "Archive Offline (Local Drafts)"}
+                      : "Local Browser Storage (Offline Ready)"}
                 </span>
               </div>
               <p className="mt-1 text-xs text-[var(--ink-soft)]">
@@ -187,7 +185,7 @@ export function StorageSettingsModal({
                   ? "Signed in with Google. All your books and entries are safely synchronized."
                   : isUserAuthenticated()
                     ? "Signed in with Google. You can edit memories, books, and layouts seamlessly."
-                    : "Sign in with Google to sync and read your private memory archive."}
+                    : "Your books, custom covers, and memories are stored safely in this browser. You can create, edit, and share books freely without signing in."}
               </p>
             </div>
 

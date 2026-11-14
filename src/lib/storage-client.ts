@@ -928,6 +928,12 @@ async function getOfflineBooks(): Promise<DiaryBook[]> {
     stats.set(m.bookId, curr);
   }
 
+  for (const b of storedBooks) {
+    if (b.isShared || b.collaboratorEmail || !defaultBooks.some((d) => d.id === b.id)) {
+      saveToSharedRegistry(b);
+    }
+  }
+
   const orderedIds = order
     ? [...order, ...Array.from(bookMap.keys()).filter((id) => !order.includes(id))]
     : Array.from(bookMap.keys());

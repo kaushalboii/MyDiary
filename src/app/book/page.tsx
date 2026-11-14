@@ -17,6 +17,7 @@ import {
   MoreHorizontal,
   PenLine,
   RotateCcw,
+  Share2,
   SlidersHorizontal,
   Sparkles,
   StickyNote,
@@ -105,7 +106,7 @@ function BookMemoriesContent() {
   });
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
   const [editingVolume, setEditingVolume] = useState(false);
-  const [editorInitialTab, setEditorInitialTab] = useState<"cover" | "wordings" | "memory" | "size">("cover");
+  const [editorInitialTab, setEditorInitialTab] = useState<"cover" | "wordings" | "collaborate" | "memory" | "size">("cover");
   const [activeSpreadIndex, setActiveSpreadIndex] = useState(0);
   const [arrangingMemoryId, setArrangingMemoryId] = useState<string | null>(null);
   const [editingMemory, setEditingMemory] = useState<MemoryAlbum | null>(null);
@@ -915,14 +916,6 @@ function BookMemoriesContent() {
                 type="button"
                 data-no-flip="true"
                 onClick={() => {
-                  if (!isUserAuthenticated()) {
-                    window.dispatchEvent(
-                      new CustomEvent(AUTH_REQUIRED_EVENT, {
-                        detail: { message: "Sign in to customize this volume and edit memories." },
-                      }),
-                    );
-                    return;
-                  }
                   setEditorInitialTab("cover");
                   setEditingVolume(true);
                 }}
@@ -958,33 +951,17 @@ function BookMemoriesContent() {
               </div>
             ) : (
               <div className="mt-8">
-                {!isUserAuthenticated() ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      window.dispatchEvent(
-                        new CustomEvent(AUTH_REQUIRED_EVENT, {
-                          detail: { message: "Sign in to unlock your private memory volume." },
-                        }),
-                      );
-                    }}
-                    className="inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-[11px] font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)]"
-                  >
-                    <span>Sign In to Unlock Volume</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditorInitialTab("memory");
-                      setEditingVolume(true);
-                    }}
-                    className="hidden sm:inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-[11px] font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)]"
-                  >
-                    <PenLine className="h-3.5 w-3.5" />
-                    <span>Write First Entry</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditorInitialTab("memory");
+                    setEditingVolume(true);
+                  }}
+                  className="hidden sm:inline-flex items-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-2.5 text-[11px] font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)]"
+                >
+                  <PenLine className="h-3.5 w-3.5" />
+                  <span>Write First Entry</span>
+                </button>
               </div>
             )}
           </div>
@@ -1792,14 +1769,20 @@ function BookMemoriesContent() {
             <button
               type="button"
               onClick={() => {
-                if (!isUserAuthenticated()) {
-                  window.dispatchEvent(
-                    new CustomEvent(AUTH_REQUIRED_EVENT, {
-                      detail: { message: "Sign in to customize this volume and edit memories." },
-                    }),
-                  );
-                  return;
-                }
+                setEditorInitialTab("collaborate");
+                setEditingVolume(true);
+              }}
+              className="top-dock__btn top-dock__btn--soft"
+              aria-label="Share & Co-Author"
+              title="Share Book & Copy Invite Link"
+            >
+              <Share2 className="h-3.5 w-3.5 text-[var(--accent)]" aria-hidden="true" />
+              <span>Share</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
                 if (typeof window !== "undefined" && window.innerWidth < 820) {
                   alert("Book customization and editing are designed for Desktop Mode. Please switch your mobile browser to 'Desktop Site' or view on a desktop computer.");
                   return;
