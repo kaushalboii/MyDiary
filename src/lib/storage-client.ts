@@ -5,6 +5,7 @@ import type {
   AlbumStyle,
   AuthStatusResponse,
   AuthUser,
+  CollaboratorRequest,
   CreatedInvite,
   DiaryBook,
   InviteSummary,
@@ -701,11 +702,35 @@ export function parseBookInvitePayload(raw: string): DiaryBook | null {
   }
 }
 
+export function notifySharedRequestBroadcast() {
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(new CustomEvent("mydiary_shared_request_updated"));
+    if (typeof BroadcastChannel !== "undefined") {
+      const bc = new BroadcastChannel("mydiary_sync");
+      bc.postMessage({ type: "shared_request_updated", timestamp: Date.now() });
+      bc.close();
+    }
+  } catch {}
+}
+
 export async function requestBookAccess(
   bookId: string,
   input: { email?: string; name?: string; bookData?: Partial<DiaryBook> },
 ): Promise<{ ok: boolean; status: "accepted" | "pending_approval" | "owner"; message: string }> {
   const config = loadStorageConfig();
+  const cleanEmail = (input.email || getCachedUser()?.email || "").toLowerCase().trim();
+  const reqList: CollaboratorRequest[] = Array.isArray(input.bookData?.pendingRequests)
+    ? [...input.bookData.pendingRequests]
+    : [];
+  if (cleanEmail && !reqList.some((r) => r.email?.toLowerCase().trim() === cleanEmail)) {
+    reqList.push({
+      email: cleanEmail,
+      name: input.name || cleanEmail.split("@")[0],
+      requestedAt: new Date().toISOString(),
+    });
+  }
+
   try {
     const res = await publicAuthFetch<{
       ok: boolean;
@@ -727,12 +752,14 @@ export async function requestBookAccess(
         ...(input.bookData as DiaryBook),
         isShared: true,
         inviteStatus: status === "owner" ? "accepted" : status,
+        pendingRequests: status === "pending_approval" ? reqList : input.bookData.pendingRequests,
       };
       saveToSharedRegistry(bookToSave);
       if (status === "accepted") {
         await putInStore("books", bookToSave).catch(() => {});
       }
     }
+    notifySharedRequestBroadcast();
     return {
       ok: true,
       status,
@@ -742,14 +769,18 @@ export async function requestBookAccess(
           ? "Request sent to book owner. Once accepted in their diary, this volume will appear on your shelf."
           : "Book placed on your shelf!"),
     };
-  } catch {
+  } catch (err) {
+    console.warn("requestBookAccess network error, saved to local registry fallback:", err);
     if (input.bookData) {
-      saveToSharedRegistry({
+      const bookToSave: DiaryBook = {
         ...(input.bookData as DiaryBook),
         isShared: true,
         inviteStatus: "pending_approval",
-      });
+        pendingRequests: reqList,
+      };
+      saveToSharedRegistry(bookToSave);
     }
+    notifySharedRequestBroadcast();
     return {
       ok: true,
       status: "pending_approval",
@@ -764,6 +795,17 @@ export async function acceptSharedBook(
 ): Promise<{ ok: boolean; status: "accepted" | "pending_approval" | "owner"; message: string }> {
   const currentUser = getCachedUser();
   const userEmail = (currentUser?.email || "").toLowerCase().trim();
+  const reqList: CollaboratorRequest[] = Array.isArray(options?.bookData?.pendingRequests)
+    ? [...options.bookData.pendingRequests]
+    : [];
+  if (userEmail && !reqList.some((r) => r.email?.toLowerCase().trim() === userEmail)) {
+    reqList.push({
+      email: userEmail,
+      name: currentUser?.displayName || currentUser?.username || userEmail.split("@")[0],
+      requestedAt: new Date().toISOString(),
+    });
+  }
+
   try {
     const res = await serverFetch<{
       ok: boolean;
@@ -785,12 +827,14 @@ export async function acceptSharedBook(
         isShared: true,
         inviteStatus: status === "owner" ? "accepted" : status,
         acceptedBy: status === "accepted" || status === "owner" ? (userEmail ? [userEmail] : []) : [],
+        pendingRequests: status === "pending_approval" ? reqList : options.bookData.pendingRequests,
       };
       saveToSharedRegistry(bookToSave);
       if (status === "accepted") {
         await putInStore("books", bookToSave).catch(() => {});
       }
     }
+    notifySharedRequestBroadcast();
     return {
       ok: true,
       status,
@@ -800,19 +844,21 @@ export async function acceptSharedBook(
           ? "Request sent to book owner. Once accepted, this volume will appear on your shelf."
           : "Book accepted and placed on your shelf!"),
     };
-  } catch {
-    // Offline fallback
+  } catch (err) {
+    console.warn("acceptSharedBook network error, saved to local registry fallback:", err);
     if (options?.bookData) {
       const status = options.fromInviteLink ? "pending_approval" : "accepted";
       const bookToSave: DiaryBook = {
         ...(options.bookData as DiaryBook),
         isShared: true,
         inviteStatus: status,
+        pendingRequests: status === "pending_approval" ? reqList : options.bookData.pendingRequests,
       };
       saveToSharedRegistry(bookToSave);
       if (status === "accepted") {
         await putInStore("books", bookToSave).catch(() => {});
       }
+      notifySharedRequestBroadcast();
       return {
         ok: true,
         status,
@@ -822,6 +868,7 @@ export async function acceptSharedBook(
             : "Book placed on your shelf!",
       };
     }
+    notifySharedRequestBroadcast();
     return {
       ok: true,
       status: "accepted",
@@ -876,6 +923,37 @@ export async function approveCollaboratorRequest(
     };
   });
   saveCachedServerBooks(updated);
+
+  // Also update local shared registry so cross-tab reflections update instantly
+  try {
+    const localShared = loadFromSharedRegistry();
+    const updatedLocal = localShared.map((b) => {
+      if (b.id !== bookId) return b;
+      const reqs = Array.isArray(b.pendingRequests)
+        ? b.pendingRequests.filter((r) => r.email.toLowerCase() !== cleanEmail)
+        : [];
+      const collabs = Array.isArray(b.collaborators) ? [...b.collaborators] : [];
+      const accepted = Array.isArray(b.acceptedBy) ? [...b.acceptedBy] : [];
+      if (action === "approve") {
+        if (!collabs.includes(cleanEmail)) collabs.push(cleanEmail);
+        if (!accepted.includes(cleanEmail)) accepted.push(cleanEmail);
+      }
+      return {
+        ...b,
+        pendingRequests: reqs,
+        collaborators: collabs,
+        acceptedBy: accepted,
+        collaboratorEmail: action === "approve" ? cleanEmail : b.collaboratorEmail,
+        isShared: action === "approve" ? true : b.isShared,
+        inviteStatus: action === "approve" ? "accepted" : b.inviteStatus,
+      };
+    });
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(SHARED_REGISTRY_KEY, JSON.stringify(updatedLocal));
+    }
+  } catch {}
+
+  notifySharedRequestBroadcast();
   return { ok: true, books: updated };
 }
 

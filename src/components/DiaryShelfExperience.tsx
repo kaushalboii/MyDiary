@@ -139,8 +139,17 @@ function ShelfExperienceInner() {
       try {
         const localShared = loadFromSharedRegistry();
         for (const sb of localShared) {
-          if (!candidateBooks.some((b) => b.id === sb.id)) {
+          const existing = candidateBooks.find((b) => b.id === sb.id);
+          if (!existing) {
             candidateBooks.push(sb);
+          } else if (Array.isArray(sb.pendingRequests) && sb.pendingRequests.length > 0) {
+            const merged = Array.isArray(existing.pendingRequests) ? [...existing.pendingRequests] : [];
+            for (const r of sb.pendingRequests) {
+              if (r.email && !merged.some((m) => m.email?.toLowerCase().trim() === r.email.toLowerCase().trim())) {
+                merged.push(r);
+              }
+            }
+            existing.pendingRequests = merged;
           }
         }
       } catch {}
@@ -172,8 +181,17 @@ function ShelfExperienceInner() {
       try {
         const localShared = loadFromSharedRegistry();
         for (const sb of localShared) {
-          if (!candidateBooks.some((b) => b.id === sb.id)) {
+          const existing = candidateBooks.find((b) => b.id === sb.id);
+          if (!existing) {
             candidateBooks.push(sb);
+          } else if (Array.isArray(sb.pendingRequests) && sb.pendingRequests.length > 0) {
+            const merged = Array.isArray(existing.pendingRequests) ? [...existing.pendingRequests] : [];
+            for (const r of sb.pendingRequests) {
+              if (r.email && !merged.some((m) => m.email?.toLowerCase().trim() === r.email.toLowerCase().trim())) {
+                merged.push(r);
+              }
+            }
+            existing.pendingRequests = merged;
           }
         }
       } catch {}
@@ -233,18 +251,37 @@ function ShelfExperienceInner() {
         void refreshBooks();
       }
     };
-    const timer = setInterval(poll, 8000);
+    const timer = setInterval(poll, 6000);
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
         poll();
       }
     };
+    const onSyncEvent = () => {
+      poll();
+    };
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== "undefined") {
+      try {
+        bc = new BroadcastChannel("mydiary_sync");
+        bc.onmessage = () => {
+          poll();
+        };
+      } catch {}
+    }
+
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("focus", onVisibility);
+    window.addEventListener("storage", onSyncEvent);
+    window.addEventListener("mydiary_shared_request_updated", onSyncEvent);
     return () => {
       clearInterval(timer);
+      bc?.close();
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("focus", onVisibility);
+      window.removeEventListener("storage", onSyncEvent);
+      window.removeEventListener("mydiary_shared_request_updated", onSyncEvent);
     };
   }, [refreshBooks]);
 
