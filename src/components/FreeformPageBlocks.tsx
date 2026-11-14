@@ -347,7 +347,7 @@ export function FreeformPageSurface({
                       </span>
                     )}
                   </div>
-                  {memory.title?.trim() && (
+                  {memory.title?.trim() && memory.title.trim() !== "Encrypted Entry" && (
                     <h2
                       className={`mb-0 font-normal tracking-tight leading-[1.08] text-[var(--page-ink)] ${
                         compact ? "mt-1.5 text-base sm:text-lg" : "mt-3 text-2xl sm:text-3xl"

@@ -988,6 +988,31 @@ export async function deleteBook(
   }
 }
 
+export async function decryptMemoryList(list: MemoryAlbum[]): Promise<MemoryAlbum[]> {
+  const encKey = getActiveUserEncryptionKey() || (await restoreActiveUserEncryptionKey());
+  return Promise.all(
+    list.map(async (m) => {
+      if (m.encrypted && m.ciphertext && m.iv) {
+        if (encKey) {
+          const dec = await decryptMemoryPayload(m.ciphertext, m.iv, encKey);
+          if (dec) {
+            return {
+              ...m,
+              title: dec.title || (m.title === "Encrypted Entry" ? "" : m.title),
+              note: dec.note || m.note,
+              paragraphs: Array.isArray(dec.paragraphs) ? dec.paragraphs : m.paragraphs,
+              layoutBlocks: Array.isArray(dec.layoutBlocks)
+                ? (dec.layoutBlocks as import("./types").MemoryLayoutBlock[])
+                : m.layoutBlocks,
+            };
+          }
+        }
+      }
+      return m;
+    }),
+  );
+}
+
 export async function fetchMemories(params?: {
   bookId?: string;
   q?: string;
@@ -1001,24 +1026,7 @@ export async function fetchMemories(params?: {
 
   try {
     const res = await serverFetch<{ memories: MemoryAlbum[] }>(`/api/memories${query}`);
-    const encKey = getActiveUserEncryptionKey() || (await restoreActiveUserEncryptionKey());
-    const memories = await Promise.all(
-      res.memories.map(async (m) => {
-        if (m.encrypted && m.ciphertext && m.iv && encKey) {
-          const dec = await decryptMemoryPayload(m.ciphertext, m.iv, encKey);
-          if (dec) {
-            return {
-              ...m,
-              title: dec.title || m.title,
-              note: dec.note || m.note,
-              paragraphs: Array.isArray(dec.paragraphs) ? dec.paragraphs : m.paragraphs,
-              layoutBlocks: Array.isArray(dec.layoutBlocks) ? (dec.layoutBlocks as import("./types").MemoryLayoutBlock[]) : m.layoutBlocks,
-            };
-          }
-        }
-        return m;
-      }),
-    );
+    const memories = await decryptMemoryList(res.memories);
     // Instant SWR cache save
     if (params?.bookId && !params?.q && (!params?.mood || params?.mood === "All")) {
       saveCachedMemories(params.bookId, memories);
@@ -1028,7 +1036,8 @@ export async function fetchMemories(params?: {
     if (params?.bookId && !params?.q && (!params?.mood || params?.mood === "All")) {
       const cached = loadCachedMemories(params.bookId);
       if (cached && cached.length > 0) {
-        return { memories: cached, mode: "server" };
+        const decryptedCached = await decryptMemoryList(cached);
+        return { memories: decryptedCached, mode: "server" };
       }
     }
     if (isStorageAuthError(err)) throw err;
@@ -1044,8 +1053,9 @@ export async function fetchMemories(params?: {
           .includes(needle),
       );
     }
-    list.sort((a, b) => `${b.date}|${b.createdAt}`.localeCompare(`${a.date}|${a.createdAt}`));
-    return { memories: list, mode: "offline-fallback" };
+    const decryptedList = await decryptMemoryList(list);
+    decryptedList.sort((a, b) => `${b.date}|${b.createdAt}`.localeCompare(`${a.date}|${a.createdAt}`));
+    return { memories: decryptedList, mode: "offline-fallback" };
   }
 }
 
@@ -1057,25 +1067,21 @@ export async function fetchMemory(
       `/api/memories/${encodeURIComponent(memoryId)}`,
     );
     let memory = res.memory;
-    const encKey = getActiveUserEncryptionKey() || (await restoreActiveUserEncryptionKey());
-    if (memory?.encrypted && memory.ciphertext && memory.iv && encKey) {
-      const dec = await decryptMemoryPayload(memory.ciphertext, memory.iv, encKey);
-      if (dec) {
-        memory = {
-          ...memory,
-          title: dec.title || memory.title,
-          note: dec.note || memory.note,
-          paragraphs: Array.isArray(dec.paragraphs) ? dec.paragraphs : memory.paragraphs,
-          layoutBlocks: Array.isArray(dec.layoutBlocks) ? (dec.layoutBlocks as import("./types").MemoryLayoutBlock[]) : memory.layoutBlocks,
-        };
-      }
+    if (memory) {
+      const decrypted = await decryptMemoryList([memory]);
+      memory = decrypted[0] || memory;
     }
     return { memory, mode: "server" };
   } catch (err) {
     if (isStorageAuthError(err)) throw err;
     const list = await getAllFromStore<MemoryAlbum>("memories");
+    let memory = list.find((m) => m.id === memoryId) || null;
+    if (memory) {
+      const decrypted = await decryptMemoryList([memory]);
+      memory = decrypted[0] || memory;
+    }
     return {
-      memory: list.find((m) => m.id === memoryId) || null,
+      memory,
       mode: "offline-fallback",
     };
   }
@@ -1225,16 +1231,57 @@ export async function updateMemory(
   memoryId: string,
   input: Partial<SaveMemoryInput>,
 ): Promise<{ memory: MemoryAlbum; mode: StorageMode }> {
+  // Resolve existing memory to avoid erasing fields not passed in input (e.g. updating layoutBlocks only)
+  let existingMem: MemoryAlbum | null = null;
   try {
-    let payload = { ...input };
+    if (typeof window !== "undefined") {
+      const all = await getAllFromStore<MemoryAlbum>("memories");
+      existingMem = all.find((m) => m.id === memoryId) || null;
+      if (!existingMem) {
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const k = window.localStorage.key(i);
+          if (k && k.startsWith(MEMORIES_CACHE_PREFIX)) {
+            const list = loadCachedMemories(k.slice(MEMORIES_CACHE_PREFIX.length));
+            const found = list?.find((m) => m.id === memoryId);
+            if (found) {
+              existingMem = found;
+              break;
+            }
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore cache lookup errors
+  }
+
+  const effectiveTitle =
+    input.title !== undefined
+      ? input.title
+      : (existingMem?.title && existingMem.title !== "Encrypted Entry" ? existingMem.title : "");
+  const effectiveNote =
+    input.note !== undefined ? input.note : (existingMem?.note || "");
+  const effectiveParas =
+    input.paragraphs !== undefined ? input.paragraphs : (existingMem?.paragraphs || []);
+  const effectiveBlocks =
+    input.layoutBlocks !== undefined ? input.layoutBlocks : existingMem?.layoutBlocks;
+
+  try {
+    let payload = {
+      ...input,
+      ...(effectiveTitle ? { title: effectiveTitle } : {}),
+      ...(effectiveNote ? { note: effectiveNote } : {}),
+      ...(effectiveParas.length > 0 ? { paragraphs: effectiveParas } : {}),
+      ...(effectiveBlocks !== undefined ? { layoutBlocks: effectiveBlocks } : {}),
+    };
     const encKey = getActiveUserEncryptionKey() || (await restoreActiveUserEncryptionKey());
-    if (encKey && (input.title !== undefined || input.note !== undefined || input.paragraphs !== undefined || input.layoutBlocks !== undefined)) {
+    if (encKey && (effectiveTitle || effectiveNote || effectiveParas.length > 0 || effectiveBlocks)) {
       const enc = await encryptMemoryPayload(
         {
-          title: input.title ?? "",
-          note: input.note ?? "",
-          paragraphs: input.paragraphs ?? [],
-          layoutBlocks: input.layoutBlocks,
+          title: effectiveTitle,
+          note: effectiveNote,
+          paragraphs: effectiveParas,
+          layoutBlocks: effectiveBlocks,
         },
         encKey,
       );
@@ -1258,7 +1305,13 @@ export async function updateMemory(
         body: JSON.stringify(payload),
       },
     );
-    const updatedMem = res.memory;
+    const updatedMem: MemoryAlbum = {
+      ...res.memory,
+      title: effectiveTitle || res.memory.title,
+      note: effectiveNote || res.memory.note,
+      paragraphs: effectiveParas.length > 0 ? effectiveParas : res.memory.paragraphs,
+      layoutBlocks: effectiveBlocks ?? res.memory.layoutBlocks,
+    };
     if (updatedMem.bookId) {
       const existing = loadCachedMemories(updatedMem.bookId) || [];
       saveCachedMemories(
@@ -1275,6 +1328,10 @@ export async function updateMemory(
     const updated: MemoryAlbum = {
       ...existing,
       ...input,
+      title: effectiveTitle || (existing.title === "Encrypted Entry" ? "" : existing.title),
+      note: effectiveNote || existing.note,
+      paragraphs: effectiveParas.length > 0 ? effectiveParas : existing.paragraphs,
+      layoutBlocks: effectiveBlocks ?? existing.layoutBlocks,
       updatedAt: new Date().toISOString(),
     };
     await putInStore("memories", updated);

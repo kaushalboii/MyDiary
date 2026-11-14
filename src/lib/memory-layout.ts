@@ -186,7 +186,8 @@ export function getMemoryDisplayTitle(
   mem: Pick<MemoryAlbum, "title" | "note" | "paragraphs" | "photos">,
   fallback = "Untitled Page",
 ): string {
-  if (mem.title?.trim()) return mem.title.trim();
+  const cleanTitle = mem.title?.trim();
+  if (cleanTitle && cleanTitle !== "Encrypted Entry") return cleanTitle;
   if (mem.note?.trim()) {
     const clean = mem.note.trim();
     return clean.length > 42 ? `${clean.slice(0, 42)}…` : clean;
@@ -870,6 +871,19 @@ export function buildDefaultLayoutBlocks(
   }
 
   return blocks;
+}
+
+/**
+ * Automatically realigns memory blocks into a clean, level grid layout with 0° tilt and balanced margins.
+ */
+export function autoAlignMemoryBlocks(
+  mem: Pick<MemoryAlbum, "title" | "note" | "paragraphs" | "photos">,
+): MemoryLayoutBlock[] {
+  const blocks = buildDefaultLayoutBlocks(mem);
+  return blocks.map((b) => ({
+    ...b,
+    rotation: 0,
+  }));
 }
 
 /**

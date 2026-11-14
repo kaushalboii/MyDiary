@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Calendar,
+  Check,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -16,6 +17,7 @@ import {
   PenLine,
   RotateCcw,
   SlidersHorizontal,
+  Sparkles,
   StickyNote,
   Trash2,
   UploadCloud,
@@ -29,6 +31,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { VolumeEditorModal } from "@/components/VolumeEditorModal";
 import { defaultBooks } from "@/lib/default-books";
 import {
+  autoAlignMemoryBlocks,
   buildDefaultLayoutBlocks,
   formatBookPageNumber,
   getMemoryDisplayTitle,
@@ -54,7 +57,7 @@ import {
   updateMemory,
   type BookPatchInput,
 } from "@/lib/storage-client";
-import { AUTH_REQUIRED_EVENT } from "@/lib/vault-security";
+import { AUTH_REQUIRED_EVENT, restoreActiveUserEncryptionKey } from "@/lib/vault-security";
 import type {
   AlbumPhoto,
   DiaryBook,
@@ -111,6 +114,7 @@ function BookMemoriesContent() {
   const loadData = useCallback(
     async (preserveSpread = false) => {
       // SWR: Hydrate immediately from cache with zero delay
+      await restoreActiveUserEncryptionKey();
       const cachedB = loadCachedServerBooks();
       const cachedM = requestedBookId ? loadCachedMemories(requestedBookId) : null;
       if (cachedB && cachedB.length > 0) {
@@ -124,10 +128,9 @@ function BookMemoriesContent() {
       }
 
       try {
-        const authenticated = isUserAuthenticated();
         const [booksRes, initialMemRes] = await Promise.all([
           fetchBooks(),
-          authenticated && requestedBookId
+          requestedBookId
             ? fetchMemories({ bookId: requestedBookId })
             : Promise.resolve({ memories: cachedM || [], mode: "offline-fallback" as const }),
         ]);
@@ -139,12 +142,10 @@ function BookMemoriesContent() {
             : booksRes.books[0]?.id || "memories-2022";
 
         const [memRes, draftCount] = await Promise.all([
-          authenticated
-            ? (initialMemRes && targetId === requestedBookId
-                ? Promise.resolve(initialMemRes)
-                : fetchMemories({ bookId: targetId }))
-            : Promise.resolve({ memories: cachedM || [], mode: "offline-fallback" as const }),
-          authenticated ? getOfflineDraftCount() : Promise.resolve(0),
+          initialMemRes && targetId === requestedBookId
+            ? Promise.resolve(initialMemRes)
+            : fetchMemories({ bookId: targetId }),
+          getOfflineDraftCount(),
         ]);
         setMemories(memRes.memories);
         setOfflineDraftCount(draftCount);
@@ -256,6 +257,16 @@ function BookMemoriesContent() {
       }
     },
     [],
+  );
+
+  const handleAutoAlign = useCallback(
+    async (memId: string) => {
+      const mem = memories.find((m) => m.id === memId);
+      if (!mem) return;
+      const aligned = autoAlignMemoryBlocks(mem);
+      await handleBlocksChange(memId, aligned, true);
+    },
+    [memories, handleBlocksChange],
   );
 
   const handleResetLayout = useCallback(async (memId: string) => {
@@ -1016,93 +1027,125 @@ function BookMemoriesContent() {
         (mem.photos.length === 1 && mem.albumStyle !== "filmstrip" && mem.albumStyle !== "grid");
 
       const makeSpreadToolbarFooter = (pageStr: string) => (
-        <div data-no-flip="true" className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3 text-xs text-[var(--ink-soft)]">
-          <div className="hidden sm:flex flex-wrap items-center gap-3">
-            {isUserAuthenticated() ? (
-              <button
-                type="button"
-                data-no-flip="true"
-                onClick={() => setEditingMemory(mem)}
-                className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] cursor-pointer hover:underline"
-              >
-                <Edit3 className="h-3.5 w-3.5" />
-                <span>Edit</span>
-              </button>
+        <div data-no-flip="true" className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3 text-xs text-[var(--ink-soft)] relative z-20">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+            {isArranging ? (
+              <>
+                <button
+                  type="button"
+                  data-no-flip="true"
+                  onClick={() => {
+                    setArrangingMemoryId(null);
+                    setSelectedBlockId(null);
+                  }}
+                  className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] cursor-pointer hover:underline"
+                >
+                  <Check className="h-3.5 w-3.5 text-[#4e7c53]" />
+                  <span>Done</span>
+                </button>
+                <button
+                  type="button"
+                  data-no-flip="true"
+                  onClick={() => void handleAutoAlign(mem.id)}
+                  className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--accent)] cursor-pointer hover:underline"
+                  title="Automatically arrange blocks into a clean, level grid layout"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span>Auto Align</span>
+                </button>
+                <button
+                  type="button"
+                  data-no-flip="true"
+                  onClick={() => void handleResetLayout(mem.id)}
+                  className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink-soft)] cursor-pointer hover:text-[var(--ink)]"
+                  title="Restore automatic page placement"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>Reset</span>
+                </button>
+              </>
             ) : (
-              <button
-                type="button"
-                data-no-flip="true"
-                onClick={() => {
-                  window.dispatchEvent(
-                    new CustomEvent(AUTH_REQUIRED_EVENT, {
-                      detail: { message: "Sign in to edit this memory." },
-                    }),
-                  );
-                }}
-                className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] cursor-pointer hover:underline"
-              >
-                <Edit3 className="h-3.5 w-3.5" />
-                <span>Edit</span>
-              </button>
-            )}
-            <button
-              type="button"
-              data-no-flip="true"
-              data-testid={`arrange-memory-${mem.id}`}
-              onClick={() => {
-                if (!isUserAuthenticated()) {
-                  window.dispatchEvent(
-                    new CustomEvent(AUTH_REQUIRED_EVENT, {
-                      detail: { message: "Sign in to arrange memory blocks." },
-                    }),
-                  );
-                  return;
-                }
-                if (isArranging) {
-                  setArrangingMemoryId(null);
-                  setSelectedBlockId(null);
-                } else {
-                  setDraftBlocksByMemory((prev) => ({
-                    ...prev,
-                    [mem.id]:
-                      prev[mem.id] ||
-                      (mem.layoutBlocks?.length
-                        ? syncLayoutBlocksWithMemory(mem)
-                        : buildDefaultLayoutBlocks(mem)),
-                  }));
-                  setArrangingMemoryId(mem.id);
-                }
-              }}
-              className={`inline-flex items-center gap-1 font-semibold tracking-wider uppercase cursor-pointer hover:underline ${
-                isArranging ? "text-[var(--accent)]" : "text-[var(--ink)]"
-              }`}
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              <span>{isArranging ? "Done" : "Arrange"}</span>
-            </button>
-            {(isArranging || hasCustomLayout) && (
-              <button
-                type="button"
-                data-no-flip="true"
-                onClick={() => void handleResetLayout(mem.id)}
-                className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink-soft)] cursor-pointer hover:text-[var(--ink)]"
-                title="Restore automatic page placement"
-              >
-                <RotateCcw className="h-3 w-3" />
-                <span>Reset</span>
-              </button>
-            )}
-            {isUserAuthenticated() && (
-              <button
-                type="button"
-                data-no-flip="true"
-                onClick={() => void handleDeleteMemory(mem)}
-                disabled={deletingMemoryId === mem.id}
-                className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--accent)] cursor-pointer hover:underline disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                <span>{deletingMemoryId === mem.id ? "Removing..." : "Remove"}</span>
-              </button>
+              <>
+                {isUserAuthenticated() ? (
+                  <button
+                    type="button"
+                    data-no-flip="true"
+                    onClick={() => setEditingMemory(mem)}
+                    className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] cursor-pointer hover:underline"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                    <span>Edit</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    data-no-flip="true"
+                    onClick={() => {
+                      window.dispatchEvent(
+                        new CustomEvent(AUTH_REQUIRED_EVENT, {
+                          detail: { message: "Sign in to edit this memory." },
+                        }),
+                      );
+                    }}
+                    className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] cursor-pointer hover:underline"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                    <span>Edit</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  data-no-flip="true"
+                  data-testid={`arrange-memory-${mem.id}`}
+                  onClick={() => {
+                    if (!isUserAuthenticated()) {
+                      window.dispatchEvent(
+                        new CustomEvent(AUTH_REQUIRED_EVENT, {
+                          detail: { message: "Sign in to arrange memory blocks." },
+                        }),
+                      );
+                      return;
+                    }
+                    setDraftBlocksByMemory((prev) => ({
+                      ...prev,
+                      [mem.id]:
+                        prev[mem.id] ||
+                        (mem.layoutBlocks?.length
+                          ? syncLayoutBlocksWithMemory(mem)
+                          : buildDefaultLayoutBlocks(mem)),
+                    }));
+                    setArrangingMemoryId(mem.id);
+                  }}
+                  className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink)] cursor-pointer hover:underline"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                  <span>Arrange</span>
+                </button>
+                {hasCustomLayout && (
+                  <button
+                    type="button"
+                    data-no-flip="true"
+                    onClick={() => void handleResetLayout(mem.id)}
+                    className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink-soft)] cursor-pointer hover:text-[var(--ink)]"
+                    title="Restore automatic page placement"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    <span>Reset</span>
+                  </button>
+                )}
+                {isUserAuthenticated() && (
+                  <button
+                    type="button"
+                    data-no-flip="true"
+                    onClick={() => void handleDeleteMemory(mem)}
+                    disabled={deletingMemoryId === mem.id}
+                    className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--accent)] cursor-pointer hover:underline disabled:opacity-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>{deletingMemoryId === mem.id ? "Removing..." : "Remove"}</span>
+                  </button>
+                )}
+              </>
             )}
           </div>
           <span className="italic ml-auto sm:ml-0">
@@ -1126,9 +1169,45 @@ function BookMemoriesContent() {
               {isArranging && (
                 <div
                   data-no-flip="true"
-                  className="flex items-center justify-between rounded border border-[var(--hairline)] bg-[var(--paper)]/90 px-2.5 py-1 text-[10px] tracking-wider uppercase text-[var(--ink-soft)]"
+                  className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--hairline)] bg-[var(--paper)]/95 px-3 py-1.5 text-xs shadow-md backdrop-blur-xs"
                 >
-                  <span>Drag any item to place anywhere on Left or Right page</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      data-no-flip="true"
+                      onClick={() => {
+                        setArrangingMemoryId(null);
+                        setSelectedBlockId(null);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-3.5 py-1 text-[11px] font-semibold text-[var(--paper-light)] tracking-wider uppercase hover:bg-[var(--walnut-deep)] cursor-pointer shadow-xs transition-colors"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      <span>Done</span>
+                    </button>
+                    <button
+                      type="button"
+                      data-no-flip="true"
+                      onClick={() => void handleAutoAlign(mem.id)}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-3 py-1 text-[11px] font-semibold text-[var(--ink)] tracking-wider uppercase hover:border-[var(--ink)] cursor-pointer transition-colors"
+                      title="Automatically arrange blocks into a clean, level grid layout"
+                    >
+                      <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
+                      <span>Auto Align</span>
+                    </button>
+                    <button
+                      type="button"
+                      data-no-flip="true"
+                      onClick={() => void handleResetLayout(mem.id)}
+                      className="inline-flex items-center gap-1 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-2.5 py-1 text-[11px] font-semibold text-[var(--ink-soft)] tracking-wider uppercase hover:text-[var(--ink)] cursor-pointer transition-colors"
+                      title="Restore automatic page placement"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      <span>Reset</span>
+                    </button>
+                  </div>
+                  <span className="text-[10px] text-[var(--ink-soft)] tracking-wide hidden sm:inline">
+                    Drag items to position · resize with +/-
+                  </span>
                 </div>
               )}
               <FreeformPageSurface
@@ -1150,6 +1229,40 @@ function BookMemoriesContent() {
           ),
           right: (
             <div className="flex flex-1 flex-col justify-between gap-3">
+              {isArranging && (
+                <div
+                  data-no-flip="true"
+                  className="sticky top-0 z-30 flex items-center justify-between gap-2 rounded-lg border border-[var(--hairline)] bg-[var(--paper)]/95 px-3 py-1.5 text-xs shadow-md backdrop-blur-xs"
+                >
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ink-soft)]">
+                    Right Page Layout
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      data-no-flip="true"
+                      onClick={() => void handleAutoAlign(mem.id)}
+                      className="inline-flex items-center gap-1 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-2.5 py-1 text-[10px] font-semibold text-[var(--ink)] tracking-wider uppercase hover:border-[var(--ink)] cursor-pointer transition-colors"
+                      title="Automatically arrange blocks into a clean, level grid layout"
+                    >
+                      <Sparkles className="h-3 w-3 text-[var(--accent)]" />
+                      <span>Auto Align</span>
+                    </button>
+                    <button
+                      type="button"
+                      data-no-flip="true"
+                      onClick={() => {
+                        setArrangingMemoryId(null);
+                        setSelectedBlockId(null);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-3 py-1 text-[10px] font-semibold text-[var(--paper-light)] tracking-wider uppercase hover:bg-[var(--walnut-deep)] cursor-pointer transition-colors"
+                    >
+                      <Check className="h-3 w-3" />
+                      <span>Done</span>
+                    </button>
+                  </div>
+                </div>
+              )}
               <FreeformPageSurface
                 memory={mem}
                 book={book}
@@ -1221,7 +1334,7 @@ function BookMemoriesContent() {
                 </span>
               </div>
 
-              {mem.title?.trim() && (
+              {mem.title?.trim() && mem.title.trim() !== "Encrypted Entry" && (
                 <h2
                   className={`mt-4 mb-0 text-2xl sm:text-3xl font-normal tracking-tight leading-[1.08] text-[var(--page-ink)] ${
                     headerStyle === "centered" ? "text-center" : ""
