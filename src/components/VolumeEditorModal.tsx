@@ -341,9 +341,43 @@ export function VolumeEditorModal({
     }
     return "";
   });
+  const [extraCollaborators, setExtraCollaborators] = useState<string[]>(() => {
+    const list: string[] = [];
+    if (Array.isArray(book.collaborators)) {
+      list.push(...book.collaborators);
+    }
+    if (Array.isArray(book.acceptedBy)) {
+      list.push(...book.acceptedBy);
+    }
+    return Array.from(new Set(list.map((c) => c.toLowerCase().trim()))).filter(Boolean);
+  });
   const [pendingRequests, setPendingRequests] = useState(book.pendingRequests || []);
   const [requestBusy, setRequestBusy] = useState<string | null>(null);
   const [requestNotice, setRequestNotice] = useState<string | null>(null);
+
+  const currentUser = getCachedUser();
+  const isOwner =
+    !book.sharedBy &&
+    (!book.ownerEmail ||
+      (currentUser &&
+        book.ownerEmail.toLowerCase().trim() === currentUser.email?.toLowerCase().trim()));
+
+  const connectedCoAuthors = useMemo(() => {
+    const set = new Set<string>();
+    if (collaboratorEmail.trim()) set.add(collaboratorEmail.trim().toLowerCase());
+    extraCollaborators.forEach((c) => set.add(c.toLowerCase().trim()));
+    const owner = (book.ownerEmail || currentUser?.email || "").toLowerCase().trim();
+    if (owner) set.delete(owner);
+    return Array.from(set);
+  }, [collaboratorEmail, extraCollaborators, book.ownerEmail, currentUser?.email]);
+
+  function handleRemoveCoAuthor(emailToRemove: string) {
+    const clean = emailToRemove.toLowerCase().trim();
+    if (collaboratorEmail.toLowerCase().trim() === clean) {
+      setCollaboratorEmail("");
+    }
+    setExtraCollaborators((prev) => prev.filter((c) => c !== clean));
+  }
 
   async function handleCollaboratorRequest(reqEmail: string, action: "approve" | "decline") {
     setRequestBusy(reqEmail);
@@ -353,6 +387,7 @@ export function VolumeEditorModal({
       setPendingRequests((prev) => prev.filter((r) => r.email.toLowerCase() !== reqEmail.toLowerCase()));
       if (action === "approve") {
         setCollaboratorEmail(reqEmail);
+        setExtraCollaborators((prev) => Array.from(new Set([...prev, reqEmail.toLowerCase().trim()])));
         setRequestNotice(`✓ Accepted ${reqEmail}! They have been added as co-author and this book is placed on their shelf.`);
       } else {
         setRequestNotice(`Declined request from ${reqEmail}.`);
@@ -531,9 +566,10 @@ export function VolumeEditorModal({
       thickness,
       width,
       positionIndex,
-      collaboratorEmail: collaboratorEmail.trim() ? collaboratorEmail.trim().toLowerCase() : null,
-      collaborators: collaboratorEmail.trim() ? [collaboratorEmail.trim().toLowerCase()] : [],
-      isShared: Boolean(collaboratorEmail.trim()),
+      collaboratorEmail: connectedCoAuthors[0] || null,
+      collaborators: connectedCoAuthors,
+      acceptedBy: connectedCoAuthors,
+      isShared: connectedCoAuthors.length > 0,
     };
   }, [
     title,
@@ -569,7 +605,7 @@ export function VolumeEditorModal({
     thickness,
     width,
     positionIndex,
-    collaboratorEmail,
+    connectedCoAuthors,
   ]);
 
   useEffect(() => {
@@ -640,17 +676,11 @@ export function VolumeEditorModal({
     height,
     thickness,
     width,
-    collaboratorEmail: collaboratorEmail.trim() ? collaboratorEmail.trim().toLowerCase() : null,
-    collaborators: collaboratorEmail.trim() ? [collaboratorEmail.trim().toLowerCase()] : [],
-    isShared: Boolean(collaboratorEmail.trim()) || Boolean(book.isShared),
+    collaboratorEmail: connectedCoAuthors[0] || null,
+    collaborators: connectedCoAuthors,
+    acceptedBy: connectedCoAuthors,
+    isShared: connectedCoAuthors.length > 0 || Boolean(book.isShared),
   };
-
-  const currentUser = getCachedUser();
-  const isOwner =
-    !book.sharedBy &&
-    (!book.ownerEmail ||
-      (currentUser &&
-        book.ownerEmail.toLowerCase().trim() === currentUser.email?.toLowerCase().trim()));
 
   async function handleCoverUpload(files: FileList | null) {
     if (!files || !files.length) return;
@@ -808,9 +838,10 @@ export function VolumeEditorModal({
         thickness,
         width,
         positionIndex,
-        collaboratorEmail: collaboratorEmail.trim() ? collaboratorEmail.trim().toLowerCase() : null,
-        collaborators: collaboratorEmail.trim() ? [collaboratorEmail.trim().toLowerCase()] : [],
-        isShared: Boolean(collaboratorEmail.trim()),
+        collaboratorEmail: connectedCoAuthors[0] || null,
+        collaborators: connectedCoAuthors,
+        acceptedBy: connectedCoAuthors,
+        isShared: connectedCoAuthors.length > 0,
       });
       onClose();
     } catch (err) {
@@ -2059,24 +2090,64 @@ export function VolumeEditorModal({
                     </p>
                   </div>
 
-                  {/* Active Co-Author Status Pill */}
-                  {collaboratorEmail.trim() ? (
-                    <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3.5 text-xs text-emerald-800 dark:text-emerald-300 space-y-2">
+                  {/* Connected Co-Authors & Members in this Book */}
+                  {connectedCoAuthors.length > 0 ? (
+                    <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3.5 space-y-3 text-xs text-emerald-950 dark:text-emerald-100">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 font-semibold">
-                          <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                          <span>Connected Co-Author: {collaboratorEmail.trim()}</span>
+                        <div className="flex items-center gap-2 font-semibold text-emerald-900 dark:text-emerald-200">
+                          <Users className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>Connected Members in this Volume ({connectedCoAuthors.length + 1})</span>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setCollaboratorEmail("")}
-                          className="text-[10px] font-semibold uppercase text-red-600 hover:underline cursor-pointer"
-                        >
-                          Remove Co-Author
-                        </button>
+                        <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-semibold flex items-center gap-1">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Live Synced
+                        </span>
                       </div>
-                      <p className="text-[11px] leading-relaxed opacity-90">
-                        Autosaved to cloud: this exact book is synchronized. When <strong className="font-semibold">{collaboratorEmail.trim()}</strong> signs in with Google, this volume will appear automatically on their shelf!
+
+                      <div className="space-y-1.5">
+                        {/* Book Creator */}
+                        <div className="flex items-center justify-between rounded-lg bg-[var(--paper)] p-2.5 text-xs border border-emerald-500/20">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-xs">👑</span>
+                            <span className="font-semibold text-[var(--ink)] truncate">
+                              {book.ownerEmail || book.sharedBy || currentUser?.email || "You (Creator)"}
+                            </span>
+                          </div>
+                          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] font-bold uppercase text-amber-800 dark:text-amber-300">
+                            Creator
+                          </span>
+                        </div>
+
+                        {/* Connected Co-Authors */}
+                        {connectedCoAuthors.map((email) => (
+                          <div
+                            key={email}
+                            className="flex items-center justify-between rounded-lg bg-[var(--paper)] p-2.5 text-xs border border-emerald-500/20"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <span className="font-medium text-[var(--ink)] truncate">{email}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[9px] font-bold uppercase text-emerald-800 dark:text-emerald-300">
+                                Co-Author · Active
+                              </span>
+                              {isOwner && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveCoAuthor(email)}
+                                  className="text-[10px] font-semibold uppercase text-red-600 hover:underline cursor-pointer"
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <p className="text-[11px] leading-relaxed opacity-90 m-0">
+                        Autosaved to cloud: this exact volume is synchronized. When co-authors sign in with Google or open your invite link, this volume appears automatically on their bookshelf!
                       </p>
                     </div>
                   ) : (

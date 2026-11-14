@@ -433,6 +433,31 @@ function ShelfExperienceInner() {
     () => (selectedIndex === null ? null : books[selectedIndex] ?? null),
     [books, selectedIndex],
   );
+
+  const selectedBookMembers = useMemo(() => {
+    if (!selectedBook) return { owner: null, coAuthors: [] as string[], count: 0 };
+    const owner = selectedBook.ownerEmail || selectedBook.sharedBy || null;
+    const coAuthorsSet = new Set<string>();
+    if (typeof selectedBook.collaboratorEmail === "string" && selectedBook.collaboratorEmail.trim()) {
+      coAuthorsSet.add(selectedBook.collaboratorEmail.trim().toLowerCase());
+    }
+    if (Array.isArray(selectedBook.collaborators)) {
+      selectedBook.collaborators.forEach((c) => {
+        if (typeof c === "string" && c.trim()) coAuthorsSet.add(c.trim().toLowerCase());
+      });
+    }
+    if (Array.isArray(selectedBook.acceptedBy)) {
+      selectedBook.acceptedBy.forEach((c) => {
+        if (typeof c === "string" && c.trim()) coAuthorsSet.add(c.trim().toLowerCase());
+      });
+    }
+    if (owner) {
+      coAuthorsSet.delete(owner.toLowerCase().trim());
+    }
+    const coAuthors = Array.from(coAuthorsSet);
+    const count = (owner ? 1 : 0) + coAuthors.length;
+    return { owner, coAuthors, count };
+  }, [selectedBook]);
   const isFocused = mode !== "browse";
 
   // Load saved memories preview whenever a book is pulled forward (SWR instant cache first)
@@ -684,21 +709,6 @@ function ShelfExperienceInner() {
             onStorageConnected={() => void refreshBooks()}
             badgeCount={allPendingRequests.length}
           >
-            <button
-              type="button"
-              onClick={() => setJoinModalOpen(true)}
-              className={`top-dock__btn ${allPendingRequests.length > 0 ? "font-bold text-amber-700 dark:text-amber-300" : ""}`}
-              aria-label="Accept Invites & Shared Books"
-              title="Accept Invites & Shared Books"
-            >
-              <Users className="h-3.5 w-3.5 text-[var(--accent)]" aria-hidden="true" />
-              <span>Accept Invites & Shared Books</span>
-              {allPendingRequests.length > 0 && (
-                <span className="ml-1 rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm animate-pulse">
-                  {allPendingRequests.length}
-                </span>
-              )}
-            </button>
             <Link
               href={`/book?id=${encodeURIComponent(activeBook.id)}`}
               data-testid="open-active"
@@ -751,12 +761,17 @@ function ShelfExperienceInner() {
             <button
               type="button"
               onClick={() => setJoinModalOpen(true)}
-              className="top-dock__btn"
-              aria-label="Add Shared Book"
-              title="Add a partner's shared book to your shelf"
+              className={`top-dock__btn ${allPendingRequests.length > 0 ? "font-bold text-amber-700 dark:text-amber-300" : ""}`}
+              aria-label="Add & Accept Shared Books"
+              title="Add a partner's shared book to your shelf or review pending co-author requests"
             >
               <Users className="h-3.5 w-3.5 text-[var(--accent)]" aria-hidden="true" />
-              <span>Add Shared Book</span>
+              <span>Add & Accept Shared Books</span>
+              {allPendingRequests.length > 0 && (
+                <span className="ml-1 rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm animate-pulse">
+                  {allPendingRequests.length}
+                </span>
+              )}
             </button>
           </ExpandableDock>
 
@@ -782,7 +797,15 @@ function ShelfExperienceInner() {
           {activeBook.isShared && (
             <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-[var(--accent)]/35 bg-[var(--accent)]/10 px-2 py-0.5 text-[9px] font-semibold text-[var(--accent)] uppercase tracking-wider">
               <Users className="h-2.5 w-2.5" />
-              <span>{activeBook.sharedBy ? `From ${activeBook.sharedBy}` : activeBook.collaboratorEmail ? `Shared with ${activeBook.collaboratorEmail.split("@")[0]}` : "Shared Volume"}</span>
+              <span>
+                {activeBook.collaboratorEmail
+                  ? `Shared with ${activeBook.collaboratorEmail.split("@")[0]}`
+                  : Array.isArray(activeBook.collaborators) && activeBook.collaborators[0]
+                    ? `Shared with ${activeBook.collaborators[0].split("@")[0]}`
+                    : activeBook.sharedBy
+                      ? `From ${activeBook.sharedBy}`
+                      : "Shared Volume"}
+              </span>
             </span>
           )}
         </p>
@@ -953,15 +976,54 @@ function ShelfExperienceInner() {
                   </p>
                 </div>
               ) : selectedBook.isShared ? (
-                <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-800 dark:text-emerald-300">
-                  <Users className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-                  <span>
-                    {selectedBook.sharedBy
-                      ? `Co-authored · Created by ${selectedBook.sharedBy}`
-                      : selectedBook.collaboratorEmail
-                        ? `Co-authored with ${selectedBook.collaboratorEmail}`
-                        : "Co-authored Volume"}
-                  </span>
+                <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5 text-xs">
+                      <Users className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>In This Book ({selectedBookMembers.count} Member{selectedBookMembers.count === 1 ? "" : "s"})</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Active
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 pt-0.5">
+                    {/* Owner / Creator */}
+                    <div className="flex items-center justify-between rounded-lg bg-[var(--paper)] px-2.5 py-1.5 text-xs border border-emerald-500/20">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-xs">👑</span>
+                        <span className="font-medium text-[var(--ink)] truncate">
+                          {selectedBookMembers.owner || "Volume Creator"}
+                        </span>
+                      </div>
+                      <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300 shrink-0">
+                        Creator
+                      </span>
+                    </div>
+
+                    {/* Accepted Co-Authors */}
+                    {selectedBookMembers.coAuthors.map((email) => (
+                      <div
+                        key={email}
+                        className="flex items-center justify-between rounded-lg bg-[var(--paper)] px-2.5 py-1.5 text-xs border border-emerald-500/20"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span className="font-medium text-[var(--ink)] truncate">{email}</span>
+                        </div>
+                        <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300 shrink-0">
+                          Co-Author · Active
+                        </span>
+                      </div>
+                    ))}
+
+                    {selectedBookMembers.coAuthors.length === 0 && (
+                      <p className="text-[11px] italic text-[var(--ink-soft)] m-0 pt-0.5">
+                        Shared memory volume · Ready for co-authors to read and write.
+                      </p>
+                    )}
+                  </div>
                 </div>
               ) : null}
 

@@ -835,18 +835,48 @@ export async function approveCollaboratorRequest(
   email: string,
   action: "approve" | "decline",
 ): Promise<{ ok: boolean; books: DiaryBook[] }> {
-  const res = await serverFetch<{ ok: boolean; books: DiaryBook[] }>(
-    `/api/books/${encodeURIComponent(bookId)}/approve-request`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, action }),
-    },
-  );
-  if (Array.isArray(res.books)) {
-    saveCachedServerBooks(res.books);
+  const cleanEmail = email.trim().toLowerCase();
+  try {
+    const res = await serverFetch<{ ok: boolean; books: DiaryBook[] }>(
+      `/api/books/${encodeURIComponent(bookId)}/approve-request`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanEmail, action }),
+      },
+    );
+    if (Array.isArray(res.books)) {
+      saveCachedServerBooks(res.books);
+      return res;
+    }
+  } catch (err) {
+    console.warn("Server approveCollaboratorRequest error, updating local store fallback:", err);
   }
-  return res;
+
+  // Resilient fallback for local / offline operation
+  const cached: DiaryBook[] = loadCachedServerBooks() || [];
+  const updated = cached.map((b: DiaryBook) => {
+    if (b.id !== bookId) return b;
+    const reqs = Array.isArray(b.pendingRequests)
+      ? b.pendingRequests.filter((r) => r.email.toLowerCase() !== cleanEmail)
+      : [];
+    const collabs = Array.isArray(b.collaborators) ? [...b.collaborators] : [];
+    const accepted = Array.isArray(b.acceptedBy) ? [...b.acceptedBy] : [];
+    if (action === "approve") {
+      if (!collabs.includes(cleanEmail)) collabs.push(cleanEmail);
+      if (!accepted.includes(cleanEmail)) accepted.push(cleanEmail);
+    }
+    return {
+      ...b,
+      pendingRequests: reqs,
+      collaborators: collabs,
+      acceptedBy: accepted,
+      collaboratorEmail: action === "approve" ? cleanEmail : b.collaboratorEmail,
+      isShared: action === "approve" ? true : b.isShared,
+    };
+  });
+  saveCachedServerBooks(updated);
+  return { ok: true, books: updated };
 }
 
 export async function sendBookPresence(

@@ -1742,17 +1742,19 @@ function BookMemoriesContent() {
 
             {book.isShared && (
               <span
-                className="hidden sm:inline-flex items-center gap-1 rounded-full border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent)]"
-                title={
-                  book.sharedBy
-                    ? `Co-authored · Created by ${book.sharedBy}`
-                    : book.collaboratorEmail
-                      ? `Co-authored with ${book.collaboratorEmail}`
-                      : "Co-authored Volume"
-                }
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-800 dark:text-emerald-300"
+                title={`Members in this book:\n👑 Creator: ${book.ownerEmail || book.sharedBy || "Creator"}\n✓ Co-Author: ${book.collaboratorEmail || (Array.isArray(book.collaborators) && book.collaborators[0]) || book.sharedBy || "Co-Author"}`}
               >
-                <Users className="h-3 w-3" />
-                <span>{book.sharedBy ? `From ${book.sharedBy}` : "Shared"}</span>
+                <Users className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                <span>
+                  {book.collaboratorEmail
+                    ? `Co-Author: ${book.collaboratorEmail.split("@")[0]}`
+                    : Array.isArray(book.collaborators) && book.collaborators[0]
+                      ? `Co-Author: ${book.collaborators[0].split("@")[0]}`
+                      : book.sharedBy
+                        ? `From ${book.sharedBy}`
+                        : "Shared Book"}
+                </span>
               </span>
             )}
 

@@ -2352,6 +2352,9 @@ app.post("/api/books/:id/approve-request", requireAuth, async (req, res) => {
       if (!b.acceptedBy.includes(cleanEmail)) {
         b.acceptedBy.push(cleanEmail);
       }
+      if (!b.collaboratorEmail) {
+        b.collaboratorEmail = cleanEmail;
+      }
       b.isShared = true;
     }
   }, resolved.scopeId);
