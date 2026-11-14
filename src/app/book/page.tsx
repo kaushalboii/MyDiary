@@ -13,6 +13,7 @@ import {
   Edit3,
   Images,
   LayoutGrid,
+  Mail,
   MapPin,
   MoreHorizontal,
   PenLine,
@@ -44,6 +45,7 @@ import {
   syncLayoutBlocksWithMemory,
 } from "@/lib/memory-layout";
 import {
+  approveCollaboratorRequest,
   deleteBook,
   deleteMemory,
   fetchBooks,
@@ -225,6 +227,13 @@ function BookMemoriesContent() {
     () => books.find((b) => b.id === resolvedBookId) || books[0],
     [books, resolvedBookId],
   );
+
+  const currentUser = getCachedUser();
+  const isOwner =
+    !book?.sharedBy &&
+    (!book?.ownerEmail ||
+      (currentUser &&
+        book.ownerEmail.toLowerCase().trim() === currentUser.email?.toLowerCase().trim()));
 
   const [activeViewers, setActiveViewers] = useState<ActiveViewer[]>([]);
 
@@ -1745,6 +1754,23 @@ function BookMemoriesContent() {
                 <Users className="h-3 w-3" />
                 <span>{book.sharedBy ? `From ${book.sharedBy}` : "Shared"}</span>
               </span>
+            )}
+
+            {/* Pending Requests Notice for Book Owner */}
+            {book.pendingRequests && book.pendingRequests.length > 0 && isOwner && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditorInitialTab("collaborate");
+                  setEditingVolume(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-[11px] font-semibold text-amber-900 dark:text-amber-200 animate-pulse cursor-pointer hover:bg-amber-500/25"
+              >
+                <Mail className="h-3.5 w-3.5 text-amber-600" />
+                <span>
+                  {book.pendingRequests.length} Pending Request{book.pendingRequests.length > 1 ? "s" : ""}
+                </span>
+              </button>
             )}
 
             {/* Live Presence indicator with Glowing Green Dot */}

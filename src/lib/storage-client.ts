@@ -701,35 +701,95 @@ export function parseBookInvitePayload(raw: string): DiaryBook | null {
   }
 }
 
-export async function acceptSharedBook(bookId: string): Promise<void> {
+export async function acceptSharedBook(
+  bookId: string,
+  options?: { fromInviteLink?: boolean; bookData?: Partial<DiaryBook> },
+): Promise<{ ok: boolean; status: "accepted" | "pending_approval" | "owner"; message: string }> {
   const currentUser = getCachedUser();
   const userEmail = (currentUser?.email || "").toLowerCase().trim();
   try {
-    await serverFetch(`/api/books/${encodeURIComponent(bookId)}/accept`, {
+    const res = await serverFetch<{
+      ok: boolean;
+      status: "accepted" | "pending_approval" | "owner";
+      message?: string;
+    }>(`/api/books/${encodeURIComponent(bookId)}/accept`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fromInviteLink: Boolean(options?.fromInviteLink),
+        bookData: options?.bookData,
+      }),
     });
+
+    const status = res.status || "accepted";
+    if (options?.bookData) {
+      const bookToSave: DiaryBook = {
+        ...(options.bookData as DiaryBook),
+        isShared: true,
+        inviteStatus: status === "owner" ? "accepted" : status,
+        acceptedBy: status === "accepted" || status === "owner" ? (userEmail ? [userEmail] : []) : [],
+      };
+      saveToSharedRegistry(bookToSave);
+      if (status === "accepted") {
+        await putInStore("books", bookToSave).catch(() => {});
+      }
+    }
+    return {
+      ok: true,
+      status,
+      message:
+        res.message ||
+        (status === "pending_approval"
+          ? "Request sent to book owner. Once accepted, this volume will appear on your shelf."
+          : "Book accepted and placed on your shelf!"),
+    };
   } catch {
     // Offline fallback
-  }
-
-  try {
-    const book = await getFromStore<DiaryBook>("books", bookId);
-    if (book) {
-      const acceptedBy = Array.isArray(book.acceptedBy) ? [...book.acceptedBy] : [];
-      if (userEmail && !acceptedBy.includes(userEmail)) {
-        acceptedBy.push(userEmail);
-      }
-      const updated: DiaryBook = {
-        ...book,
-        inviteStatus: "accepted",
-        acceptedBy,
+    if (options?.bookData) {
+      const status = options.fromInviteLink ? "pending_approval" : "accepted";
+      const bookToSave: DiaryBook = {
+        ...(options.bookData as DiaryBook),
+        isShared: true,
+        inviteStatus: status,
       };
-      await putInStore("books", updated);
-      saveToSharedRegistry(updated);
+      saveToSharedRegistry(bookToSave);
+      if (status === "accepted") {
+        await putInStore("books", bookToSave).catch(() => {});
+      }
+      return {
+        ok: true,
+        status,
+        message:
+          status === "pending_approval"
+            ? "Request saved! When online, owner will approve your request."
+            : "Book placed on your shelf!",
+      };
     }
-  } catch {
-    // Ignore storage issues
+    return {
+      ok: true,
+      status: "accepted",
+      message: "Book accepted and placed on your shelf!",
+    };
   }
+}
+
+export async function approveCollaboratorRequest(
+  bookId: string,
+  email: string,
+  action: "approve" | "decline",
+): Promise<{ ok: boolean; books: DiaryBook[] }> {
+  const res = await serverFetch<{ ok: boolean; books: DiaryBook[] }>(
+    `/api/books/${encodeURIComponent(bookId)}/approve-request`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, action }),
+    },
+  );
+  if (Array.isArray(res.books)) {
+    saveCachedServerBooks(res.books);
+  }
+  return res;
 }
 
 export async function sendBookPresence(

@@ -9,6 +9,7 @@ import { defaultBooks } from "@/lib/default-books";
 import {
   AUTH_REQUIRED_EVENT,
   acceptSharedBook,
+  approveCollaboratorRequest,
   autoSyncOfflineDataIfAny,
   createBook,
   createBookInvitePayload,
@@ -108,6 +109,11 @@ function ShelfExperienceInner() {
   const [joinModalOpen, setJoinModalOpen] = useState(false);
   const [joinInput, setJoinInput] = useState("");
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [inviteModalNotice, setInviteModalNotice] = useState<{
+    title: string;
+    message: string;
+    isPending?: boolean;
+  } | null>(null);
 
   const booksRef = useRef(books);
   booksRef.current = books;
@@ -145,12 +151,21 @@ function ShelfExperienceInner() {
 
   const handleAcceptInvite = useCallback(
     async (bookToAccept: DiaryBook) => {
-      try {
-        await acceptSharedBook(bookToAccept.id);
-        saveToSharedRegistry({
-          ...bookToAccept,
-          inviteStatus: "accepted",
+      if (!isUserAuthenticated()) {
+        setStorageOpen(true);
+        setInviteModalNotice({
+          title: "Sign In Required",
+          message:
+            "Please sign in with your Google account first so this shared volume can be securely attached to your shelf.",
         });
+        return;
+      }
+      try {
+        const result = await acceptSharedBook(bookToAccept.id, {
+          fromInviteLink: true,
+          bookData: bookToAccept,
+        });
+
         if (typeof window !== "undefined") {
           const url = new URL(window.location.href);
           url.searchParams.delete("invite");
@@ -161,6 +176,16 @@ function ShelfExperienceInner() {
           );
         }
         setPendingInvite(null);
+
+        if (result.status === "pending_approval") {
+          setInviteModalNotice({
+            title: "Join Request Sent",
+            message: `Your request to co-author "${bookToAccept.title}" has been sent to the book creator (${bookToAccept.ownerEmail || "the owner"}). Once the owner manually accepts your request from their diary, this volume will immediately appear on your bookshelf!`,
+            isPending: true,
+          });
+          return;
+        }
+
         await refreshBooks();
         const updatedList = await fetchBooks();
         const targetIdx = updatedList.books.findIndex((b) => b.id === bookToAccept.id);
@@ -170,8 +195,20 @@ function ShelfExperienceInner() {
           setActiveIndex(targetIdx);
           setMode("inspect");
         }
-      } catch {
+        setInviteModalNotice({
+          title: "Book Placed on Shelf",
+          message: `"${bookToAccept.title}" is now placed on your bookshelf! Both accounts can read, upload photos, and write memories together.`,
+          isPending: false,
+        });
+      } catch (err) {
         setPendingInvite(null);
+        setInviteModalNotice({
+          title: "Unable to Connect Book",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Failed to join this book volume. Please try again.",
+        });
       }
     },
     [refreshBooks],
@@ -763,6 +800,57 @@ function ShelfExperienceInner() {
                   </span>
                 </div>
               ) : null}
+
+              {/* Pending Co-Author Requests from shared link (Book Owner can manually accept from diary) */}
+              {selectedBook.pendingRequests && selectedBook.pendingRequests.length > 0 && (
+                <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold flex items-center gap-1.5">
+                      <Users className="h-3.5 w-3.5 text-amber-600" />
+                      {selectedBook.pendingRequests.length} Pending Co-Author Request{selectedBook.pendingRequests.length > 1 ? "s" : ""}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setEditorState({ mode: "edit", book: selectedBook })}
+                      className="text-[10px] font-semibold uppercase underline hover:text-[var(--ink)] cursor-pointer"
+                    >
+                      Manage in Studio
+                    </button>
+                  </div>
+                  <div className="space-y-1.5">
+                    {selectedBook.pendingRequests.map((req) => (
+                      <div key={req.email} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[var(--paper)] p-2">
+                        <div className="min-w-0 text-[11px]">
+                          <strong>{req.name || req.email.split("@")[0]}</strong>
+                          <span className="text-[10px] text-[var(--ink-soft)] block">{req.email}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await approveCollaboratorRequest(selectedBook.id, req.email, "approve");
+                              await refreshBooks();
+                            }}
+                            className="rounded-full bg-emerald-600 px-3 py-1 text-[10px] font-semibold text-white hover:bg-emerald-700 transition cursor-pointer shadow-xs"
+                          >
+                            ✓ Accept & Add to Shelf
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await approveCollaboratorRequest(selectedBook.id, req.email, "decline");
+                              await refreshBooks();
+                            }}
+                            className="rounded-full border border-[var(--hairline)] px-2.5 py-1 text-[10px] text-[var(--ink-soft)] hover:text-red-600 transition cursor-pointer"
+                          >
+                            ✕ Decline
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {selectedBook.description && (
                 <p className="book-details__description">
                   {selectedBook.description}
@@ -1175,6 +1263,50 @@ function ShelfExperienceInner() {
                 className="rounded-full bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase hover:bg-[var(--walnut-deep)] transition cursor-pointer shadow-md"
               >
                 Place on My Shelf
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notification Modal for Invite Acceptance & Owner Approval */}
+      {inviteModalNotice && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+        >
+          <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--paper-light)] p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-3.5">
+              <div
+                className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${
+                  inviteModalNotice.isPending
+                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                    : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                }`}
+              >
+                {inviteModalNotice.isPending ? (
+                  <Mail className="h-5 w-5" />
+                ) : (
+                  <Check className="h-5 w-5" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-serif text-lg font-bold text-[var(--ink)]">
+                  {inviteModalNotice.title}
+                </h3>
+                <p className="mt-1 text-xs text-[var(--ink-soft)] leading-relaxed m-0">
+                  {inviteModalNotice.message}
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setInviteModalNotice(null)}
+                className="rounded-full bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-wider text-[var(--paper-light)] uppercase hover:bg-[var(--walnut-deep)] transition cursor-pointer shadow-md"
+              >
+                Got it
               </button>
             </div>
           </div>

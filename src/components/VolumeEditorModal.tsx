@@ -36,6 +36,7 @@ import {
 } from "@/lib/memory-layout";
 import {
   AUTH_REQUIRED_EVENT,
+  approveCollaboratorRequest,
   createBookInvitePayload,
   createMemory,
   getCachedUser,
@@ -339,6 +340,28 @@ export function VolumeEditorModal({
     }
     return "";
   });
+  const [pendingRequests, setPendingRequests] = useState(book.pendingRequests || []);
+  const [requestBusy, setRequestBusy] = useState<string | null>(null);
+  const [requestNotice, setRequestNotice] = useState<string | null>(null);
+
+  async function handleCollaboratorRequest(reqEmail: string, action: "approve" | "decline") {
+    setRequestBusy(reqEmail);
+    setRequestNotice(null);
+    try {
+      await approveCollaboratorRequest(book.id, reqEmail, action);
+      setPendingRequests((prev) => prev.filter((r) => r.email.toLowerCase() !== reqEmail.toLowerCase()));
+      if (action === "approve") {
+        setCollaboratorEmail(reqEmail);
+        setRequestNotice(`✓ Accepted ${reqEmail}! They have been added as co-author and this book is placed on their shelf.`);
+      } else {
+        setRequestNotice(`Declined request from ${reqEmail}.`);
+      }
+    } catch (err) {
+      setRequestNotice(err instanceof Error ? err.message : "Failed to process request.");
+    } finally {
+      setRequestBusy(null);
+    }
+  }
 
   // Outer Cover Look
   const [cover, setCover] = useState(book.cover);
@@ -2015,6 +2038,72 @@ export function VolumeEditorModal({
                       </p>
                     )}
                   </div>
+
+                  {/* Pending Co-Author Requests (Joined via shared link, requiring manual owner acceptance) */}
+                  {isOwner && pendingRequests.length > 0 && (
+                    <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3.5 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="relative flex h-2 w-2">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+                          </span>
+                          <span className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+                            Pending Co-Author Requests ({pendingRequests.length})
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-amber-800/80 dark:text-amber-300/80">
+                          Joined via shared link · Requires your manual approval
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[var(--ink-soft)] leading-relaxed m-0">
+                        These users clicked your invite link. Click <strong>Accept & Add to Shelf</strong> to grant them co-author access so this volume appears on their bookshelf.
+                      </p>
+                      {requestNotice && (
+                        <div className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-white/70 dark:bg-black/40 rounded p-2">
+                          {requestNotice}
+                        </div>
+                      )}
+                      <div className="space-y-2">
+                        {pendingRequests.map((req) => (
+                          <div
+                            key={req.email}
+                            className="flex flex-wrap items-center justify-between gap-2.5 rounded-lg border border-amber-500/20 bg-[var(--paper)] p-3 text-xs"
+                          >
+                            <div className="min-w-0">
+                              <div className="font-semibold text-[var(--ink)]">
+                                {req.name || req.email.split("@")[0]}
+                              </div>
+                              <div className="text-[11px] text-[var(--ink-soft)]">{req.email}</div>
+                              {req.requestedAt && (
+                                <div className="text-[10px] text-[var(--ink-soft)]/70">
+                                  Requested {new Date(req.requestedAt).toLocaleDateString()}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={requestBusy === req.email}
+                                onClick={() => void handleCollaboratorRequest(req.email, "approve")}
+                                className="rounded-full bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition cursor-pointer shadow-sm"
+                              >
+                                {requestBusy === req.email ? "Processing..." : "✓ Accept & Add to Shelf"}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={requestBusy === req.email}
+                                onClick={() => void handleCollaboratorRequest(req.email, "decline")}
+                                className="rounded-full border border-[var(--hairline)] px-2.5 py-1.5 text-xs font-medium text-[var(--ink-soft)] hover:text-red-600 transition cursor-pointer"
+                              >
+                                ✕ Decline
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Creator / Collaborator details & locked status */}
                   <div className="rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)]/50 p-3 space-y-2 text-xs text-[var(--ink-soft)]">

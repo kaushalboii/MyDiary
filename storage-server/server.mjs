@@ -906,6 +906,11 @@ function applyBookPatch(current, patch, scopeId = LEGACY_SCOPE_ID) {
       typeof patch.inviteStatus === "string" ? patch.inviteStatus : current.inviteStatus,
     acceptedBy:
       Array.isArray(patch.acceptedBy) ? patch.acceptedBy : current.acceptedBy,
+    pendingRequests: Array.isArray(patch.pendingRequests)
+      ? patch.pendingRequests
+      : Array.isArray(current.pendingRequests)
+        ? current.pendingRequests
+        : [],
   };
 }
 
@@ -934,13 +939,45 @@ function isBookCollaborator(book, userEmail, userId) {
     }
   }
 
+  // 4. Has user been accepted/approved?
+  if (cleanEmail && Array.isArray(book.acceptedBy)) {
+    if (book.acceptedBy.some((c) => typeof c === "string" && c.trim().toLowerCase() === cleanEmail)) {
+      return true;
+    }
+  }
+
   return false;
+}
+
+function findBookAnywhere(bookId) {
+  if (!bookId) return null;
+  // 1. Check legacy DB
+  try {
+    const legacyDb = readDb(LEGACY_SCOPE_ID);
+    const legacyBook = legacyDb.books.find((b) => b.id === bookId);
+    if (legacyBook) {
+      return { scopeId: LEGACY_SCOPE_ID, book: legacyBook, isOwner: false };
+    }
+  } catch {}
+
+  // 2. Check all user DBs
+  const { users } = readUsersStore();
+  for (const u of users) {
+    try {
+      const uDb = readDb(u.id);
+      const match = uDb.books.find((b) => b.id === bookId);
+      if (match) {
+        return { scopeId: u.id, book: match, ownerUser: u };
+      }
+    } catch {}
+  }
+  return null;
 }
 
 function findBookScope(bookId, req) {
   if (!bookId) return null;
   const userScope = req.storageScope || LEGACY_SCOPE_ID;
-  const userEmail = req.authUser?.email || "";
+  const userEmail = (req.authUser?.email || "").toLowerCase().trim();
   const userId = req.authUser?.id || userScope;
 
   // 1. Check user's own database
@@ -957,24 +994,28 @@ function findBookScope(bookId, req) {
     }
   } catch {}
 
-  // 2. Scan other users' databases for shared books where user is a collaborator
-  if (userEmail || userId) {
-    const { users } = readUsersStore();
-    for (const u of users) {
-      if (u.id === userScope) continue;
-      try {
-        const otherDb = readDb(u.id);
-        const match = otherDb.books.find((b) => b.id === bookId);
-        if (match && isBookCollaborator(match, userEmail, userId)) {
-          return {
-            scopeId: u.id,
-            isOwner: false,
-            book: match,
-            ownerUser: u,
-          };
-        }
-      } catch {}
-    }
+  // 2. Scan all scopes (including legacy and all user scopes) for shared books
+  const allScopes = [LEGACY_SCOPE_ID];
+  const { users } = readUsersStore();
+  for (const u of users) {
+    if (!allScopes.includes(u.id)) allScopes.push(u.id);
+  }
+
+  for (const s of allScopes) {
+    if (s === userScope) continue;
+    try {
+      const otherDb = readDb(s);
+      const match = otherDb.books.find((b) => b.id === bookId);
+      if (match && isBookCollaborator(match, userEmail, userId)) {
+        const ownerUser = users.find((u) => u.id === s) || null;
+        return {
+          scopeId: s,
+          isOwner: false,
+          book: match,
+          ownerUser,
+        };
+      }
+    } catch {}
   }
 
   return null;
@@ -1844,30 +1885,34 @@ app.get("/api/books", requireAuth, (req, res) => {
   const existingIds = new Set(ownBooks.map((b) => b.id));
   const sharedBooks = [];
 
-  const userEmail = req.authUser?.email || "";
+  const userEmail = (req.authUser?.email || "").toLowerCase().trim();
   const userId = req.authUser?.id || userScope;
 
-  if (userEmail || userId) {
-    const { users } = readUsersStore();
-    for (const u of users) {
-      if (u.id === userScope) continue;
-      try {
-        const otherDb = readDb(u.id);
-        const otherEnriched = enrichBooks(otherDb, u.id);
-        for (const b of otherEnriched) {
-          if (!existingIds.has(b.id) && isBookCollaborator(b, userEmail, userId)) {
-            existingIds.add(b.id);
-            sharedBooks.push({
-              ...b,
-              isShared: true,
-              ownerId: u.id,
-              ownerEmail: u.email || u.username,
-              sharedBy: u.displayName || u.email || u.username,
-            });
-          }
+  const allScopes = [LEGACY_SCOPE_ID];
+  const { users } = readUsersStore();
+  for (const u of users) {
+    if (!allScopes.includes(u.id)) allScopes.push(u.id);
+  }
+
+  for (const s of allScopes) {
+    if (s === userScope) continue;
+    try {
+      const otherDb = readDb(s);
+      const otherEnriched = enrichBooks(otherDb, s);
+      for (const b of otherEnriched) {
+        if (!existingIds.has(b.id) && isBookCollaborator(b, userEmail, userId)) {
+          existingIds.add(b.id);
+          const ownerUser = users.find((u) => u.id === s);
+          sharedBooks.push({
+            ...b,
+            isShared: true,
+            ownerId: b.ownerId || s,
+            ownerEmail: b.ownerEmail || ownerUser?.email || ownerUser?.username || "Owner",
+            sharedBy: ownerUser?.displayName || ownerUser?.email || b.ownerEmail || "Owner",
+          });
         }
-      } catch {}
-    }
+      }
+    } catch {}
   }
 
   res.json({ books: [...ownBooks, ...sharedBooks] });
@@ -2074,23 +2119,152 @@ const presenceByBook = new Map(); // bookId -> Map<viewerId, viewerInfo>
 
 app.post("/api/books/:id/accept", requireAuth, async (req, res) => {
   const bookId = String(req.params.id || "");
-  const resolved = findBookScope(bookId, req);
+  const body = req.body || {};
+  const fromInviteLink = Boolean(body.fromInviteLink);
+  const user = req.authUser || {};
+  const userEmail = (user.email || "").toLowerCase().trim();
+  const userName = user.displayName || user.username || userEmail.split("@")[0] || "Co-Author";
+
+  let resolved = findBookAnywhere(bookId);
+
+  // If not on server yet but client provided bookData, save it to user scope
+  if (!resolved && body.bookData && body.bookData.title) {
+    const targetScope = req.storageScope || LEGACY_SCOPE_ID;
+    await mutateDb((db) => {
+      const existing = db.books.find((b) => b.id === bookId);
+      if (!existing) {
+        db.books.push({
+          ...body.bookData,
+          id: bookId,
+          isShared: true,
+          ownerId: body.bookData.ownerId || targetScope,
+          ownerEmail: body.bookData.ownerEmail || userEmail,
+        });
+      }
+    }, targetScope);
+    resolved = findBookAnywhere(bookId);
+  }
+
   if (!resolved) {
-    res.status(404).json({ error: "Book not found." });
+    res.status(404).json({ error: "Book volume not found." });
     return;
   }
-  const userEmail = (req.authUser?.email || "").toLowerCase();
+
+  const book = resolved.book;
+  const isOwner =
+    (book.ownerId && String(book.ownerId) === String(user.id)) ||
+    (book.ownerEmail && book.ownerEmail.toLowerCase().trim() === userEmail) ||
+    resolved.scopeId === req.storageScope;
+
+  if (isOwner) {
+    res.json({ ok: true, status: "owner", message: "You are the book owner." });
+    return;
+  }
+
+  const isPreInvitedByEmail =
+    (book.collaboratorEmail && book.collaboratorEmail.toLowerCase().trim() === userEmail) ||
+    (Array.isArray(book.collaborators) &&
+      book.collaborators.some((c) => String(c).toLowerCase().trim() === userEmail));
+
+  // If user was explicitly invited by email by the owner, accept directly!
+  if (isPreInvitedByEmail || !fromInviteLink) {
+    await mutateDb((db) => {
+      const b = db.books.find((item) => item.id === bookId);
+      if (b) {
+        if (!Array.isArray(b.acceptedBy)) b.acceptedBy = [];
+        if (userEmail && !b.acceptedBy.includes(userEmail)) {
+          b.acceptedBy.push(userEmail);
+        }
+        if (!Array.isArray(b.collaborators)) b.collaborators = [];
+        if (userEmail && !b.collaborators.includes(userEmail)) {
+          b.collaborators.push(userEmail);
+        }
+        b.isShared = true;
+        b.inviteStatus = "accepted";
+        if (Array.isArray(b.pendingRequests)) {
+          b.pendingRequests = b.pendingRequests.filter((r) => r.email?.toLowerCase() !== userEmail);
+        }
+      }
+    }, resolved.scopeId);
+
+    res.json({
+      ok: true,
+      status: "accepted",
+      message: "Book accepted and placed on your shelf!",
+    });
+    return;
+  }
+
+  // Otherwise, user joined via a shared link ("when only if i share the link i need to manually accept thats the book owner need to manually aceept the ones thats from the dairy then only the book need to be viible like that"):
+  // Submit join request for owner's manual approval!
   await mutateDb((db) => {
     const b = db.books.find((item) => item.id === bookId);
     if (b) {
-      if (!Array.isArray(b.acceptedBy)) b.acceptedBy = [];
-      if (userEmail && !b.acceptedBy.includes(userEmail)) {
-        b.acceptedBy.push(userEmail);
+      if (!Array.isArray(b.pendingRequests)) b.pendingRequests = [];
+      const already = b.pendingRequests.some(
+        (r) => r.email?.toLowerCase() === userEmail || (r.userId && r.userId === user.id),
+      );
+      if (!already && userEmail) {
+        b.pendingRequests.push({
+          userId: user.id,
+          email: userEmail,
+          name: userName,
+          avatarUrl: user.avatarUrl || null,
+          requestedAt: new Date().toISOString(),
+        });
       }
-      b.inviteStatus = "accepted";
+      b.isShared = true;
     }
   }, resolved.scopeId);
-  res.json({ ok: true });
+
+  res.json({
+    ok: true,
+    status: "pending_approval",
+    message: "Request sent to book owner. Once accepted in their diary, this volume will appear on your shelf.",
+  });
+});
+
+app.post("/api/books/:id/approve-request", requireAuth, async (req, res) => {
+  const bookId = String(req.params.id || "");
+  const { email, action } = req.body || {};
+  if (!email || !action) {
+    return res.status(400).json({ error: "Missing email or action ('approve' | 'decline')." });
+  }
+  const cleanEmail = String(email).trim().toLowerCase();
+  const resolved = findBookAnywhere(bookId);
+  if (!resolved) {
+    return res.status(404).json({ error: "Book volume not found." });
+  }
+
+  const isOwner =
+    resolved.book.ownerId === req.authUser.id ||
+    resolved.book.ownerEmail?.toLowerCase() === req.authUser.email?.toLowerCase() ||
+    resolved.scopeId === req.storageScope;
+  if (!isOwner) {
+    return res.status(403).json({ error: "Only the book owner can accept collaborator requests." });
+  }
+
+  await mutateDb((db) => {
+    const b = db.books.find((item) => item.id === bookId);
+    if (!b) return;
+    if (!Array.isArray(b.pendingRequests)) b.pendingRequests = [];
+    b.pendingRequests = b.pendingRequests.filter((r) => r.email?.toLowerCase() !== cleanEmail);
+    if (action === "approve") {
+      if (!Array.isArray(b.collaborators)) b.collaborators = [];
+      if (!b.collaborators.includes(cleanEmail)) {
+        b.collaborators.push(cleanEmail);
+      }
+      if (!Array.isArray(b.acceptedBy)) b.acceptedBy = [];
+      if (!b.acceptedBy.includes(cleanEmail)) {
+        b.acceptedBy.push(cleanEmail);
+      }
+      b.isShared = true;
+    }
+  }, resolved.scopeId);
+
+  const userScope = req.storageScope || LEGACY_SCOPE_ID;
+  const db = readDb(userScope);
+  res.json({ ok: true, books: enrichBooks(db, userScope) });
 });
 
 app.post("/api/books/:id/presence", requireAuth, (req, res) => {

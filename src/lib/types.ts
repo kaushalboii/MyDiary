@@ -65,6 +65,14 @@ export type PageNumberStyle = "classic" | "roman" | "minimal" | "hidden";
 
 export type PageHeaderStyle = "minimal" | "centered" | "ruled" | "botanical";
 
+export type CollaboratorRequest = {
+  userId?: string;
+  email: string;
+  name?: string;
+  avatarUrl?: string | null;
+  requestedAt: string;
+};
+
 export type DiaryBook = {
   id: string;
   title: string;
@@ -105,8 +113,9 @@ export type DiaryBook = {
   collaboratorEmail?: string | null;
   isShared?: boolean;
   sharedBy?: string | null;
-  inviteStatus?: "pending" | "accepted" | "declined";
+  inviteStatus?: "pending" | "pending_approval" | "accepted" | "declined";
   acceptedBy?: string[];
+  pendingRequests?: CollaboratorRequest[];
   memoryCount?: number;
   photoCount?: number;
   latestMemoryDate?: string | null;
