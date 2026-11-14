@@ -1402,6 +1402,11 @@ app.post("/api/auth/google", async (req, res) => {
     (u) => (u.googleSub && u.googleSub === googleSub) || (u.email && u.email.toLowerCase() === email),
   );
 
+  // Link existing single owner to Google if logging in with Google for the first time
+  if (!user && store.users.length === 1 && store.users[0].role === "owner" && !store.users[0].googleSub) {
+    user = store.users[0];
+  }
+
   const nowIso = new Date().toISOString();
 
   if (!user) {

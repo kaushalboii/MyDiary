@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import {
-  KeyRound,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -140,10 +139,6 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
 
   async function handleGoogleCredentialResponse(credential: string) {
     const targetCfg = loadStorageConfig();
-    if (!targetCfg.serverUrl) {
-      setError("Archive server is unreachable. Check your storage connection.");
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
@@ -151,7 +146,9 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
       if (res.sessionToken) {
         saveSessionToken(res.sessionToken);
       }
-      await setActiveUserEncryptionKey(res.user.username, res.googleSub);
+      if (res.user?.username && res.googleSub) {
+        await setActiveUserEncryptionKey(res.user.username, res.googleSub);
+      }
       setAuthMessage(null);
       document.documentElement.dataset.vault = "open";
       setMode("none");
@@ -298,7 +295,7 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                   />
                 </svg>
-                <span>{busy ? "Verifying..." : "Continue with Google (Instant & OTP)"}</span>
+                <span>{busy ? "Verifying..." : "Continue with Google"}</span>
               </button>
             </div>
 
@@ -342,27 +339,6 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
               {error}
             </div>
           )}
-
-          {/* 1-Click Persistent Diary Owner Unlock */}
-          <div className="mt-4 pt-4 border-t border-[var(--hairline)] flex flex-col items-center w-full">
-            <button
-              type="button"
-              onClick={() => {
-                saveSessionToken("local-diary-owner-session");
-                setAuthMessage(null);
-                document.documentElement.dataset.vault = "open";
-                setMode("none");
-              }}
-              data-testid="unlock-owner-btn"
-              className="flex w-full max-w-[300px] items-center justify-center gap-2 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-5 py-3 text-xs font-semibold tracking-wider text-[var(--paper-light)] shadow-md hover:bg-[var(--walnut-deep)] cursor-pointer transition-all"
-            >
-              <KeyRound className="h-4 w-4" />
-              <span>Unlock as Diary Owner</span>
-            </button>
-            <p className="mt-2 text-[11px] text-[var(--ink-soft)] max-w-xs text-center leading-relaxed">
-              Permanently authenticates this browser on your device so you stay signed in even when closing and reopening Chrome.
-            </p>
-          </div>
 
           <button
             type="button"

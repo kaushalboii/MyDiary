@@ -14,6 +14,7 @@ import {
   AUTH_REQUIRED_EVENT,
   checkStorageHealth,
   getAuthStatus,
+  getCachedUser,
   getOfflineDraftCount,
   isUserAuthenticated,
   loadStorageConfig,
@@ -119,7 +120,7 @@ export function StorageSettingsModal({
 
   if (!open || !mounted || typeof document === "undefined") return null;
 
-  const currentUser = authStatus?.user ?? health?.user ?? null;
+  const currentUser = authStatus?.user ?? health?.user ?? getCachedUser() ?? null;
 
   return createPortal(
     <div
@@ -175,7 +176,7 @@ export function StorageSettingsModal({
                   {currentUser
                     ? `${currentUser.displayName} (@${currentUser.username})`
                     : isUserAuthenticated()
-                      ? "Diary Owner (Local Storage Authenticated)"
+                      ? "Diary Owner (Authenticated)"
                       : health
                         ? "Archive Connected · Sign In Required"
                         : "Archive Offline (Local Drafts)"}
@@ -185,7 +186,7 @@ export function StorageSettingsModal({
                 {currentUser
                   ? "Signed in with Google. All your books and entries are safely synchronized."
                   : isUserAuthenticated()
-                    ? "Authenticated on this device. You can edit memories, books, and layouts seamlessly."
+                    ? "Signed in with Google. You can edit memories, books, and layouts seamlessly."
                     : "Sign in with Google to sync and read your private memory archive."}
               </p>
             </div>

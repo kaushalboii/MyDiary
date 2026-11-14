@@ -43,7 +43,7 @@
     "dev": "next dev --hostname 127.0.0.1 --port 5203",
     "dev:storage": "node storage-server/server.mjs",
     "dev:all": "node scripts/dev-all.mjs",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "npx serve out -l 5203",
     "type-check": "tsc --noEmit"
   },

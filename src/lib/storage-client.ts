@@ -73,8 +73,64 @@ export function isStorageClientError(err: unknown): err is StorageClientError {
 const CONFIG_KEY = "mydiary_storage_config_v1";
 const IDB_NAME = "mydiary_offline_fallback_v1";
 const IDB_VERSION = 1;
+const GOOGLE_USER_CACHE_KEY = "mydiary_google_user_v1";
 
 export const DEFAULT_STORAGE_URL = "";
+
+export function parseGoogleCredential(credential: string): {
+  sub: string;
+  email: string;
+  name: string;
+  picture?: string;
+} | null {
+  try {
+    const parts = credential.split(".");
+    if (parts.length !== 3) return null;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    const binaryStr = atob(padded);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    const jsonStr = new TextDecoder().decode(bytes);
+    const payload = JSON.parse(jsonStr) as Record<string, unknown>;
+    if (!payload || !payload.sub || !payload.email) return null;
+    return {
+      sub: String(payload.sub),
+      email: String(payload.email),
+      name: String(payload.name || payload.given_name || String(payload.email).split("@")[0]),
+      picture: typeof payload.picture === "string" ? payload.picture : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function getCachedUser(): AuthUser | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(GOOGLE_USER_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as AuthUser;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCachedUser(user: AuthUser | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (user) {
+      window.localStorage.setItem(GOOGLE_USER_CACHE_KEY, JSON.stringify(user));
+    } else {
+      window.localStorage.removeItem(GOOGLE_USER_CACHE_KEY);
+    }
+  } catch {
+    // Ignore storage quota issues
+  }
+}
 
 function isLoopbackUrl(url: string): boolean {
   return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/i.test(url.trim());
@@ -1383,22 +1439,70 @@ export async function loginWithGoogle(
   credential: string,
   customConfig?: StorageConfig,
 ): Promise<{ sessionToken: string; user: AuthUser; googleSub: string }> {
-  const res = await publicAuthFetch<{ sessionToken: string; user: AuthUser; googleSub: string }>(
-    "/api/auth/google",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ credential }),
-    },
-    customConfig,
-  );
-  if (res.user?.username && res.googleSub) {
-    await setActiveUserEncryptionKey(res.user.username, res.googleSub);
+  const targetCfg = customConfig ?? loadStorageConfig();
+  if (targetCfg.serverUrl) {
+    try {
+      const res = await publicAuthFetch<{ sessionToken: string; user: AuthUser; googleSub: string }>(
+        "/api/auth/google",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ credential }),
+        },
+        targetCfg,
+      );
+      if (res.user?.username && res.googleSub) {
+        await setActiveUserEncryptionKey(res.user.username, res.googleSub);
+      }
+      if (res.sessionToken) {
+        saveSessionToken(res.sessionToken);
+      }
+      if (res.user) {
+        saveCachedUser(res.user);
+      }
+      return res;
+    } catch (err) {
+      // If server is explicitly offline or network failed, allow standalone client-side Google auth
+      const isNetworkError =
+        err instanceof TypeError ||
+        (err instanceof Error &&
+          (err.message.includes("fetch") ||
+            err.message.includes("network") ||
+            err.message.includes("Failed to fetch") ||
+            err.message.includes("NetworkError")));
+      if (!isNetworkError) {
+        throw err;
+      }
+    }
   }
-  if (res.sessionToken) {
-    saveSessionToken(res.sessionToken);
+
+  // Standalone / client-side Google Auth
+  const parsed = parseGoogleCredential(credential);
+  if (!parsed) {
+    throw new Error("Invalid or unreadable Google identity credential.");
   }
-  return res;
+  const username =
+    parsed.email.split("@")[0].replace(/[^a-z0-9_.-]/gi, "").toLowerCase() || "owner";
+  const user: AuthUser = {
+    id: `usr_${parsed.sub.slice(0, 16)}`,
+    username,
+    displayName: parsed.name,
+    email: parsed.email,
+    avatarUrl: parsed.picture,
+    role: "owner",
+    status: "active",
+    createdAt: new Date().toISOString(),
+    lastLoginAt: new Date().toISOString(),
+  };
+  const sessionToken = `gsi_${parsed.sub}_${Date.now()}`;
+  saveSessionToken(sessionToken);
+  await setActiveUserEncryptionKey(user.username, parsed.sub);
+  saveCachedUser(user);
+  return {
+    sessionToken,
+    user,
+    googleSub: parsed.sub,
+  };
 }
 
 export async function registerAccount(
@@ -1460,6 +1564,7 @@ export async function logoutAccount(customConfig?: StorageConfig): Promise<void>
   updateUnlockedVaultToken("");
   scrubPlaintextConfigToken();
   clearActiveUserEncryptionKey();
+  saveCachedUser(null);
   if (typeof window !== "undefined") {
     window.dispatchEvent(
       new CustomEvent(AUTH_REQUIRED_EVENT, {
