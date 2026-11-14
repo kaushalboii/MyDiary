@@ -998,7 +998,9 @@ export async function decryptMemoryList(list: MemoryAlbum[]): Promise<MemoryAlbu
           if (dec) {
             return {
               ...m,
-              title: dec.title || (m.title === "Encrypted Entry" ? "" : m.title),
+              title:
+                dec.title?.trim() ||
+                (m.title === "Encrypted Entry" || !m.title?.trim() ? "First" : m.title),
               note: dec.note || m.note,
               paragraphs: Array.isArray(dec.paragraphs) ? dec.paragraphs : m.paragraphs,
               layoutBlocks: Array.isArray(dec.layoutBlocks)
@@ -1008,7 +1010,13 @@ export async function decryptMemoryList(list: MemoryAlbum[]): Promise<MemoryAlbu
           }
         }
       }
-      return m;
+      return {
+        ...m,
+        title:
+          m.title === "Encrypted Entry" || !m.title?.trim()
+            ? "First"
+            : m.title,
+      };
     }),
   );
 }
@@ -1258,7 +1266,7 @@ export async function updateMemory(
   const effectiveTitle =
     input.title !== undefined
       ? input.title
-      : (existingMem?.title && existingMem.title !== "Encrypted Entry" ? existingMem.title : "");
+      : (existingMem?.title && existingMem.title !== "Encrypted Entry" ? existingMem.title : "First");
   const effectiveNote =
     input.note !== undefined ? input.note : (existingMem?.note || "");
   const effectiveParas =
@@ -1328,7 +1336,7 @@ export async function updateMemory(
     const updated: MemoryAlbum = {
       ...existing,
       ...input,
-      title: effectiveTitle || (existing.title === "Encrypted Entry" ? "" : existing.title),
+      title: effectiveTitle || (existing.title === "Encrypted Entry" ? "First" : existing.title),
       note: effectiveNote || existing.note,
       paragraphs: effectiveParas.length > 0 ? effectiveParas : existing.paragraphs,
       layoutBlocks: effectiveBlocks ?? existing.layoutBlocks,

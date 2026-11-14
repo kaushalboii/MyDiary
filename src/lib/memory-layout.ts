@@ -184,7 +184,7 @@ export function hasMemoryContent(mem: {
 
 export function getMemoryDisplayTitle(
   mem: Pick<MemoryAlbum, "title" | "note" | "paragraphs" | "photos">,
-  fallback = "Untitled Page",
+  fallback = "First",
 ): string {
   const cleanTitle = mem.title?.trim();
   if (cleanTitle && cleanTitle !== "Encrypted Entry") return cleanTitle;
@@ -195,9 +195,6 @@ export function getMemoryDisplayTitle(
   const firstPara = mem.paragraphs?.find((p) => p.trim())?.trim();
   if (firstPara) {
     return firstPara.length > 42 ? `${firstPara.slice(0, 42)}…` : firstPara;
-  }
-  if (mem.photos?.length) {
-    return mem.photos.length === 1 ? "Photo Keepsake" : `${mem.photos.length} Photographs`;
   }
   return fallback;
 }
@@ -308,14 +305,8 @@ export function partitionMemoryIntoSpreads(mem: MemoryAlbum): MemorySpreadPartit
           isPrimary: true,
           spreadSubIndex: 0,
           totalSubSpreads: 1,
-          leftPhotos: [
-            { photo: photos[0], idx: 0 },
-            { photo: photos[1], idx: 1 },
-          ],
-          rightPhotos: [
-            { photo: photos[2], idx: 2 },
-            { photo: photos[3], idx: 3 },
-          ],
+          leftPhotos: [],
+          rightPhotos: photos.map((p, idx) => ({ photo: p, idx })),
         },
       ];
     }
@@ -491,25 +482,23 @@ export function buildDefaultLayoutBlocks(
   const blocks: MemoryLayoutBlock[] = [];
   const hasParas = Boolean(mem.paragraphs?.some((p) => p.trim()));
   const hasNote = Boolean(mem.note?.trim());
-  const hasTitle = Boolean(mem.title?.trim());
-  const hasHeader = hasTitle || hasNote || hasParas;
+  const hasTitle = Boolean(mem.title?.trim() && mem.title.trim() !== "Encrypted Entry");
   let leftY = 5;
   let zCounter = 1;
 
-  if (hasHeader) {
-    blocks.push(
-      clampBlock({
-        id: "header",
-        kind: "header",
-        side: "left",
-        x: 5,
-        y: leftY,
-        w: 90,
-        z: zCounter++,
-      }),
-    );
-    leftY += hasTitle ? 24 : 18;
-  }
+  // Header (Date, Mood, Title) is ALWAYS present on Left page
+  blocks.push(
+    clampBlock({
+      id: "header",
+      kind: "header",
+      side: "left",
+      x: 5,
+      y: leftY,
+      w: 90,
+      z: zCounter++,
+    }),
+  );
+  leftY += hasTitle ? 24 : 18;
 
   if (hasNote) {
     blocks.push(
@@ -546,207 +535,129 @@ export function buildDefaultLayoutBlocks(
 
   const isPortraitAlbum = (mem as { albumStyle?: string }).albumStyle === "portrait" || photos.length === 1;
   const photoTilts = [-2, 2, -1.5, 2.5];
-  const isMinimalText = !hasParas;
 
-  if (isMinimalText && hasHeader) {
-    // Distribute photos across Left and Right pages so Left isn't an empty void
-    if (photos.length === 1) {
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[0].id}`,
-          kind: "photo",
-          photoId: photos[0].id,
-          side: "right",
-          x: 6,
-          y: 8,
-          w: 88,
-          z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[0],
-        }),
-      );
-    } else if (photos.length === 2) {
-      // Photo 0 under Title on Left; Photo 1 on Right
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[0].id}`,
-          kind: "photo",
-          photoId: photos[0].id,
-          side: "left",
-          x: 6,
-          y: Math.min(36, leftY + 3),
-          w: 88,
-          z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[0],
-        }),
-      );
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[1].id}`,
-          kind: "photo",
-          photoId: photos[1].id,
-          side: "right",
-          x: 6,
-          y: 8,
-          w: 88,
-          z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[1],
-        }),
-      );
-    } else if (photos.length === 3) {
-      // Photo 0 under Title on Left; Photo 1 & 2 side by side on Right
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[0].id}`,
-          kind: "photo",
-          photoId: photos[0].id,
-          side: "left",
-          x: 6,
-          y: Math.min(36, leftY + 3),
-          w: 88,
-          z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[0],
-        }),
-      );
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[1].id}`,
-          kind: "photo",
-          photoId: photos[1].id,
-          side: "right",
-          x: 5,
-          y: 16,
-          w: 43,
-          z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[1],
-        }),
-      );
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[2].id}`,
-          kind: "photo",
-          photoId: photos[2].id,
-          side: "right",
-          x: 52,
-          y: 16,
-          w: 43,
-          z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[2],
-        }),
-      );
-    } else if (photos.length === 4) {
-      // 2 on Left, 2 on Right
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[0].id}`,
-          kind: "photo",
-          photoId: photos[0].id,
-          side: "left",
-          x: 5,
-          y: Math.min(40, leftY + 3),
-          w: 43,
-          z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[0],
-        }),
-      );
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[1].id}`,
-          kind: "photo",
-          photoId: photos[1].id,
-          side: "left",
-          x: 52,
-          y: Math.min(40, leftY + 3),
-          w: 43,
-          z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[1],
-        }),
-      );
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[2].id}`,
-          kind: "photo",
-          photoId: photos[2].id,
-          side: "right",
-          x: 5,
-          y: 16,
-          w: 43,
-          z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[2],
-        }),
-      );
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[3].id}`,
-          kind: "photo",
-          photoId: photos[3].id,
-          side: "right",
-          x: 52,
-          y: 16,
-          w: 43,
-          z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[3],
-        }),
-      );
-    } else {
-      // 5+ photos: 2 on left, rest on right in a 2-column grid
-      photos.forEach((photo, idx) => {
-        const side: "left" | "right" = idx < 2 ? "left" : "right";
-        if (side === "left") {
-          const col = idx % 2;
-          blocks.push(
-            clampBlock({
-              id: `photo-${photo.id}`,
-              kind: "photo",
-              photoId: photo.id,
-              side: "left",
-              x: col === 0 ? 5 : 52,
-              y: Math.min(40, leftY + 3),
-              w: 43,
-              z: zCounter++,
-              rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
-            }),
-          );
-        } else {
-          const rIdx = idx - 2;
-          const col = rIdx % 2;
-          const row = Math.floor(rIdx / 2);
-          blocks.push(
-            clampBlock({
-              id: `photo-${photo.id}`,
-              kind: "photo",
-              photoId: photo.id,
-              side: "right",
-              x: col === 0 ? 5 : 52,
-              y: 7 + row * 40,
-              w: 43,
-              z: zCounter++,
-              rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
-            }),
-          );
-        }
-      });
-    }
-  } else if (!hasHeader) {
-    // Pure images memory (no words)
+  // Up to 4 photos: ALL photos placed on side: "right" (the same page)
+  if (photos.length === 1) {
+    blocks.push(
+      clampBlock({
+        id: `photo-${photos[0].id}`,
+        kind: "photo",
+        photoId: photos[0].id,
+        side: "right",
+        x: 6,
+        y: 8,
+        w: 88,
+        z: zCounter++,
+        rotation: isPortraitAlbum ? 0 : photoTilts[0],
+      }),
+    );
+  } else if (photos.length === 2) {
+    blocks.push(
+      clampBlock({
+        id: `photo-${photos[0].id}`,
+        kind: "photo",
+        photoId: photos[0].id,
+        side: "right",
+        x: 5,
+        y: 20,
+        w: 43,
+        z: zCounter++,
+        rotation: isPortraitAlbum ? 0 : photoTilts[0],
+      }),
+    );
+    blocks.push(
+      clampBlock({
+        id: `photo-${photos[1].id}`,
+        kind: "photo",
+        photoId: photos[1].id,
+        side: "right",
+        x: 52,
+        y: 20,
+        w: 43,
+        z: zCounter++,
+        rotation: isPortraitAlbum ? 0 : photoTilts[1],
+      }),
+    );
+  } else if (photos.length === 3) {
+    blocks.push(
+      clampBlock({
+        id: `photo-${photos[0].id}`,
+        kind: "photo",
+        photoId: photos[0].id,
+        side: "right",
+        x: 6,
+        y: 6,
+        w: 88,
+        z: zCounter++,
+        rotation: 0,
+      }),
+    );
+    blocks.push(
+      clampBlock({
+        id: `photo-${photos[1].id}`,
+        kind: "photo",
+        photoId: photos[1].id,
+        side: "right",
+        x: 5,
+        y: 50,
+        w: 43,
+        z: zCounter++,
+        rotation: isPortraitAlbum ? 0 : photoTilts[1],
+      }),
+    );
+    blocks.push(
+      clampBlock({
+        id: `photo-${photos[2].id}`,
+        kind: "photo",
+        photoId: photos[2].id,
+        side: "right",
+        x: 52,
+        y: 50,
+        w: 43,
+        z: zCounter++,
+        rotation: isPortraitAlbum ? 0 : photoTilts[2],
+      }),
+    );
+  } else if (photos.length === 4) {
+    // Clean 2x2 grid with all 4 photos together on the RIGHT page
     photos.forEach((photo, idx) => {
-      const side: "left" | "right" = idx % 2 === 0 ? "left" : "right";
-      const slot = Math.floor(idx / 2);
-      const countOnSide = Math.ceil((photos.length - (side === "right" ? 1 : 0)) / 2);
-      if (countOnSide <= 1) {
+      const col = idx % 2;
+      const row = Math.floor(idx / 2);
+      blocks.push(
+        clampBlock({
+          id: `photo-${photo.id}`,
+          kind: "photo",
+          photoId: photo.id,
+          side: "right",
+          x: col === 0 ? 5 : 52,
+          y: 6 + row * 44,
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
+        }),
+      );
+    });
+  } else {
+    // 5+ photos: 2 on left, rest on right
+    photos.forEach((photo, idx) => {
+      const side: "left" | "right" = idx < 2 ? "left" : "right";
+      if (side === "left") {
+        const col = idx % 2;
         blocks.push(
           clampBlock({
             id: `photo-${photo.id}`,
             kind: "photo",
             photoId: photo.id,
-            side,
-            x: 6,
-            y: 8,
-            w: 88,
+            side: "left",
+            x: col === 0 ? 5 : 52,
+            y: Math.min(42, leftY + 2),
+            w: 43,
             z: zCounter++,
             rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
           }),
         );
       } else {
+        const slot = idx - 2;
         const col = slot % 2;
         const row = Math.floor(slot / 2);
         blocks.push(
@@ -756,7 +667,7 @@ export function buildDefaultLayoutBlocks(
             photoId: photo.id,
             side,
             x: col === 0 ? 5 : 52,
-            y: 7 + row * 40,
+            y: 6 + row * 40,
             w: 43,
             z: zCounter++,
             rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
@@ -764,110 +675,6 @@ export function buildDefaultLayoutBlocks(
         );
       }
     });
-  } else {
-    // Long story text on left page: all photos on side: "right"
-    if (photos.length === 1) {
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[0].id}`,
-          kind: "photo",
-          photoId: photos[0].id,
-          side: "right",
-          x: 6,
-          y: 8,
-          w: 88,
-          z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[0],
-        }),
-      );
-    } else if (photos.length === 2) {
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[0].id}`,
-          kind: "photo",
-          photoId: photos[0].id,
-          side: "right",
-          x: 5,
-          y: 18,
-          w: 43,
-          z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[0],
-        }),
-      );
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[1].id}`,
-          kind: "photo",
-          photoId: photos[1].id,
-          side: "right",
-          x: 52,
-          y: 18,
-          w: 43,
-          z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[1],
-        }),
-      );
-    } else if (photos.length === 3) {
-      // 1 Hero top + 2 bottom cards (no overlap!)
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[0].id}`,
-          kind: "photo",
-          photoId: photos[0].id,
-          side: "right",
-          x: 6,
-          y: 6,
-          w: 88,
-          z: zCounter++,
-          rotation: 0,
-        }),
-      );
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[1].id}`,
-          kind: "photo",
-          photoId: photos[1].id,
-          side: "right",
-          x: 5,
-          y: 50,
-          w: 43,
-          z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[1],
-        }),
-      );
-      blocks.push(
-        clampBlock({
-          id: `photo-${photos[2].id}`,
-          kind: "photo",
-          photoId: photos[2].id,
-          side: "right",
-          x: 52,
-          y: 50,
-          w: 43,
-          z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[2],
-        }),
-      );
-    } else {
-      // 4+ photos: 2x2 grid
-      photos.forEach((photo, idx) => {
-        const col = idx % 2;
-        const row = Math.floor(idx / 2);
-        blocks.push(
-          clampBlock({
-            id: `photo-${photo.id}`,
-            kind: "photo",
-            photoId: photo.id,
-            side: "right",
-            x: col === 0 ? 5 : 52,
-            y: 6 + row * 42,
-            w: 43,
-            z: zCounter++,
-            rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
-          }),
-        );
-      });
-    }
   }
 
   return blocks;
@@ -897,6 +704,19 @@ export function syncLayoutBlocksWithMemory(
   const existing = mem.layoutBlocks;
   if (!Array.isArray(existing) || existing.length === 0) return fallback;
 
+  // If existing blocks were saved without a header on left, restore clean layout with header
+  const hasHeaderBlock = existing.some((b) => b.kind === "header");
+  if (!hasHeaderBlock) {
+    return fallback;
+  }
+
+  // If 4 photos were split 2-on-left and 2-on-right by the previous layout bug, restore all 4 on right
+  const leftPhotos = existing.filter((b) => b.kind === "photo" && b.side === "left");
+  const rightPhotos = existing.filter((b) => b.kind === "photo" && b.side === "right");
+  if (mem.photos?.length === 4 && leftPhotos.length === 2 && rightPhotos.length === 2) {
+    return fallback;
+  }
+
   // If existing blocks were saved when there was only 1 photo, but now there are multiple, re-generate clean layout
   const existingPhotos = existing.filter((b) => b.kind === "photo");
   if (existingPhotos.length === 1 && (mem.photos?.length || 0) > 1) {
@@ -904,7 +724,6 @@ export function syncLayoutBlocksWithMemory(
   }
 
   // Detect overlapping blocks on same side from legacy bug
-  const rightPhotos = existing.filter((b) => b.kind === "photo" && b.side === "right");
   const hasClashing = rightPhotos.some((a) =>
     rightPhotos.some((b) => a.id !== b.id && a.w > 60 && Math.abs(a.y - b.y) < 25),
   );

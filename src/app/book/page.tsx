@@ -1334,15 +1334,15 @@ function BookMemoriesContent() {
                 </span>
               </div>
 
-              {mem.title?.trim() && mem.title.trim() !== "Encrypted Entry" && (
-                <h2
-                  className={`mt-4 mb-0 text-2xl sm:text-3xl font-normal tracking-tight leading-[1.08] text-[var(--page-ink)] ${
-                    headerStyle === "centered" ? "text-center" : ""
-                  }`}
-                >
-                  {mem.title}
-                </h2>
-              )}
+              <h2
+                className={`mt-4 mb-0 text-2xl sm:text-3xl font-normal tracking-tight leading-[1.08] text-[var(--page-ink)] ${
+                  headerStyle === "centered" ? "text-center" : ""
+                }`}
+              >
+                {mem.title?.trim() && mem.title.trim() !== "Encrypted Entry"
+                  ? mem.title
+                  : "First"}
+              </h2>
 
               {mem.note && (
                 <div className="note-slip mt-4" style={{ borderLeftColor: pageAccent }}>

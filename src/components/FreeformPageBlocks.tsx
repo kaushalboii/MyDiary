@@ -281,10 +281,22 @@ export function FreeformPageSurface({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      mutateBlock(block.id, (b) => ({
-                        ...b,
-                        side: b.side === "left" ? "right" : "left",
-                      }));
+                      mutateBlock(block.id, (b) => {
+                        const nextSide = b.side === "left" ? "right" : "left";
+                        const targetSideBlocks = blocks.filter(
+                          (x) => x.id !== b.id && x.side === nextSide,
+                        );
+                        let nextY = 6;
+                        if (targetSideBlocks.length > 0) {
+                          const maxY = Math.max(...targetSideBlocks.map((x) => x.y));
+                          nextY = Math.min(60, maxY + 22);
+                        }
+                        return {
+                          ...b,
+                          side: nextSide,
+                          y: nextY,
+                        };
+                      });
                     }}
                     title={`Move to ${block.side === "left" ? "right" : "left"} page`}
                     className="grid h-4 w-4 place-items-center rounded hover:bg-[var(--paper-deep)] cursor-pointer"
@@ -330,7 +342,7 @@ export function FreeformPageSurface({
                   <div className="flex flex-wrap items-center gap-2 text-[9px] font-semibold tracking-[0.14em] uppercase text-[var(--ink-soft)]">
                     <span className="inline-flex items-center gap-1">
                       <Calendar className={compact ? "h-2.5 w-2.5" : "h-3 w-3"} />
-                      {memory.date}
+                      {memory.date || "2026-11-11"}
                     </span>
                     {memory.location && (
                       <span className="inline-flex items-center gap-1">
@@ -338,24 +350,24 @@ export function FreeformPageSurface({
                         {memory.location}
                       </span>
                     )}
-                    {memory.mood && (
+                    {(memory.mood || "Nostalgic") && (
                       <span
                         className="rounded-full border border-[var(--hairline)] bg-[var(--paper)] px-2 py-0.5"
                         style={{ color: accentColor }}
                       >
-                        {memory.mood}
+                        {memory.mood || "Nostalgic"}
                       </span>
                     )}
                   </div>
-                  {memory.title?.trim() && memory.title.trim() !== "Encrypted Entry" && (
-                    <h2
-                      className={`mb-0 font-normal tracking-tight leading-[1.08] text-[var(--page-ink)] ${
-                        compact ? "mt-1.5 text-base sm:text-lg" : "mt-3 text-2xl sm:text-3xl"
-                      }`}
-                    >
-                      {memory.title}
-                    </h2>
-                  )}
+                  <h2
+                    className={`mb-0 font-normal tracking-tight leading-[1.08] text-[var(--page-ink)] ${
+                      compact ? "mt-1.5 text-base sm:text-lg" : "mt-3 text-2xl sm:text-3xl"
+                    }`}
+                  >
+                    {memory.title?.trim() && memory.title.trim() !== "Encrypted Entry"
+                      ? memory.title
+                      : "First"}
+                  </h2>
                 </div>
               )}
 

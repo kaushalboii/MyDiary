@@ -87,7 +87,11 @@ export function MemoryEditorModal({
   // Sync state whenever a new memory is opened
   useEffect(() => {
     if (memory) {
-      setTitle(memory.title || "");
+      setTitle(
+        memory.title?.trim() && memory.title.trim() !== "Encrypted Entry"
+          ? memory.title
+          : "First",
+      );
       setDate(memory.date || new Date().toISOString().slice(0, 10));
       setLocation(memory.location || "");
       setMood((memory.mood as MemoryMood) || "Nostalgic");
