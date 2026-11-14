@@ -440,36 +440,26 @@ export function FreeformPageSurface({
                       }
                       onPhotoClick?.(photoIndex);
                     }}
-                    className={`block w-full overflow-hidden cursor-pointer ${
+                    className={`flex items-center justify-center w-full overflow-hidden cursor-pointer p-0.5 sm:p-1 ${
                       memory.albumStyle === "borderless" || memory.albumStyle === "portrait"
-                        ? "rounded-xl bg-[var(--paper-deep)]"
-                        : "bg-[var(--paper-deep)]"
+                        ? "rounded-xl bg-[var(--paper-deep)]/25 shadow-xs"
+                        : "bg-[var(--paper-deep)]/25"
                     }`}
                   >
                     <img
                       src={resolveMediaUrl(photo.url)}
                       alt={photo.caption || `Photo ${photoIndex + 1}`}
                       draggable={false}
-                      className={`w-full ${
+                      className={`max-h-full max-w-full object-contain ${
                         memory.albumStyle === "borderless" || memory.albumStyle === "portrait"
                           ? sidePhotoBlocks.length > 1 && block.w > 60
-                            ? "aspect-[16/10] sm:aspect-[16/9] max-h-[26vh] sm:max-h-[190px] object-cover"
+                            ? "h-[26vh] sm:h-[190px] rounded-lg"
                             : sidePhotoBlocks.length > 1
-                              ? "aspect-square sm:aspect-square max-h-[24vh] sm:max-h-[175px] object-cover"
-                              : "aspect-[3/4] sm:aspect-[4/5] max-h-[50vh] sm:max-h-[420px] object-cover"
-                          : memory.albumStyle === "filmstrip"
-                            ? compact
-                              ? "max-h-24 object-contain"
-                              : "max-h-56 object-contain"
-                            : memory.albumStyle === "grid"
-                              ? sidePhotoBlocks.length > 1 && block.w > 60
-                                ? "aspect-[16/10] max-h-[24vh] sm:max-h-[180px] object-cover"
-                                : "aspect-[4/3] max-h-[24vh] sm:max-h-[180px] object-cover"
-                              : sidePhotoBlocks.length > 1 && block.w > 60
-                                ? "aspect-[16/10] max-h-[24vh] sm:max-h-[180px] object-cover"
-                                : sidePhotoBlocks.length > 1
-                                  ? "aspect-square max-h-[22vh] sm:max-h-[160px] object-cover"
-                                  : "aspect-square max-h-[45vh] sm:max-h-[360px] object-cover"
+                              ? "h-[24vh] sm:h-[175px] rounded-lg"
+                              : "h-[48vh] sm:h-[380px] rounded-xl"
+                          : sidePhotoBlocks.length > 1
+                            ? "h-[22vh] sm:h-[160px]"
+                            : "h-[42vh] sm:h-[320px]"
                       }`}
                     />
                   </button>

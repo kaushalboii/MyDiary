@@ -237,9 +237,10 @@ export type MemorySpreadPartition = {
 
 /**
  * Automatically partitions memory photos across pages & spreads so that:
- * 1. Each page has at most 3-4 (max 4-6) photos and never squishes or cuts off images.
- * 2. Short-text or title-only memories distribute photos across BOTH left and right pages.
- * 3. Memories with many photos (e.g. 7+ photos) flow across consecutive spreads as a luxury photo album.
+ * 1. Each page has at most 2-3 (max 4) photos and NEVER cuts off or squishes images.
+ * 2. Minimal-text or title-only memories distribute photos across BOTH left and right pages
+ *    for a dramatic, balanced professional fine-art album spread.
+ * 3. Substantial-text memories dedicate the left page to words and flow photos cleanly on right & subsequent spreads.
  */
 export function partitionMemoryIntoSpreads(mem: MemoryAlbum): MemorySpreadPartition[] {
   const photos = mem.photos || [];
@@ -257,8 +258,124 @@ export function partitionMemoryIntoSpreads(mem: MemoryAlbum): MemorySpreadPartit
     ];
   }
 
-  // Primary spread ALWAYS keeps the left page dedicated to story/words (no photos on left of primary spread).
-  // The right page holds up to 4 photos in a balanced, non-scrolling layout.
+  const isMinimalText = isMinimalTextMemory(mem);
+
+  // When memory has minimal text (title only or very short note):
+  // Symmetrically distribute photos across BOTH facing pages for a luxury fine-art monograph look.
+  if (isMinimalText) {
+    if (photos.length === 1) {
+      return [
+        {
+          isPrimary: true,
+          spreadSubIndex: 0,
+          totalSubSpreads: 1,
+          leftPhotos: [],
+          rightPhotos: [{ photo: photos[0], idx: 0 }],
+        },
+      ];
+    }
+
+    if (photos.length === 2) {
+      return [
+        {
+          isPrimary: true,
+          spreadSubIndex: 0,
+          totalSubSpreads: 1,
+          leftPhotos: [{ photo: photos[0], idx: 0 }],
+          rightPhotos: [{ photo: photos[1], idx: 1 }],
+        },
+      ];
+    }
+
+    if (photos.length === 3) {
+      return [
+        {
+          isPrimary: true,
+          spreadSubIndex: 0,
+          totalSubSpreads: 1,
+          leftPhotos: [{ photo: photos[0], idx: 0 }],
+          rightPhotos: [
+            { photo: photos[1], idx: 1 },
+            { photo: photos[2], idx: 2 },
+          ],
+        },
+      ];
+    }
+
+    if (photos.length === 4) {
+      return [
+        {
+          isPrimary: true,
+          spreadSubIndex: 0,
+          totalSubSpreads: 1,
+          leftPhotos: [
+            { photo: photos[0], idx: 0 },
+            { photo: photos[1], idx: 1 },
+          ],
+          rightPhotos: [
+            { photo: photos[2], idx: 2 },
+            { photo: photos[3], idx: 3 },
+          ],
+        },
+      ];
+    }
+
+    // 5+ photos with minimal text: 2 on left, 2 on right of primary spread; remainder flow across spreads
+    const partitions: MemorySpreadPartition[] = [
+      {
+        isPrimary: true,
+        spreadSubIndex: 0,
+        totalSubSpreads: 1,
+        leftPhotos: [
+          { photo: photos[0], idx: 0 },
+          { photo: photos[1], idx: 1 },
+        ],
+        rightPhotos: [
+          { photo: photos[2], idx: 2 },
+          { photo: photos[3], idx: 3 },
+        ],
+      },
+    ];
+
+    let currIdx = 4;
+    let subIdx = 1;
+    while (currIdx < photos.length) {
+      const remaining = photos.length - currIdx;
+      const count = Math.min(4, remaining);
+      const leftCount = Math.ceil(count / 2);
+      const rightCount = count - leftCount;
+
+      const leftSlice = photos.slice(currIdx, currIdx + leftCount).map((p, i) => ({
+        photo: p,
+        idx: currIdx + i,
+      }));
+      currIdx += leftCount;
+
+      const rightSlice = photos.slice(currIdx, currIdx + rightCount).map((p, i) => ({
+        photo: p,
+        idx: currIdx + i,
+      }));
+      currIdx += rightCount;
+
+      partitions.push({
+        isPrimary: false,
+        spreadSubIndex: subIdx++,
+        totalSubSpreads: 1,
+        leftPhotos: leftSlice,
+        rightPhotos: rightSlice,
+      });
+    }
+
+    partitions.forEach((p) => {
+      p.totalSubSpreads = partitions.length;
+    });
+
+    return partitions;
+  }
+
+  // Substantial story/text memories:
+  // Primary spread keeps left page dedicated to story/words.
+  // Right page holds up to 4 photos in a balanced, non-scrolling layout.
   const primaryCount = Math.min(4, photos.length);
   const primarySpread: MemorySpreadPartition = {
     isPrimary: true,
@@ -268,19 +385,17 @@ export function partitionMemoryIntoSpreads(mem: MemoryAlbum): MemorySpreadPartit
     rightPhotos: photos.slice(0, primaryCount).map((p, idx) => ({ photo: p, idx })),
   };
 
-  // If 4 or fewer photos, everything fits comfortably on this 1 spread without scrolling.
   if (photos.length <= 4) {
     return [primarySpread];
   }
 
-  // 5+ photos: Flow remaining photos to subsequent spreads without scrollbars.
+  // 5+ photos with story: Flow remaining photos to subsequent spreads without scrollbars.
   const partitions: MemorySpreadPartition[] = [primarySpread];
   let currIdx = 4;
   let subIdx = 1;
 
   while (currIdx < photos.length) {
     const remaining = photos.length - currIdx;
-    // On continuation spreads, allocate up to 2 photos per page (up to 4 per spread) to guarantee no scroll effect.
     const count = Math.min(4, remaining);
     const leftCount = Math.ceil(count / 2);
     const rightCount = count - leftCount;
@@ -394,7 +509,8 @@ export function buildDefaultLayoutBlocks(
     photos.length === 1;
   const photoTilts = [-2, 2, -1.5, 2.5];
 
-  // Up to 4 photos: ALL photos placed on side: "right" (the same page)
+  const isMinimal = isMinimalTextMemory(mem);
+
   if (photos.length === 1) {
     blocks.push(
       clampBlock({
@@ -410,91 +526,218 @@ export function buildDefaultLayoutBlocks(
       }),
     );
   } else if (photos.length === 2) {
-    blocks.push(
-      clampBlock({
-        id: `photo-${photos[0].id}`,
-        kind: "photo",
-        photoId: photos[0].id,
-        side: "right",
-        x: 5,
-        y: 20,
-        w: 43,
-        z: zCounter++,
-        rotation: isPortraitAlbum ? 0 : photoTilts[0],
-      }),
-    );
-    blocks.push(
-      clampBlock({
-        id: `photo-${photos[1].id}`,
-        kind: "photo",
-        photoId: photos[1].id,
-        side: "right",
-        x: 52,
-        y: 20,
-        w: 43,
-        z: zCounter++,
-        rotation: isPortraitAlbum ? 0 : photoTilts[1],
-      }),
-    );
-  } else if (photos.length === 3) {
-    blocks.push(
-      clampBlock({
-        id: `photo-${photos[0].id}`,
-        kind: "photo",
-        photoId: photos[0].id,
-        side: "right",
-        x: 6,
-        y: 6,
-        w: 88,
-        z: zCounter++,
-        rotation: 0,
-      }),
-    );
-    blocks.push(
-      clampBlock({
-        id: `photo-${photos[1].id}`,
-        kind: "photo",
-        photoId: photos[1].id,
-        side: "right",
-        x: 5,
-        y: 50,
-        w: 43,
-        z: zCounter++,
-        rotation: isPortraitAlbum ? 0 : photoTilts[1],
-      }),
-    );
-    blocks.push(
-      clampBlock({
-        id: `photo-${photos[2].id}`,
-        kind: "photo",
-        photoId: photos[2].id,
-        side: "right",
-        x: 52,
-        y: 50,
-        w: 43,
-        z: zCounter++,
-        rotation: isPortraitAlbum ? 0 : photoTilts[2],
-      }),
-    );
-  } else if (photos.length === 4) {
-    // Clean 2x2 grid with all 4 photos together on the RIGHT page
-    photos.forEach((photo, idx) => {
-      const col = idx % 2;
-      const row = Math.floor(idx / 2);
+    if (isMinimal) {
       blocks.push(
         clampBlock({
-          id: `photo-${photo.id}`,
+          id: `photo-${photos[0].id}`,
           kind: "photo",
-          photoId: photo.id,
-          side: "right",
-          x: col === 0 ? 5 : 52,
-          y: 6 + row * 44,
-          w: 43,
+          photoId: photos[0].id,
+          side: "left",
+          x: 8,
+          y: Math.min(36, leftY + 2),
+          w: 84,
           z: zCounter++,
-          rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
+          rotation: isPortraitAlbum ? 0 : photoTilts[0],
         }),
       );
-    });
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[1].id}`,
+          kind: "photo",
+          photoId: photos[1].id,
+          side: "right",
+          x: 8,
+          y: Math.min(36, leftY + 2),
+          w: 84,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[1],
+        }),
+      );
+    } else {
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[0].id}`,
+          kind: "photo",
+          photoId: photos[0].id,
+          side: "right",
+          x: 5,
+          y: 20,
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[0],
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[1].id}`,
+          kind: "photo",
+          photoId: photos[1].id,
+          side: "right",
+          x: 52,
+          y: 20,
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[1],
+        }),
+      );
+    }
+  } else if (photos.length === 3) {
+    if (isMinimal) {
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[0].id}`,
+          kind: "photo",
+          photoId: photos[0].id,
+          side: "left",
+          x: 8,
+          y: Math.min(36, leftY + 2),
+          w: 84,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[0],
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[1].id}`,
+          kind: "photo",
+          photoId: photos[1].id,
+          side: "right",
+          x: 5,
+          y: 20,
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[1],
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[2].id}`,
+          kind: "photo",
+          photoId: photos[2].id,
+          side: "right",
+          x: 52,
+          y: 20,
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[2],
+        }),
+      );
+    } else {
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[0].id}`,
+          kind: "photo",
+          photoId: photos[0].id,
+          side: "right",
+          x: 6,
+          y: 6,
+          w: 88,
+          z: zCounter++,
+          rotation: 0,
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[1].id}`,
+          kind: "photo",
+          photoId: photos[1].id,
+          side: "right",
+          x: 5,
+          y: 50,
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[1],
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[2].id}`,
+          kind: "photo",
+          photoId: photos[2].id,
+          side: "right",
+          x: 52,
+          y: 50,
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[2],
+        }),
+      );
+    }
+  } else if (photos.length === 4) {
+    if (isMinimal) {
+      // Dramatic fine-art 2-page spread: 2 photos on left, 2 photos on right perfectly aligned
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[0].id}`,
+          kind: "photo",
+          photoId: photos[0].id,
+          side: "left",
+          x: 5,
+          y: Math.min(42, leftY + 2),
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[0],
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[1].id}`,
+          kind: "photo",
+          photoId: photos[1].id,
+          side: "left",
+          x: 52,
+          y: Math.min(42, leftY + 2),
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[1],
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[2].id}`,
+          kind: "photo",
+          photoId: photos[2].id,
+          side: "right",
+          x: 5,
+          y: Math.min(42, leftY + 2),
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[2],
+        }),
+      );
+      blocks.push(
+        clampBlock({
+          id: `photo-${photos[3].id}`,
+          kind: "photo",
+          photoId: photos[3].id,
+          side: "right",
+          x: 52,
+          y: Math.min(42, leftY + 2),
+          w: 43,
+          z: zCounter++,
+          rotation: isPortraitAlbum ? 0 : photoTilts[3],
+        }),
+      );
+    } else {
+      // Clean 2x2 grid with all 4 photos together on the RIGHT page when left page has story
+      photos.forEach((photo, idx) => {
+        const col = idx % 2;
+        const row = Math.floor(idx / 2);
+        blocks.push(
+          clampBlock({
+            id: `photo-${photo.id}`,
+            kind: "photo",
+            photoId: photo.id,
+            side: "right",
+            x: col === 0 ? 5 : 52,
+            y: 6 + row * 44,
+            w: 43,
+            z: zCounter++,
+            rotation: isPortraitAlbum ? 0 : photoTilts[idx % photoTilts.length],
+          }),
+        );
+      });
+    }
   } else {
     // 5+ photos: 2 on left, rest on right
     photos.forEach((photo, idx) => {
@@ -574,10 +817,10 @@ export function syncLayoutBlocksWithMemory(
     return fallback;
   }
 
-  // If 4 photos were split 2-on-left and 2-on-right by the previous layout bug, restore all 4 on right
+  // If 4 photos were crammed onto the right page while the left page has minimal text, upgrade to fallback spread
   const leftPhotos = existing.filter((b) => b.kind === "photo" && b.side === "left");
   const rightPhotos = existing.filter((b) => b.kind === "photo" && b.side === "right");
-  if (mem.photos?.length === 4 && leftPhotos.length === 2 && rightPhotos.length === 2) {
+  if (isMinimalTextMemory(mem) && mem.photos?.length === 4 && rightPhotos.length === 4 && leftPhotos.length === 0) {
     return fallback;
   }
 
