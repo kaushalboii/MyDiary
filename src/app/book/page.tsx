@@ -382,10 +382,13 @@ function BookMemoriesContent() {
         ),
       );
 
+      setSavingLayoutId(memId);
       try {
         await updateMemory(memId, { albumStyle: nextStyle, layoutBlocks: [] });
       } catch (err) {
         console.error("Failed to update album style:", err);
+      } finally {
+        setTimeout(() => setSavingLayoutId(null), 800);
       }
     },
     [],
@@ -1274,7 +1277,7 @@ function BookMemoriesContent() {
             )}
           </div>
           <span className="italic ml-auto sm:ml-0">
-            {savingLayoutId === mem.id ? "Saving…" : pageStr}
+            {savingLayoutId === mem.id ? "☁️ Autosaved to Cloud" : pageStr}
           </span>
         </div>
       );

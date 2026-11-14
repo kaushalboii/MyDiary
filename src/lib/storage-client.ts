@@ -1489,13 +1489,39 @@ export type SaveMemoryInput = {
   authorName?: string | null;
 };
 
+export function isTargetBookShared(bookId?: string): boolean {
+  if (!bookId) return false;
+  const serverBooks = loadCachedServerBooks() || [];
+  const found = serverBooks.find((b) => b.id === bookId);
+  if (
+    found &&
+    (found.isShared ||
+      found.collaboratorEmail ||
+      (Array.isArray(found.collaborators) && found.collaborators.length > 0))
+  ) {
+    return true;
+  }
+  const registryBooks = loadFromSharedRegistry();
+  const regFound = registryBooks.find((b) => b.id === bookId);
+  if (
+    regFound &&
+    (regFound.isShared ||
+      regFound.collaboratorEmail ||
+      (Array.isArray(regFound.collaborators) && regFound.collaborators.length > 0))
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export async function createMemory(
   input: SaveMemoryInput,
 ): Promise<{ memory: MemoryAlbum; mode: StorageMode }> {
   try {
     let payload = { ...input };
     const encKey = getActiveUserEncryptionKey() || (await restoreActiveUserEncryptionKey());
-    if (encKey) {
+    const isShared = isTargetBookShared(input.bookId);
+    if (encKey && !isShared) {
       const enc = await encryptMemoryPayload(
         {
           title: input.title,
@@ -1602,7 +1628,12 @@ export async function updateMemory(
       ...(effectiveBlocks !== undefined ? { layoutBlocks: effectiveBlocks } : {}),
     };
     const encKey = getActiveUserEncryptionKey() || (await restoreActiveUserEncryptionKey());
-    if (encKey && (effectiveTitle || effectiveNote || effectiveParas.length > 0 || effectiveBlocks)) {
+    const isShared = isTargetBookShared(existingMem?.bookId || input.bookId);
+    if (
+      encKey &&
+      !isShared &&
+      (effectiveTitle || effectiveNote || effectiveParas.length > 0 || effectiveBlocks)
+    ) {
       const enc = await encryptMemoryPayload(
         {
           title: effectiveTitle,
@@ -1699,7 +1730,9 @@ export async function deleteMemory(memoryId: string): Promise<{ mode: StorageMod
 export async function getOfflineDraftCount(): Promise<number> {
   if (typeof indexedDB === "undefined") return 0;
   const memories = await getAllFromStore<MemoryAlbum>("memories");
-  return memories.length;
+  const books = await getAllFromStore<DiaryBook>("books");
+  const customBooks = books.filter((b) => !defaultBooks.some((d) => d.id === b.id));
+  return memories.length + customBooks.length;
 }
 
 export async function syncOfflineToServer(
@@ -1707,6 +1740,10 @@ export async function syncOfflineToServer(
 ): Promise<{ addedMemories: number; updatedBooks: number }> {
   const books = await getAllFromStore<DiaryBook>("books");
   const memories = await getAllFromStore<MemoryAlbum>("memories");
+  const customBooks = books.filter((b) => !defaultBooks.some((d) => d.id === b.id));
+  if (customBooks.length === 0 && memories.length === 0) {
+    return { addedMemories: 0, updatedBooks: 0 };
+  }
   const res = await serverFetch<{
     ok: boolean;
     addedMemories: number;
@@ -1716,11 +1753,31 @@ export async function syncOfflineToServer(
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ books, memories }),
+      body: JSON.stringify({ books: customBooks, memories }),
     },
     customConfig,
   );
+  for (const b of customBooks) {
+    await deleteFromStore("books", b.id).catch(() => {});
+  }
+  for (const m of memories) {
+    await deleteFromStore("memories", m.id).catch(() => {});
+  }
   return { addedMemories: res.addedMemories, updatedBooks: res.updatedBooks };
+}
+
+export async function autoSyncOfflineDataIfAny(
+  customConfig?: StorageConfig,
+): Promise<{ addedMemories: number; updatedBooks: number } | null> {
+  try {
+    const count = await getOfflineDraftCount();
+    if (count > 0) {
+      return await syncOfflineToServer(customConfig);
+    }
+  } catch {
+    // Ignore offline errors
+  }
+  return null;
 }
 
 // --- Multi-User Auth & Owner Verification APIs ---

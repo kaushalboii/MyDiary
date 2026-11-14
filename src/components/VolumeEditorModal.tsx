@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
@@ -9,6 +9,7 @@ import {
   BookOpen,
   Check,
   CheckCircle2,
+  Cloud,
   Copy,
   ExternalLink,
   Heart,
@@ -34,6 +35,7 @@ import {
   hasMemoryContent,
 } from "@/lib/memory-layout";
 import {
+  AUTH_REQUIRED_EVENT,
   createBookInvitePayload,
   createMemory,
   getCachedUser,
@@ -449,6 +451,117 @@ export function VolumeEditorModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  const isLoadedRef = useRef(false);
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+
+  const buildCurrentPatch = useCallback((): BookPatchInput => {
+    const cleanTitle = title.trim() || "Untitled Diary";
+    const cleanSpine = syncSpineTitle ? cleanTitle : shortTitle.trim() || cleanTitle;
+    return {
+      title: cleanTitle,
+      shortTitle: cleanSpine,
+      subtitle: subtitle.trim(),
+      yearLabel: yearLabel.trim() || String(new Date().getFullYear()),
+      coverImprint: coverImprint.trim(),
+      coverFooter: coverFooter.trim(),
+      spineMark: spineMark.trim() || "I",
+      welcomeNote: welcomeNote.trim(),
+      description: description.trim(),
+      quote: quote.trim(),
+      quoteBy: quoteBy.trim(),
+      cover,
+      secondary,
+      accent,
+      ink,
+      motif,
+      coverTemplate,
+      spineStyle,
+      coverImage: coverImage || "",
+      showCoverTextWithImage,
+      living,
+      paperStyle,
+      fontStyle,
+      pageTint,
+      pageInk,
+      pageAccent,
+      pageNumberStyle,
+      pageHeaderStyle,
+      height,
+      thickness,
+      width,
+      positionIndex,
+      collaboratorEmail: collaboratorEmail.trim() ? collaboratorEmail.trim().toLowerCase() : null,
+      collaborators: collaboratorEmail.trim() ? [collaboratorEmail.trim().toLowerCase()] : [],
+      isShared: Boolean(collaboratorEmail.trim()),
+    };
+  }, [
+    title,
+    syncSpineTitle,
+    shortTitle,
+    subtitle,
+    yearLabel,
+    coverImprint,
+    coverFooter,
+    spineMark,
+    welcomeNote,
+    description,
+    quote,
+    quoteBy,
+    cover,
+    secondary,
+    accent,
+    ink,
+    motif,
+    coverTemplate,
+    spineStyle,
+    coverImage,
+    showCoverTextWithImage,
+    living,
+    paperStyle,
+    fontStyle,
+    pageTint,
+    pageInk,
+    pageAccent,
+    pageNumberStyle,
+    pageHeaderStyle,
+    height,
+    thickness,
+    width,
+    positionIndex,
+    collaboratorEmail,
+  ]);
+
+  useEffect(() => {
+    if (!open) {
+      isLoadedRef.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      isLoadedRef.current = true;
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !isLoadedRef.current) return;
+    setAutoSaveStatus("saving");
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(async () => {
+      try {
+        const patch = buildCurrentPatch();
+        await onSave(patch);
+        setAutoSaveStatus("saved");
+      } catch {
+        setAutoSaveStatus("idle");
+      }
+    }, 700);
+
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [buildCurrentPatch, onSave, open]);
+
   if (!open || !mounted || typeof document === "undefined") return null;
 
   const totalSlots =
@@ -749,9 +862,23 @@ export function VolumeEditorModal({
         >
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 pr-9">
             <div className="min-w-0">
-              <p className="eyebrow m-0">
-                {mode === "create" ? "Add Volume to Shelf" : "Book Studio"}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="eyebrow m-0">
+                  {mode === "create" ? "Add Volume to Shelf" : "Book Studio"}
+                </p>
+                {autoSaveStatus === "saving" && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[var(--accent)] animate-pulse">
+                    <Cloud className="h-3 w-3 animate-spin" />
+                    <span>Autosaving...</span>
+                  </span>
+                )}
+                {autoSaveStatus === "saved" && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    <Check className="h-3 w-3" />
+                    <span>☁️ Autosaved to Cloud</span>
+                  </span>
+                )}
+              </div>
               <h2
                 className="m-0 truncate text-xl sm:text-2xl font-normal tracking-tight"
                 style={{ fontFamily: "var(--serif)" }}
@@ -1749,6 +1876,30 @@ export function VolumeEditorModal({
                   Connect two accounts to write memories and upload photos together into this exact book volume. Both of you can view entries, add photos, and see each other reading live with glowing green presence!
                 </p>
 
+                {!currentUser && (
+                  <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-900 dark:text-amber-200 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="font-semibold">Sign in required for shared cloud books:</span>
+                      <p className="mt-0.5 text-[11px] opacity-90">
+                        Sign in with Google so this book is tied to your account and synced automatically to both profiles.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.dispatchEvent(
+                          new CustomEvent(AUTH_REQUIRED_EVENT, {
+                            detail: { message: "Sign in with Google to create and sync your co-authored diary." },
+                          }),
+                        );
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[var(--ink)] px-3 py-1 text-[11px] font-medium text-[var(--paper-light)] hover:opacity-90 cursor-pointer shadow-xs"
+                    >
+                      Sign in with Google
+                    </button>
+                  </div>
+                )}
+
                 <div className="space-y-4">
                   {/* Co-Author input or active card */}
                   <div>
@@ -1798,12 +1949,16 @@ export function VolumeEditorModal({
                           <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                           <span>Connected Co-Author: {collaboratorEmail.trim()}</span>
                         </div>
-                        <span className="text-[10px] font-medium opacity-80 uppercase tracking-wide">
-                          {book.inviteStatus === "accepted" ? "Accepted" : "Invitation Sent"}
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setCollaboratorEmail("")}
+                          className="text-[10px] font-semibold uppercase text-red-600 hover:underline cursor-pointer"
+                        >
+                          Remove Co-Author
+                        </button>
                       </div>
                       <p className="text-[11px] leading-relaxed opacity-90">
-                        This volume will appear on both bookshelves. Whichever memories or photos either of you upload stay permanently locked and preserved in this book.
+                        Autosaved to cloud: this exact book is synchronized. When <strong className="font-semibold">{collaboratorEmail.trim()}</strong> signs in with Google, this volume will appear automatically on their shelf!
                       </p>
                     </div>
                   ) : (

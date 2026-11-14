@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Calendar,
@@ -108,6 +108,63 @@ export function MemoryEditorModal({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose]);
 
+  const isLoadedRef = useRef(false);
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+
+  const buildCurrentPayload = useCallback(() => {
+    const parsedParagraphs = paragraphsText
+      .split(/\n{2,}|\n/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    const photoCountChanged = (memory?.photos?.length || 0) !== photos.length;
+    const styleChanged = memory?.albumStyle !== albumStyle;
+    const shouldResetLayout = photoCountChanged || styleChanged;
+    return {
+      title: title.trim(),
+      date,
+      location: location.trim(),
+      mood,
+      note: note.trim(),
+      paragraphs: parsedParagraphs,
+      albumStyle,
+      photos,
+      coverPhotoId: photos[0]?.id || null,
+      layoutBlocks: shouldResetLayout ? [] : memory?.layoutBlocks,
+    };
+  }, [paragraphsText, memory, photos, albumStyle, title, date, location, mood, note]);
+
+  useEffect(() => {
+    if (!open) {
+      isLoadedRef.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      isLoadedRef.current = true;
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [open, memory?.id]);
+
+  useEffect(() => {
+    if (!open || !isLoadedRef.current || !memory) return;
+    setAutoSaveStatus("saving");
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(async () => {
+      try {
+        const payload = buildCurrentPayload();
+        const res = await updateMemory(memory.id, payload);
+        onSave(res.memory);
+        setAutoSaveStatus("saved");
+      } catch {
+        setAutoSaveStatus("idle");
+      }
+    }, 700);
+
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [buildCurrentPayload, memory, onSave, open]);
+
   if (!mounted || !open || !memory) return null;
 
   async function handlePhotoUpload(files: FileList | null) {
@@ -189,6 +246,18 @@ export function MemoryEditorModal({
             <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.2em] uppercase text-[var(--accent)]">
               <Sparkles className="h-3.5 w-3.5" />
               <span>In-Book Memory Editor</span>
+              {autoSaveStatus === "saving" && (
+                <span className="inline-flex items-center gap-1 font-sans text-[10px] font-semibold text-[var(--accent)] animate-pulse normal-case">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span>Autosaving...</span>
+                </span>
+              )}
+              {autoSaveStatus === "saved" && (
+                <span className="inline-flex items-center gap-1 font-sans text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 normal-case">
+                  <Check className="h-3 w-3" />
+                  <span>☁️ Autosaved to Cloud</span>
+                </span>
+              )}
             </div>
             <h2 className="m-0 mt-1 font-serif text-2xl text-[var(--ink)]">
               {title.trim() ? title : "Edit Memory Entry"}

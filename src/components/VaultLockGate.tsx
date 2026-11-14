@@ -11,6 +11,7 @@ import {
   loadStorageConfig,
   loginWithGoogle,
   saveSessionToken,
+  syncOfflineToServer,
 } from "@/lib/storage-client";
 import type { AuthStatusResponse } from "@/lib/types";
 import {
@@ -149,6 +150,9 @@ export function VaultLockGate({ children }: { children: ReactNode }) {
       if (res.user?.username && res.googleSub) {
         await setActiveUserEncryptionKey(res.user.username, res.googleSub);
       }
+      try {
+        await syncOfflineToServer(targetCfg);
+      } catch {}
       setAuthMessage(null);
       document.documentElement.dataset.vault = "open";
       setMode("none");

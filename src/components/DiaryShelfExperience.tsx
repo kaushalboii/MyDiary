@@ -9,6 +9,7 @@ import { defaultBooks } from "@/lib/default-books";
 import {
   AUTH_REQUIRED_EVENT,
   acceptSharedBook,
+  autoSyncOfflineDataIfAny,
   createBook,
   createBookInvitePayload,
   deleteBook,
@@ -172,6 +173,14 @@ function ShelfExperienceInner() {
       setBooks(cached);
     }
     initialFetchRef.current = refreshBooks();
+
+    // Auto-sync any local drafts or offline created books to cloud
+    void autoSyncOfflineDataIfAny().then((synced) => {
+      if (synced && (synced.addedMemories > 0 || synced.updatedBooks > 0)) {
+        void refreshBooks();
+      }
+    });
+
     const handler = () => {
       const fresh = loadCachedServerBooks();
       if (fresh && fresh.length > 0) {
@@ -179,7 +188,9 @@ function ShelfExperienceInner() {
         setBooks(fresh);
         engineRef.current?.syncBooks(fresh);
       }
-      void refreshBooks();
+      void autoSyncOfflineDataIfAny().then(() => {
+        void refreshBooks();
+      });
     };
     window.addEventListener("mydiary:storage-config-changed", handler);
     return () => {
@@ -366,6 +377,7 @@ function ShelfExperienceInner() {
       const res = await createBook(patch);
       setBooks(res.books);
       engineRef.current?.syncBooks(res.books, res.book.id);
+      setEditorState({ mode: "edit", book: res.book });
       return;
     }
     const targetId = editorState.book.id;
