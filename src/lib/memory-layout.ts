@@ -243,10 +243,6 @@ export type MemorySpreadPartition = {
  */
 export function partitionMemoryIntoSpreads(mem: MemoryAlbum): MemorySpreadPartition[] {
   const photos = mem.photos || [];
-  const hasParas = Boolean(mem.paragraphs?.some((p) => p.trim()));
-  const parasCount = mem.paragraphs?.filter((p) => p.trim()).length || 0;
-  const isLongText = parasCount >= 2 || (hasParas && mem.paragraphs.join(" ").length > 220);
-  const isMinimalText = !isLongText;
 
   // Case 1: No photos
   if (photos.length === 0) {
@@ -261,173 +257,31 @@ export function partitionMemoryIntoSpreads(mem: MemoryAlbum): MemorySpreadPartit
     ];
   }
 
-  // Case 2: Minimal text (title only, or title + short note)
-  if (isMinimalText) {
-    if (photos.length === 1) {
-      return [
-        {
-          isPrimary: true,
-          spreadSubIndex: 0,
-          totalSubSpreads: 1,
-          leftPhotos: [],
-          rightPhotos: [{ photo: photos[0], idx: 0 }],
-        },
-      ];
-    }
-    if (photos.length === 2) {
-      return [
-        {
-          isPrimary: true,
-          spreadSubIndex: 0,
-          totalSubSpreads: 1,
-          leftPhotos: [{ photo: photos[0], idx: 0 }],
-          rightPhotos: [{ photo: photos[1], idx: 1 }],
-        },
-      ];
-    }
-    if (photos.length === 3) {
-      return [
-        {
-          isPrimary: true,
-          spreadSubIndex: 0,
-          totalSubSpreads: 1,
-          leftPhotos: [{ photo: photos[0], idx: 0 }],
-          rightPhotos: [
-            { photo: photos[1], idx: 1 },
-            { photo: photos[2], idx: 2 },
-          ],
-        },
-      ];
-    }
-    if (photos.length === 4) {
-      return [
-        {
-          isPrimary: true,
-          spreadSubIndex: 0,
-          totalSubSpreads: 1,
-          leftPhotos: [],
-          rightPhotos: photos.map((p, idx) => ({ photo: p, idx })),
-        },
-      ];
-    }
-    if (photos.length === 5) {
-      return [
-        {
-          isPrimary: true,
-          spreadSubIndex: 0,
-          totalSubSpreads: 1,
-          leftPhotos: [
-            { photo: photos[0], idx: 0 },
-            { photo: photos[1], idx: 1 },
-          ],
-          rightPhotos: [
-            { photo: photos[2], idx: 2 },
-            { photo: photos[3], idx: 3 },
-            { photo: photos[4], idx: 4 },
-          ],
-        },
-      ];
-    }
-    if (photos.length === 6) {
-      return [
-        {
-          isPrimary: true,
-          spreadSubIndex: 0,
-          totalSubSpreads: 1,
-          leftPhotos: [
-            { photo: photos[0], idx: 0 },
-            { photo: photos[1], idx: 1 },
-            { photo: photos[2], idx: 2 },
-          ],
-          rightPhotos: [
-            { photo: photos[3], idx: 3 },
-            { photo: photos[4], idx: 4 },
-            { photo: photos[5], idx: 5 },
-          ],
-        },
-      ];
-    }
-
-    // 7+ photos: Multi-spread album
-    const partitions: MemorySpreadPartition[] = [];
-    partitions.push({
-      isPrimary: true,
-      spreadSubIndex: 0,
-      totalSubSpreads: 1,
-      leftPhotos: [
-        { photo: photos[0], idx: 0 },
-        { photo: photos[1], idx: 1 },
-      ],
-      rightPhotos: [
-        { photo: photos[2], idx: 2 },
-        { photo: photos[3], idx: 3 },
-      ],
-    });
-
-    let currIdx = 4;
-    let subIdx = 1;
-    while (currIdx < photos.length) {
-      const remaining = photos.length - currIdx;
-      const count = Math.min(6, remaining);
-      const leftCount = Math.ceil(count / 2);
-      const rightCount = count - leftCount;
-
-      const leftSlice = photos.slice(currIdx, currIdx + leftCount).map((p, i) => ({
-        photo: p,
-        idx: currIdx + i,
-      }));
-      currIdx += leftCount;
-
-      const rightSlice = photos.slice(currIdx, currIdx + rightCount).map((p, i) => ({
-        photo: p,
-        idx: currIdx + i,
-      }));
-      currIdx += rightCount;
-
-      partitions.push({
-        isPrimary: false,
-        spreadSubIndex: subIdx++,
-        totalSubSpreads: 1,
-        leftPhotos: leftSlice,
-        rightPhotos: rightSlice,
-      });
-    }
-
-    partitions.forEach((p) => {
-      p.totalSubSpreads = partitions.length;
-    });
-    return partitions;
-  }
-
-  // Case 3: Long story text (paragraphs >= 2)
-  if (photos.length <= 4) {
-    return [
-      {
-        isPrimary: true,
-        spreadSubIndex: 0,
-        totalSubSpreads: 1,
-        leftPhotos: [],
-        rightPhotos: photos.map((p, idx) => ({ photo: p, idx })),
-      },
-    ];
-  }
-
-  // Long text with > 4 photos:
-  const partitions: MemorySpreadPartition[] = [];
+  // Primary spread ALWAYS keeps the left page dedicated to story/words (no photos on left of primary spread).
+  // The right page holds up to 4 photos in a balanced, non-scrolling layout.
   const primaryCount = Math.min(4, photos.length);
-  partitions.push({
+  const primarySpread: MemorySpreadPartition = {
     isPrimary: true,
     spreadSubIndex: 0,
     totalSubSpreads: 1,
     leftPhotos: [],
     rightPhotos: photos.slice(0, primaryCount).map((p, idx) => ({ photo: p, idx })),
-  });
+  };
 
-  let currIdx = primaryCount;
+  // If 4 or fewer photos, everything fits comfortably on this 1 spread without scrolling.
+  if (photos.length <= 4) {
+    return [primarySpread];
+  }
+
+  // 5+ photos: Flow remaining photos to subsequent spreads without scrollbars.
+  const partitions: MemorySpreadPartition[] = [primarySpread];
+  let currIdx = 4;
   let subIdx = 1;
+
   while (currIdx < photos.length) {
     const remaining = photos.length - currIdx;
-    const count = Math.min(6, remaining);
+    // On continuation spreads, allocate up to 2 photos per page (up to 4 per spread) to guarantee no scroll effect.
+    const count = Math.min(4, remaining);
     const leftCount = Math.ceil(count / 2);
     const rightCount = count - leftCount;
 
@@ -455,6 +309,7 @@ export function partitionMemoryIntoSpreads(mem: MemoryAlbum): MemorySpreadPartit
   partitions.forEach((p) => {
     p.totalSubSpreads = partitions.length;
   });
+
   return partitions;
 }
 
@@ -536,8 +391,6 @@ export function buildDefaultLayoutBlocks(
   const isPortraitAlbum =
     (mem as { albumStyle?: string }).albumStyle === "portrait" ||
     (mem as { albumStyle?: string }).albumStyle === "borderless" ||
-    (mem as { albumStyle?: string }).albumStyle === "grid" ||
-    (mem as { albumStyle?: string }).albumStyle === "filmstrip" ||
     photos.length === 1;
   const photoTilts = [-2, 2, -1.5, 2.5];
 
@@ -713,9 +566,7 @@ export function syncLayoutBlocksWithMemory(
 
   const isZeroTilt =
     mem.albumStyle === "portrait" ||
-    mem.albumStyle === "borderless" ||
-    mem.albumStyle === "grid" ||
-    mem.albumStyle === "filmstrip";
+    mem.albumStyle === "borderless";
 
   // If existing blocks were saved without a header on left, restore clean layout with header
   const hasHeaderBlock = existing.some((b) => b.kind === "header");

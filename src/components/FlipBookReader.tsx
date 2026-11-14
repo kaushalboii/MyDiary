@@ -334,6 +334,43 @@ export function FlipBookReader({
     return () => window.removeEventListener("keydown", onKey);
   }, [turnPage]);
 
+  // Turn page on mouse wheel / trackpad scroll instead of vertical scrolling
+  useEffect(() => {
+    let lastWheelTime = 0;
+    function onWheel(e: WheelEvent) {
+      if (document.querySelector('[role="dialog"]')) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest(
+          '[role="dialog"], [data-no-flip], button, a, input, select, textarea, [data-memory-menu]',
+        )
+      ) {
+        return;
+      }
+      const absY = Math.abs(e.deltaY);
+      const absX = Math.abs(e.deltaX);
+      if (absY < 25 && absX < 25) return;
+
+      const now = Date.now();
+      if (now - lastWheelTime < 600) return;
+
+      const primaryDelta = absY >= absX ? e.deltaY : e.deltaX;
+      if (primaryDelta > 30) {
+        lastWheelTime = now;
+        turnPage(1);
+      } else if (primaryDelta < -30) {
+        lastWheelTime = now;
+        turnPage(-1);
+      }
+    }
+
+    const stage = stageRef.current;
+    if (stage) {
+      stage.addEventListener("wheel", onWheel, { passive: true });
+      return () => stage.removeEventListener("wheel", onWheel);
+    }
+  }, [turnPage]);
+
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (!coverDone) return;
     const count = isMobileSingle ? totalPages : spreads.length;
@@ -633,7 +670,7 @@ export function FlipBookReader({
               {/* Stationary Target Sheet Underneath */}
               <div
                 data-testid="flipbook-mobile-page"
-                className="relative h-full w-full overflow-y-auto overflow-x-hidden flip-page-scroll p-6 sm:p-8"
+                className="relative h-full w-full overflow-hidden p-6 sm:p-8"
                 style={{
                   ...paperCss,
                   boxShadow:
@@ -772,7 +809,7 @@ export function FlipBookReader({
               {/* Left Base Page */}
               <div
                 data-testid="flipbook-page-left"
-                className="relative h-full w-full overflow-y-auto overflow-x-hidden flip-page-scroll p-7 lg:p-11"
+                className="relative h-full w-full overflow-hidden p-7 lg:p-11"
                 style={{
                   ...paperCss,
                   opacity: leftBoardReveal,
@@ -817,7 +854,7 @@ export function FlipBookReader({
               {/* Right Base Page */}
               <div
                 data-testid="flipbook-page-right"
-                className="relative h-full w-full overflow-y-auto overflow-x-hidden flip-page-scroll p-7 lg:p-11"
+                className="relative h-full w-full overflow-hidden p-7 lg:p-11"
                 style={{
                   ...paperCss,
                   boxShadow:

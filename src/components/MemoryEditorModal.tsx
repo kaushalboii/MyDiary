@@ -45,16 +45,6 @@ const ALBUM_STYLES: Array<{
     name: "Wedding Album",
     desc: "Border-free fine art portraits & luxury multi-photo spreads",
   },
-  {
-    id: "grid",
-    name: "Editorial Mat",
-    desc: "Matted museum framing with hairline borders",
-  },
-  {
-    id: "filmstrip",
-    name: "Contact Sheet",
-    desc: "Darkroom film-strip frames with numbered margins",
-  },
 ];
 
 export function MemoryEditorModal({

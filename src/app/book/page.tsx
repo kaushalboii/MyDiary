@@ -70,42 +70,13 @@ import type {
 
 const POLAROID_TILTS = ["-1.4deg", "1.1deg", "-0.8deg", "1.5deg", "-1.1deg", "0.7deg"];
 
-const ALBUM_STYLE_OPTIONS: Array<{
+const REQUIRED_ALBUM_STYLES: Array<{
   id: AlbumStyle;
   label: string;
-  badge: string;
-  desc: string;
 }> = [
-  {
-    id: "portrait",
-    label: "Wedding Album",
-    badge: "Fine Art",
-    desc: "Border-free fine art portraits & luxury multi-photo spreads",
-  },
-  {
-    id: "borderless",
-    label: "Frameless Grid",
-    badge: "Modern",
-    desc: "Clean borderless photos with no outer frame or card padding",
-  },
-  {
-    id: "polaroid",
-    label: "Archival Polaroid",
-    badge: "Tactile",
-    desc: "Tilted frames with cream borders & serif captions",
-  },
-  {
-    id: "grid",
-    label: "Editorial Mat",
-    badge: "Museum",
-    desc: "Matted museum framing with subtle hairline borders",
-  },
-  {
-    id: "filmstrip",
-    label: "Contact Sheet",
-    badge: "Darkroom",
-    desc: "Darkroom film-strip frames with numbered margins",
-  },
+  { id: "borderless", label: "Frameless Grid" },
+  { id: "polaroid", label: "Archival Polaroid" },
+  { id: "portrait", label: "Wedding Album" },
 ];
 
 function BookMemoriesContent() {
@@ -520,164 +491,7 @@ function BookMemoriesContent() {
           </div>
         );
       }
-      if (mem.albumStyle === "filmstrip") {
-        return (
-          <div className="space-y-3.5">
-            {photoItems.map(({ photo, idx }) => (
-              <div key={photo.id} className="filmstrip-frame">
-                <button
-                  type="button"
-                  data-no-flip="true"
-                  onClick={() => setLightboxState({ memory: mem, index: idx })}
-                  className="block w-full overflow-hidden bg-black cursor-pointer"
-                >
-                  <img
-                    src={resolveMediaUrl(photo.url)}
-                    alt={photo.caption || `Album frame ${idx + 1}`}
-                    className="max-h-60 w-full object-contain transition duration-300 hover:scale-[1.02]"
-                  />
-                </button>
-                <div className="mt-2 flex items-center justify-between gap-2 text-xs text-[#dfd7c7]">
-                  <span className="font-mono text-[10px] uppercase text-[#b5aa97]">
-                    #{String(idx + 1).padStart(2, "0")}
-                  </span>
-                  <span className="italic">{photo.caption || photo.originalName}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        );
-      }
-      if (mem.albumStyle === "grid") {
-        if (photoItems.length === 1) {
-          const { photo, idx } = photoItems[0];
-          return (
-            <div className="my-auto flex flex-col items-center justify-center py-1 sm:py-2 w-full">
-              <figure className="m-0 w-full max-w-md mx-auto border border-[var(--hairline)] bg-[var(--paper-light)] p-2 shadow-sm">
-                <button
-                  type="button"
-                  data-no-flip="true"
-                  onClick={() => setLightboxState({ memory: mem, index: idx })}
-                  className="block w-full overflow-hidden bg-[var(--paper-deep)] cursor-pointer"
-                >
-                  <img
-                    src={resolveMediaUrl(photo.url)}
-                    alt={photo.caption || `Photo ${idx + 1}`}
-                    className="aspect-[4/3] max-h-[40vh] sm:max-h-[320px] w-full object-cover transition duration-300 hover:scale-[1.02]"
-                  />
-                </button>
-                {photo.caption && (
-                  <figcaption className="mt-1.5 px-1 text-xs italic text-[var(--page-ink-muted)]">
-                    {photo.caption}
-                  </figcaption>
-                )}
-              </figure>
-            </div>
-          );
-        }
 
-        if (photoItems.length === 2) {
-          return (
-            <div className="my-auto grid grid-cols-2 gap-2.5 sm:gap-3 w-full py-1">
-              {photoItems.map(({ photo, idx }) => (
-                <figure key={photo.id} className="m-0 border border-[var(--hairline)] bg-[var(--paper-light)] p-2 shadow-sm">
-                  <button
-                    type="button"
-                    data-no-flip="true"
-                    onClick={() => setLightboxState({ memory: mem, index: idx })}
-                    className="block w-full overflow-hidden bg-[var(--paper-deep)] cursor-pointer"
-                  >
-                    <img
-                      src={resolveMediaUrl(photo.url)}
-                      alt={photo.caption || `Photo ${idx + 1}`}
-                      className="aspect-[4/3] max-h-[30vh] sm:max-h-[240px] w-full object-cover transition duration-300 hover:scale-[1.02]"
-                    />
-                  </button>
-                  {photo.caption && (
-                    <figcaption className="mt-1 px-1 text-[11px] italic text-[var(--page-ink-muted)] truncate">
-                      {photo.caption}
-                    </figcaption>
-                  )}
-                </figure>
-              ))}
-            </div>
-          );
-        }
-
-        if (photoItems.length === 3) {
-          const [hero, ...others] = photoItems;
-          return (
-            <div className="my-auto flex flex-col gap-2 sm:gap-2.5 w-full py-1">
-              <figure key={hero.photo.id} className="m-0 border border-[var(--hairline)] bg-[var(--paper-light)] p-2 shadow-sm">
-                <button
-                  type="button"
-                  data-no-flip="true"
-                  onClick={() => setLightboxState({ memory: mem, index: hero.idx })}
-                  className="block w-full overflow-hidden bg-[var(--paper-deep)] cursor-pointer"
-                >
-                  <img
-                    src={resolveMediaUrl(hero.photo.url)}
-                    alt={hero.photo.caption || `Photo ${hero.idx + 1}`}
-                    className="aspect-[16/9] sm:aspect-[16/10] max-h-[22vh] sm:max-h-[175px] w-full object-cover transition duration-300 hover:scale-[1.02]"
-                  />
-                </button>
-                {hero.photo.caption && (
-                  <figcaption className="mt-1 px-1 text-[11px] italic text-[var(--page-ink-muted)] truncate">
-                    {hero.photo.caption}
-                  </figcaption>
-                )}
-              </figure>
-              <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
-                {others.map(({ photo, idx }) => (
-                  <figure key={photo.id} className="m-0 border border-[var(--hairline)] bg-[var(--paper-light)] p-1.5 shadow-sm">
-                    <button
-                      type="button"
-                      data-no-flip="true"
-                      onClick={() => setLightboxState({ memory: mem, index: idx })}
-                      className="block w-full overflow-hidden bg-[var(--paper-deep)] cursor-pointer"
-                    >
-                      <img
-                        src={resolveMediaUrl(photo.url)}
-                        alt={photo.caption || `Photo ${idx + 1}`}
-                        className="aspect-[4/3] max-h-[19vh] sm:max-h-[150px] w-full object-cover transition duration-300 hover:scale-[1.02]"
-                      />
-                    </button>
-                  </figure>
-                ))}
-              </div>
-            </div>
-          );
-        }
-
-        return (
-          <div className="my-auto grid grid-cols-2 gap-2 sm:gap-2.5 w-full py-1">
-            {photoItems.map(({ photo, idx }) => (
-              <figure
-                key={photo.id}
-                className="m-0 border border-[var(--hairline)] bg-[var(--paper-light)] p-1.5 shadow-sm"
-              >
-                <button
-                  type="button"
-                  data-no-flip="true"
-                  onClick={() => setLightboxState({ memory: mem, index: idx })}
-                  className="block w-full overflow-hidden bg-[var(--paper-deep)] cursor-pointer"
-                >
-                  <img
-                    src={resolveMediaUrl(photo.url)}
-                    alt={photo.caption || `Photo ${idx + 1}`}
-                    className="aspect-[4/3] max-h-[19vh] sm:max-h-[150px] w-full object-cover transition duration-300 hover:scale-[1.02]"
-                  />
-                </button>
-                {photo.caption && (
-                  <figcaption className="mt-1 px-1 text-[10px] italic text-[var(--page-ink-muted)] truncate">
-                    {photo.caption}
-                  </figcaption>
-                )}
-              </figure>
-            ))}
-          </div>
-        );
-      }
       // Wedding Album / Borderless Fine Art Portrait Showcase
       const isPortraitLayout =
         mem.albumStyle === "portrait" || photoItems.length === 1;
@@ -1356,22 +1170,22 @@ function BookMemoriesContent() {
                       />
                       <div
                         data-no-flip="true"
-                        className="absolute bottom-full left-0 mb-2 w-64 sm:w-72 rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] p-2 shadow-2xl backdrop-blur-md z-50 text-xs animate-in fade-in zoom-in-95 duration-150"
+                        className="absolute bottom-full left-0 mb-2 w-52 rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] p-1.5 shadow-2xl backdrop-blur-md z-50 text-xs animate-in fade-in zoom-in-95 duration-150"
                         onClick={(e) => e.stopPropagation()}
                         onPointerDown={(e) => e.stopPropagation()}
                       >
-                        {/* 1. Album Style Picker */}
+                        {/* 1. Required Album Styles Only */}
                         {mem.photos?.length > 0 && (
                           <div className="py-0.5">
-                            <div className="px-2 py-1 text-[10px] font-semibold tracking-[0.15em] uppercase text-[var(--ink-soft)] flex items-center justify-between">
+                            <div className="px-2 py-1 text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)] flex items-center justify-between">
                               <span>Album Style</span>
                               <SlidersHorizontal className="h-3 w-3 text-[var(--accent)]" />
                             </div>
-                            <div className="mt-1 space-y-0.5">
-                              {ALBUM_STYLE_OPTIONS.map((style) => {
+                            <div className="mt-0.5 space-y-0.5">
+                              {REQUIRED_ALBUM_STYLES.map((style) => {
                                 const isCurrent =
                                   mem.albumStyle === style.id ||
-                                  (!mem.albumStyle && style.id === "portrait");
+                                  (!mem.albumStyle && style.id === "borderless");
                                 return (
                                   <button
                                     type="button"
@@ -1381,23 +1195,13 @@ function BookMemoriesContent() {
                                       setOpenMenuMemoryId(null);
                                       void handleChangeAlbumStyle(mem.id, style.id);
                                     }}
-                                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs cursor-pointer transition-colors ${
+                                    className={`flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-xs cursor-pointer transition-colors ${
                                       isCurrent
                                         ? "bg-[var(--paper-deep)] text-[var(--ink)] font-semibold"
                                         : "text-[var(--ink-soft)] hover:bg-[var(--paper-deep)]/60 hover:text-[var(--ink)]"
                                     }`}
                                   >
-                                    <div className="flex flex-col pr-2">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="font-serif text-[12px]">{style.label}</span>
-                                        <span className="text-[9px] uppercase tracking-wider text-[var(--accent)] font-mono">
-                                          {style.badge}
-                                        </span>
-                                      </div>
-                                      <span className="text-[10px] text-[var(--ink-soft)] leading-tight">
-                                        {style.desc}
-                                      </span>
-                                    </div>
+                                    <span className="font-serif">{style.label}</span>
                                     {isCurrent && (
                                       <Check className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
                                     )}
@@ -1405,7 +1209,7 @@ function BookMemoriesContent() {
                                 );
                               })}
                             </div>
-                            <div className="my-1.5 border-t border-[var(--hairline)]" />
+                            <div className="my-1 border-t border-[var(--hairline)]" />
                           </div>
                         )}
 
@@ -1800,10 +1604,10 @@ function BookMemoriesContent() {
                         : `Photos ${rightPhotos[0].idx + 1}–${rightPhotos[rightPhotos.length - 1].idx + 1} of ${mem.photos.length}`}
                     </span>
                     <span>
-                      {mem.albumStyle === "filmstrip"
-                        ? "Contact Sheet"
-                        : mem.albumStyle === "grid"
-                          ? "Editorial Grid"
+                      {mem.albumStyle === "borderless"
+                        ? "Frameless Grid"
+                        : mem.albumStyle === "portrait"
+                          ? "Wedding Album"
                           : "Polaroids"}
                     </span>
                   </div>

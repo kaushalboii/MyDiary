@@ -414,20 +414,13 @@ export function FreeformPageSurface({
                       ? "border-0 p-0 bg-transparent shadow-md rounded-xl overflow-hidden"
                       : memory.albumStyle === "portrait"
                         ? "border-0 p-0 bg-transparent shadow-xl rounded-2xl overflow-hidden"
-                        : memory.albumStyle === "filmstrip"
-                          ? "filmstrip-frame"
-                          : memory.albumStyle === "grid"
-                            ? "border border-[var(--hairline)] bg-[var(--paper-light)] p-2 shadow-sm"
-                            : compact
-                              ? "polaroid-frame p-1.5! pb-3!"
-                              : "polaroid-frame"
+                        : compact
+                          ? "polaroid-frame p-1.5! pb-3!"
+                          : "polaroid-frame"
                   }`}
                   style={{
                     transform: `rotate(${
-                      memory.albumStyle === "borderless" ||
-                      memory.albumStyle === "portrait" ||
-                      memory.albumStyle === "grid" ||
-                      memory.albumStyle === "filmstrip"
+                      memory.albumStyle === "borderless" || memory.albumStyle === "portrait"
                         ? "0deg"
                         : block.rotation !== undefined
                           ? `${block.rotation}deg`
