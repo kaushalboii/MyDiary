@@ -2117,6 +2117,100 @@ app.delete("/api/books/:id", requireAuth, async (req, res) => {
 
 const presenceByBook = new Map(); // bookId -> Map<viewerId, viewerInfo>
 
+app.post("/api/books/:id/request-access", async (req, res) => {
+  const bookId = String(req.params.id || "");
+  const body = req.body || {};
+  const auth = authenticateRequest(req);
+  const userEmail = String(auth.user?.email || body.email || "").toLowerCase().trim();
+  const userName = String(
+    auth.user?.displayName || auth.user?.username || body.name || userEmail.split("@")[0] || "Co-Author",
+  ).trim();
+
+  if (!userEmail || !userEmail.includes("@")) {
+    return res.status(400).json({ error: "A valid email address is required to request co-author access." });
+  }
+
+  let resolved = findBookAnywhere(bookId);
+
+  if (!resolved && body.bookData && body.bookData.title) {
+    const targetScope = auth.scopeId || LEGACY_SCOPE_ID;
+    await mutateDb((db) => {
+      const existing = db.books.find((b) => b.id === bookId);
+      if (!existing) {
+        db.books.push({
+          ...body.bookData,
+          id: bookId,
+          isShared: true,
+          ownerId: body.bookData.ownerId || targetScope,
+          ownerEmail: body.bookData.ownerEmail || userEmail,
+        });
+      }
+    }, targetScope);
+    resolved = findBookAnywhere(bookId);
+  }
+
+  if (!resolved) {
+    return res.status(404).json({ error: "Book volume not found." });
+  }
+
+  const book = resolved.book;
+  const isOwner =
+    (book.ownerId && auth.user && String(book.ownerId) === String(auth.user.id)) ||
+    (book.ownerEmail && book.ownerEmail.toLowerCase().trim() === userEmail);
+
+  if (isOwner) {
+    return res.json({ ok: true, status: "owner", message: "You are the book owner." });
+  }
+
+  const isPreInvited =
+    (book.collaboratorEmail && book.collaboratorEmail.toLowerCase().trim() === userEmail) ||
+    (Array.isArray(book.collaborators) &&
+      book.collaborators.some((c) => String(c).toLowerCase().trim() === userEmail));
+
+  if (isPreInvited) {
+    await mutateDb((db) => {
+      const b = db.books.find((item) => item.id === bookId);
+      if (b) {
+        if (!Array.isArray(b.acceptedBy)) b.acceptedBy = [];
+        if (!b.acceptedBy.includes(userEmail)) b.acceptedBy.push(userEmail);
+        if (!Array.isArray(b.collaborators)) b.collaborators = [];
+        if (!b.collaborators.includes(userEmail)) b.collaborators.push(userEmail);
+        b.isShared = true;
+        b.inviteStatus = "accepted";
+        if (Array.isArray(b.pendingRequests)) {
+          b.pendingRequests = b.pendingRequests.filter((r) => r.email?.toLowerCase() !== userEmail);
+        }
+      }
+    }, resolved.scopeId);
+    return res.json({ ok: true, status: "accepted", message: "Book accepted and placed on your shelf!" });
+  }
+
+  // Add to pendingRequests for owner manual approval in the diary!
+  await mutateDb((db) => {
+    const b = db.books.find((item) => item.id === bookId);
+    if (b) {
+      if (!Array.isArray(b.pendingRequests)) b.pendingRequests = [];
+      const already = b.pendingRequests.some((r) => r.email?.toLowerCase() === userEmail);
+      if (!already) {
+        b.pendingRequests.push({
+          userId: auth.user?.id || null,
+          email: userEmail,
+          name: userName,
+          avatarUrl: auth.user?.avatarUrl || null,
+          requestedAt: new Date().toISOString(),
+        });
+      }
+      b.isShared = true;
+    }
+  }, resolved.scopeId);
+
+  return res.json({
+    ok: true,
+    status: "pending_approval",
+    message: "Request sent to book owner. Once accepted in their diary, this volume will appear on your shelf.",
+  });
+});
+
 app.post("/api/books/:id/accept", requireAuth, async (req, res) => {
   const bookId = String(req.params.id || "");
   const body = req.body || {};

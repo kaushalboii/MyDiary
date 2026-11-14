@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, BookOpen, Check, CheckCircle2, ChevronDown, ChevronUp, Copy, Feather, Images, Mail, PenLine, Plus, Share2, SlidersHorizontal, Sparkles, Users, X } from "lucide-react";
+import { ArrowUpRight, Bell, BookOpen, Check, CheckCircle2, ChevronDown, ChevronUp, Copy, Feather, Images, Mail, PenLine, Plus, Share2, SlidersHorizontal, Sparkles, Users, X } from "lucide-react";
 import { defaultBooks } from "@/lib/default-books";
 import {
   AUTH_REQUIRED_EVENT,
@@ -22,13 +22,14 @@ import {
   loadCachedMemories,
   loadCachedServerBooks,
   parseBookInvitePayload,
+  requestBookAccess,
   resolveMediaUrl,
   saveCachedMemories,
   saveToSharedRegistry,
   updateBook,
   type BookPatchInput,
 } from "@/lib/storage-client";
-import type { DiaryBook, MemoryAlbum } from "@/lib/types";
+import type { CollaboratorRequest, DiaryBook, MemoryAlbum } from "@/lib/types";
 import type { ShelfEngine as ShelfEngineType, ShelfMode } from "@/three/ShelfEngine";
 import { siteConfig } from "@/three/site-config";
 import { ExpandableDock } from "./ExpandableDock";
@@ -114,6 +115,34 @@ function ShelfExperienceInner() {
     message: string;
     isPending?: boolean;
   } | null>(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [approvingEmail, setApprovingEmail] = useState<string | null>(null);
+  const [notificationToast, setNotificationToast] = useState<{
+    id: string;
+    message: string;
+  } | null>(null);
+  const [inviteEmailInput, setInviteEmailInput] = useState("");
+  const [requestSending, setRequestSending] = useState(false);
+
+  const cachedUser = getCachedUser();
+  const userEmail = (cachedUser?.email || "").toLowerCase().trim();
+
+  // Find all pending requests across all books owned by the current user
+  const allPendingRequests = useMemo(() => {
+    if (!userEmail) return [];
+    const list: { book: DiaryBook; request: CollaboratorRequest }[] = [];
+    for (const book of books) {
+      const isOwner =
+        (book.ownerEmail && book.ownerEmail.toLowerCase().trim() === userEmail) ||
+        (!book.ownerEmail && !book.isShared);
+      if (isOwner && Array.isArray(book.pendingRequests)) {
+        for (const req of book.pendingRequests) {
+          list.push({ book, request: req });
+        }
+      }
+    }
+    return list;
+  }, [books, userEmail]);
 
   const booksRef = useRef(books);
   booksRef.current = books;
@@ -141,6 +170,57 @@ function ShelfExperienceInner() {
       throw err;
     }
   }, []);
+
+  // Live polling every 8s so incoming join requests & shared books appear without needing manual refresh
+  useEffect(() => {
+    const poll = () => {
+      if (isUserAuthenticated()) {
+        void refreshBooks();
+      }
+    };
+    const timer = setInterval(poll, 8000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        poll();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onVisibility);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onVisibility);
+    };
+  }, [refreshBooks]);
+
+  const handleApproveRequest = useCallback(
+    async (bookId: string, reqEmail: string, action: "approve" | "decline") => {
+      setApprovingEmail(reqEmail);
+      try {
+        await approveCollaboratorRequest(bookId, reqEmail, action);
+        await refreshBooks();
+        if (action === "approve") {
+          setNotificationToast({
+            id: Date.now().toString(),
+            message: `✓ Accepted ${reqEmail}! This book has been placed on their bookshelf.`,
+          });
+        } else {
+          setNotificationToast({
+            id: Date.now().toString(),
+            message: `Declined request from ${reqEmail}.`,
+          });
+        }
+      } catch (err) {
+        setNotificationToast({
+          id: Date.now().toString(),
+          message: err instanceof Error ? err.message : "Failed to process request.",
+        });
+      } finally {
+        setApprovingEmail(null);
+      }
+    },
+    [refreshBooks],
+  );
 
   const handleInviteParam = useCallback((rawPayload: string) => {
     const parsed = parseBookInvitePayload(rawPayload);
@@ -529,12 +609,37 @@ function ShelfExperienceInner() {
         </button>
 
         <div className="header-controls-cluster">
+          {allPendingRequests.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setNotificationsOpen((v) => !v)}
+              className="relative flex items-center gap-1.5 rounded-full border border-amber-500/50 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-900 dark:text-amber-200 animate-pulse hover:bg-amber-500/25 transition cursor-pointer shadow-sm"
+              aria-label={`${allPendingRequests.length} pending co-author requests`}
+              title="View Co-Author Requests"
+            >
+              <Bell className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+              <span>{allPendingRequests.length} Request{allPendingRequests.length > 1 ? "s" : ""}</span>
+            </button>
+          )}
+
           <ExpandableDock
             ariaLabel="Diary shelf controls"
             securityOpen={storageOpen}
             onSecurityOpenChange={setStorageOpen}
             onStorageConnected={() => void refreshBooks()}
           >
+            {allPendingRequests.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setNotificationsOpen(true)}
+                className="top-dock__btn text-amber-700 dark:text-amber-300 font-semibold"
+                aria-label="Pending Requests"
+                title="Pending Requests"
+              >
+                <Bell className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Requests ({allPendingRequests.length})</span>
+              </button>
+            )}
             <Link
               href={`/book?id=${encodeURIComponent(activeBook.id)}`}
               data-testid="open-active"
@@ -1044,15 +1149,82 @@ function ShelfExperienceInner() {
               </div>
             </div>
 
-            <div className="mt-4 rounded-xl border border-[var(--hairline)] bg-[var(--paper)] p-3 text-xs text-[var(--ink-soft)] space-y-1.5">
-              <div className="flex items-center justify-between font-medium text-[var(--ink)]">
-                <span>Invited by:</span>
-                <span>{pendingInvite.ownerEmail || "Co-Author Partner"}</span>
+            {!isUserAuthenticated() ? (
+              <div className="mt-4 rounded-xl border border-[var(--hairline)] bg-[var(--paper)] p-3.5 text-xs text-[var(--ink)] space-y-3">
+                <div className="flex items-center justify-between font-medium">
+                  <span className="text-[var(--ink-soft)]">Invited by:</span>
+                  <span className="font-semibold">{pendingInvite.ownerEmail || "Co-Author Partner"}</span>
+                </div>
+                <p className="text-[11px] leading-relaxed text-[var(--ink-soft)] m-0">
+                  Enter your email address to request co-author access from the book owner:
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="email"
+                    placeholder="your.email@gmail.com"
+                    value={inviteEmailInput}
+                    onChange={(e) => setInviteEmailInput(e.target.value)}
+                    className="flex-1 rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] px-3 py-2 text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                  />
+                  <button
+                    type="button"
+                    disabled={requestSending || !inviteEmailInput.includes("@")}
+                    onClick={async () => {
+                      setRequestSending(true);
+                      try {
+                        const res = await requestBookAccess(pendingInvite.id, {
+                          email: inviteEmailInput.trim(),
+                          bookData: pendingInvite,
+                        });
+                        setPendingInvite(null);
+                        setInviteModalNotice({
+                          title: "Request Sent to Owner",
+                          message:
+                            res.message ||
+                            `Your request to co-author "${pendingInvite.title}" was sent to ${pendingInvite.ownerEmail || "the book owner"}. As soon as they accept in their diary, this volume will appear on your shelf!`,
+                          isPending: true,
+                        });
+                      } catch (err) {
+                        alert(err instanceof Error ? err.message : "Failed to send request.");
+                      } finally {
+                        setRequestSending(false);
+                      }
+                    }}
+                    className="rounded-xl bg-[var(--ink)] px-3.5 py-2 text-xs font-semibold text-[var(--paper-light)] disabled:opacity-50 cursor-pointer hover:bg-[var(--walnut-deep)] transition"
+                  >
+                    {requestSending ? "Sending..." : "Request"}
+                  </button>
+                </div>
+                <div className="pt-1 text-center text-[10px] text-[var(--ink-soft)]">
+                  Or{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingInvite(null);
+                      setStorageOpen(true);
+                    }}
+                    className="underline font-semibold text-[var(--ink)] cursor-pointer"
+                  >
+                    Sign in with Google
+                  </button>{" "}
+                  to link directly.
+                </div>
               </div>
-              <p className="text-[11px] leading-relaxed m-0">
-                You were invited to co-author this memory book. When accepted, this volume will be permanently placed on your bookshelf. Both accounts can view entries, upload photos, and read together in real time!
-              </p>
-            </div>
+            ) : (
+              <div className="mt-4 rounded-xl border border-[var(--hairline)] bg-[var(--paper)] p-3 text-xs text-[var(--ink-soft)] space-y-1.5">
+                <div className="flex items-center justify-between font-medium text-[var(--ink)]">
+                  <span>Invited by:</span>
+                  <span>{pendingInvite.ownerEmail || "Co-Author Partner"}</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-[var(--ink-soft)]">
+                  <span>Signed in as:</span>
+                  <span className="font-semibold text-[var(--ink)]">{userEmail}</span>
+                </div>
+                <p className="text-[11px] leading-relaxed m-0 pt-1">
+                  You were invited to co-author this memory book. When accepted, this volume will be permanently placed on your bookshelf. Both accounts can view entries, upload photos, and read together in real time!
+                </p>
+              </div>
+            )}
 
             <div className="mt-5 flex items-center justify-end gap-2.5">
               <button
@@ -1060,17 +1232,178 @@ function ShelfExperienceInner() {
                 onClick={() => setPendingInvite(null)}
                 className="rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold tracking-wider text-[var(--ink-soft)] uppercase hover:text-[var(--ink)] cursor-pointer"
               >
-                Decline
+                {isUserAuthenticated() ? "Decline" : "Cancel"}
               </button>
-              <button
-                type="button"
-                onClick={() => void handleAcceptInvite(pendingInvite)}
-                className="rounded-full bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase hover:bg-[var(--walnut-deep)] transition cursor-pointer shadow-md"
-              >
-                Accept & Place on Shelf
-              </button>
+              {isUserAuthenticated() && (
+                <button
+                  type="button"
+                  onClick={() => void handleAcceptInvite(pendingInvite)}
+                  className="rounded-full bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase hover:bg-[var(--walnut-deep)] transition cursor-pointer shadow-md"
+                >
+                  Accept & Place on Shelf
+                </button>
+              )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Floating Live Request Notification Banner for Owner */}
+      {allPendingRequests.length > 0 && !notificationsOpen && (
+        <aside
+          role="region"
+          aria-label="Pending Co-Author Requests"
+          className="fixed top-20 right-4 sm:right-6 z-40 w-[calc(100vw-2rem)] max-w-sm rounded-2xl border border-amber-500/40 bg-[var(--paper-light)]/95 p-4 shadow-2xl backdrop-blur-md animate-in slide-in-from-top-4 duration-300"
+        >
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400">
+              <Bell className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                  Co-Author Join Request
+                </span>
+                <span className="text-[10px] text-[var(--ink-soft)]">
+                  Live
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-[var(--ink)] leading-snug">
+                <strong className="font-semibold">{allPendingRequests[0].request.name || allPendingRequests[0].request.email}</strong> wants to co-author <span className="italic font-serif font-semibold">"{allPendingRequests[0].book.title}"</span>.
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={approvingEmail === allPendingRequests[0].request.email}
+                  onClick={() =>
+                    void handleApproveRequest(
+                      allPendingRequests[0].book.id,
+                      allPendingRequests[0].request.email,
+                      "approve",
+                    )
+                  }
+                  className="rounded-full bg-[var(--ink)] px-3.5 py-1.5 text-xs font-semibold text-[var(--paper-light)] hover:bg-[var(--walnut-deep)] transition cursor-pointer shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <Check className="h-3 w-3" />
+                  <span>Accept & Add to Shelf</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={approvingEmail === allPendingRequests[0].request.email}
+                  onClick={() =>
+                    void handleApproveRequest(
+                      allPendingRequests[0].book.id,
+                      allPendingRequests[0].request.email,
+                      "decline",
+                    )
+                  }
+                  className="rounded-full border border-[var(--hairline)] px-2.5 py-1.5 text-xs font-medium text-[var(--ink-soft)] hover:text-[var(--ink)] transition cursor-pointer disabled:opacity-50"
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          </div>
+        </aside>
+      )}
+
+      {/* Notifications Modal for Viewing All Requests */}
+      {notificationsOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm"
+        >
+          <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--paper-light)] p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <button
+              onClick={() => setNotificationsOpen(false)}
+              className="absolute top-4 right-4 rounded-full p-1.5 text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                <Bell className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="font-serif text-lg font-bold text-[var(--ink)]">
+                  Co-Author Requests
+                </h3>
+                <p className="text-xs text-[var(--ink-soft)]">
+                  Approve partners who requested to join your memory books.
+                </p>
+              </div>
+            </div>
+
+            {allPendingRequests.length === 0 ? (
+              <p className="text-xs text-[var(--ink-soft)] py-6 text-center">
+                No pending co-author requests right now.
+              </p>
+            ) : (
+              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                {allPendingRequests.map(({ book, request }) => (
+                  <div
+                    key={`${book.id}-${request.email}`}
+                    className="rounded-xl border border-[var(--hairline)] bg-[var(--paper)] p-3.5 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-[var(--ink)] truncate">
+                          {request.name || request.email}
+                        </p>
+                        <p className="text-[10px] text-[var(--ink-soft)]">
+                          Requested for <span className="font-serif italic font-semibold">"{book.title}"</span>
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-[var(--ink-soft)] shrink-0">
+                        {request.requestedAt ? new Date(request.requestedAt).toLocaleDateString() : "Pending"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        disabled={approvingEmail === request.email}
+                        onClick={() => void handleApproveRequest(book.id, request.email, "decline")}
+                        className="rounded-full border border-[var(--hairline)] px-3 py-1 text-xs font-medium text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer disabled:opacity-50"
+                      >
+                        Decline
+                      </button>
+                      <button
+                        type="button"
+                        disabled={approvingEmail === request.email}
+                        onClick={() => void handleApproveRequest(book.id, request.email, "approve")}
+                        className="rounded-full bg-[var(--ink)] px-3.5 py-1 text-xs font-semibold text-[var(--paper-light)] hover:bg-[var(--walnut-deep)] cursor-pointer shadow-sm flex items-center gap-1 disabled:opacity-50"
+                      >
+                        <Check className="h-3 w-3" />
+                        <span>Accept & Add to Shelf</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Floating Action Feedback Toast */}
+      {notificationToast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 right-6 z-50 rounded-xl border border-emerald-500/30 bg-emerald-950/90 text-emerald-100 px-4 py-2.5 text-xs shadow-xl backdrop-blur-md flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200"
+        >
+          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+          <span>{notificationToast.message}</span>
+          <button
+            type="button"
+            onClick={() => setNotificationToast(null)}
+            className="ml-2 text-emerald-300 hover:text-white cursor-pointer"
+          >
+            <X className="h-3 w-3" />
+          </button>
         </div>
       )}
 

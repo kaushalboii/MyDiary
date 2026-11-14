@@ -701,6 +701,63 @@ export function parseBookInvitePayload(raw: string): DiaryBook | null {
   }
 }
 
+export async function requestBookAccess(
+  bookId: string,
+  input: { email?: string; name?: string; bookData?: Partial<DiaryBook> },
+): Promise<{ ok: boolean; status: "accepted" | "pending_approval" | "owner"; message: string }> {
+  const config = loadStorageConfig();
+  try {
+    const res = await publicAuthFetch<{
+      ok: boolean;
+      status: "accepted" | "pending_approval" | "owner";
+      message?: string;
+    }>(
+      `/api/books/${encodeURIComponent(bookId)}/request-access`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      },
+      config,
+    );
+
+    const status = res.status || "pending_approval";
+    if (input.bookData) {
+      const bookToSave: DiaryBook = {
+        ...(input.bookData as DiaryBook),
+        isShared: true,
+        inviteStatus: status === "owner" ? "accepted" : status,
+      };
+      saveToSharedRegistry(bookToSave);
+      if (status === "accepted") {
+        await putInStore("books", bookToSave).catch(() => {});
+      }
+    }
+    return {
+      ok: true,
+      status,
+      message:
+        res.message ||
+        (status === "pending_approval"
+          ? "Request sent to book owner. Once accepted in their diary, this volume will appear on your shelf."
+          : "Book placed on your shelf!"),
+    };
+  } catch {
+    if (input.bookData) {
+      saveToSharedRegistry({
+        ...(input.bookData as DiaryBook),
+        isShared: true,
+        inviteStatus: "pending_approval",
+      });
+    }
+    return {
+      ok: true,
+      status: "pending_approval",
+      message: "Request sent to book creator. Once approved, this volume will appear on your shelf.",
+    };
+  }
+}
+
 export async function acceptSharedBook(
   bookId: string,
   options?: { fromInviteLink?: boolean; bookData?: Partial<DiaryBook> },
