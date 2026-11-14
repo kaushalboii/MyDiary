@@ -47,6 +47,7 @@ import {
   deleteMemory,
   fetchBooks,
   fetchMemories,
+  getCachedUser,
   getOfflineDraftCount,
   isStorageAuthError,
   isUserAuthenticated,
@@ -54,6 +55,7 @@ import {
   loadCachedServerBooks,
   resolveMediaUrl,
   saveCachedMemories,
+  sendBookPresence,
   syncOfflineToServer,
   updateBook,
   updateMemory,
@@ -61,6 +63,7 @@ import {
 } from "@/lib/storage-client";
 import { AUTH_REQUIRED_EVENT, restoreActiveUserEncryptionKey } from "@/lib/vault-security";
 import type {
+  ActiveViewer,
   AlbumPhoto,
   AlbumStyle,
   DiaryBook,
@@ -221,6 +224,47 @@ function BookMemoriesContent() {
     () => books.find((b) => b.id === resolvedBookId) || books[0],
     [books, resolvedBookId],
   );
+
+  const [activeViewers, setActiveViewers] = useState<ActiveViewer[]>([]);
+
+  useEffect(() => {
+    if (!book?.id) return;
+    const user = getCachedUser();
+    let tabId = "";
+    if (typeof window !== "undefined") {
+      tabId = window.sessionStorage.getItem("mydiary_tab_id") || "";
+      if (!tabId) {
+        tabId = "tab_" + Math.random().toString(36).substring(2, 9);
+        window.sessionStorage.setItem("mydiary_tab_id", tabId);
+      }
+    }
+    const info = {
+      id: user?.id || tabId,
+      email: user?.email || "reader",
+      name: user?.displayName || user?.email?.split("@")[0] || "Reader",
+      avatarUrl: user?.avatarUrl,
+    };
+
+    let isMounted = true;
+    async function pingPresence() {
+      try {
+        const viewers = await sendBookPresence(book.id, info);
+        if (isMounted && Array.isArray(viewers)) {
+          setActiveViewers(viewers);
+        }
+      } catch {}
+    }
+
+    void pingPresence();
+    const interval = setInterval(() => {
+      void pingPresence();
+    }, 6000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [book?.id]);
 
   // Lightbox keyboard navigation
   useEffect(() => {
@@ -1489,6 +1533,12 @@ function BookMemoriesContent() {
                     {mem.location}
                   </span>
                 )}
+                {book.isShared && mem.authorName && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-2 py-0.5 normal-case font-medium text-[var(--ink)]">
+                    <Users className="h-2.5 w-2.5 text-[var(--accent)]" />
+                    <span>Added by {mem.authorName}</span>
+                  </span>
+                )}
                 <span
                   className="ml-auto rounded-full border border-[var(--hairline)] bg-[var(--paper)] px-2.5 py-0.5"
                   style={{ color: pageAccent }}
@@ -1717,6 +1767,26 @@ function BookMemoriesContent() {
               </span>
             )}
 
+            {/* Live Presence indicator with Glowing Green Dot */}
+            <div
+              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300 shadow-sm"
+              title={
+                activeViewers.length > 0
+                  ? activeViewers.map((v) => `${v.name || v.email} (Active now)`).join(", ")
+                  : "You are actively viewing this volume"
+              }
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span>
+                {activeViewers.length > 1
+                  ? `${activeViewers.length} Lively Reading`
+                  : "Live Now"}
+              </span>
+            </div>
+
             <span className="top-dock__divider" aria-hidden="true" />
 
             <button
@@ -1808,6 +1878,7 @@ function BookMemoriesContent() {
           spreads={spreads}
           activeIndex={safeSpreadIndex}
           onChangeIndex={setActiveSpreadIndex}
+          activeViewers={activeViewers}
           opening={loading}
         />
       </main>

@@ -9,9 +9,13 @@ import {
   BookOpen,
   Check,
   CheckCircle2,
+  Copy,
+  ExternalLink,
   Heart,
   ImagePlus,
+  Link as LinkIcon,
   Loader2,
+  LogOut,
   PenLine,
   Share2,
   Shuffle,
@@ -30,7 +34,9 @@ import {
   hasMemoryContent,
 } from "@/lib/memory-layout";
 import {
+  createBookInvitePayload,
   createMemory,
+  getCachedUser,
   resolveMediaUrl,
   uploadPhotos,
   type BookPatchInput,
@@ -379,10 +385,60 @@ export function VolumeEditorModal({
   const [mounted, setMounted] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copiedInvite, setCopiedInvite] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    setTitle(book.title || "");
+    setShortTitle(book.shortTitle || book.title || "");
+    setSubtitle(book.subtitle || "");
+    setYearLabel(book.yearLabel || String(new Date().getFullYear()));
+    setCoverImprint(book.coverImprint ?? "PERSONAL ARCHIVE");
+    setCoverFooter(book.coverFooter ?? "");
+    setSpineMark(book.spineMark ?? siteConfig.spineMark);
+    setWelcomeNote(book.welcomeNote ?? "");
+    setDescription(book.description || "");
+    setQuote(book.quote || "");
+    setQuoteBy(book.quoteBy || "");
+
+    const initialCollab =
+      typeof book.collaboratorEmail === "string" && book.collaboratorEmail.trim()
+        ? book.collaboratorEmail.trim()
+        : Array.isArray(book.collaborators) && book.collaborators.length > 0
+        ? book.collaborators[0] || ""
+        : "";
+    setCollaboratorEmail(initialCollab);
+
+    setCover(book.cover || "#EAE0CE");
+    setSecondary(book.secondary || book.accent || "#B86B4B");
+    setAccent(book.accent || "#8E4B32");
+    setInk(book.ink || "#261E18");
+    setMotif(book.motif || "lattice");
+    setCoverTemplate(book.coverTemplate || (book.coverImage ? "photo-card" : "classic"));
+    setSpineStyle(book.spineStyle || "banded");
+    setCoverImage(book.coverImage || "");
+    setShowCoverTextWithImage(book.showCoverTextWithImage ?? true);
+    setLiving(Boolean(book.living));
+
+    setPaperStyle(book.paperStyle || "cream");
+    setFontStyle(book.fontStyle || "serif");
+    setPageTint(book.pageTint || "");
+    setPageInk(book.pageInk || "");
+    setPageAccent(book.pageAccent || "");
+    setPageNumberStyle(book.pageNumberStyle || "classic");
+    setPageHeaderStyle(book.pageHeaderStyle || "minimal");
+    setHeight(book.height || 2.12);
+    setThickness(book.thickness || 0.24);
+    setWidth(book.width || 1.3);
+    setPositionIndex(initialSlot);
+    setConfirmDelete(false);
+    setError(null);
+    setCopiedInvite(false);
+  }, [open, book, initialSlot]);
 
   useEffect(() => {
     if (!open) return;
@@ -435,6 +491,13 @@ export function VolumeEditorModal({
     collaborators: collaboratorEmail.trim() ? [collaboratorEmail.trim().toLowerCase()] : [],
     isShared: Boolean(collaboratorEmail.trim()) || Boolean(book.isShared),
   };
+
+  const currentUser = getCachedUser();
+  const isOwner =
+    !book.sharedBy &&
+    (!book.ownerEmail ||
+      (currentUser &&
+        book.ownerEmail.toLowerCase().trim() === currentUser.email?.toLowerCase().trim()));
 
   async function handleCoverUpload(files: FileList | null) {
     if (!files || !files.length) return;
@@ -1668,23 +1731,33 @@ export function VolumeEditorModal({
           {tab === "collaborate" && (
             <div className="space-y-4">
               <div className="rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] p-4 sm:p-5">
-                <div className="mb-2 flex items-center gap-2">
-                  <Users className="h-4 w-4 text-[var(--accent)]" />
-                  <h3 className="font-serif text-base font-semibold text-[var(--ink)]">
-                    Co-Author & Shared Memory Book
-                  </h3>
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-[var(--accent)]" />
+                    <h3 className="font-serif text-base font-semibold text-[var(--ink)]">
+                      Co-Author & Shared Memory Book
+                    </h3>
+                  </div>
+                  {collaboratorEmail.trim() && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Shared Volume
+                    </span>
+                  )}
                 </div>
                 <p className="mb-4 font-serif text-xs italic leading-relaxed text-[var(--ink-soft)]">
-                  Connect two Google accounts to write memories and upload photos together into this exact book volume. When connected, the same volume appears on both bookshelves, and both accounts can view and upload memories.
+                  Connect two accounts to write memories and upload photos together into this exact book volume. Both of you can view entries, add photos, and see each other reading live with glowing green presence!
                 </p>
 
                 <div className="space-y-4">
+                  {/* Co-Author input or active card */}
                   <div>
                     <label className="mb-1.5 flex items-center justify-between text-[10px] font-semibold tracking-wider uppercase text-[var(--ink-soft)]">
-                      <span>Partner / Co-Author Google Email (Optional)</span>
+                      <span>Partner / Co-Author Google Email</span>
                       {collaboratorEmail.trim() ? (
                         <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 normal-case">
-                          <Check className="h-3 w-3" /> Connected Co-Author
+                          <Check className="h-3 w-3" />
+                          {book.inviteStatus === "accepted" ? "Accepted & Active" : "Invited · Co-Author"}
                         </span>
                       ) : (
                         <span className="text-[10px] text-[var(--ink-soft)] normal-case">
@@ -1692,38 +1765,46 @@ export function VolumeEditorModal({
                         </span>
                       )}
                     </label>
+
                     <div className="relative">
                       <input
                         type="email"
                         value={collaboratorEmail}
+                        disabled={!isOwner && mode === "edit"}
                         onChange={(e) => setCollaboratorEmail(e.target.value)}
                         placeholder="e.g. partner@gmail.com"
-                        className="w-full rounded-lg border border-[var(--hairline)] bg-[var(--paper)] px-3.5 py-2.5 text-sm font-sans placeholder:italic placeholder:text-[var(--ink-soft)]/50 focus:border-[var(--ink)] focus:outline-none transition"
+                        className="w-full rounded-lg border border-[var(--hairline)] bg-[var(--paper)] px-3.5 py-2.5 text-sm font-sans placeholder:italic placeholder:text-[var(--ink-soft)]/50 focus:border-[var(--ink)] focus:outline-none transition disabled:opacity-60"
                       />
-                      {collaboratorEmail.trim() && (
+                      {collaboratorEmail.trim() && isOwner && (
                         <button
                           type="button"
                           onClick={() => setCollaboratorEmail("")}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--ink-soft)] hover:text-[var(--accent)] cursor-pointer"
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--accent)] hover:text-red-600 cursor-pointer"
                         >
                           Clear
                         </button>
                       )}
                     </div>
                     <p className="mt-1.5 text-[11px] leading-normal text-[var(--ink-soft)]">
-                      Enter your partner&apos;s Google email. Leave blank to keep this volume personal to your account.
+                      Enter your partner&apos;s Google email. Leave blank to keep this volume strictly personal to your account.
                     </p>
                   </div>
 
+                  {/* Active Co-Author Status Pill */}
                   {collaboratorEmail.trim() ? (
-                    <div className="flex items-start gap-2.5 rounded-lg border border-emerald-500/25 bg-emerald-500/10 p-3 text-xs text-emerald-800 dark:text-emerald-300">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                      <div className="space-y-1">
-                        <div className="font-semibold">Collaborative Book Enabled</div>
-                        <div className="text-[11px] leading-relaxed opacity-90">
-                          This volume will appear on both of your bookshelves when signed in with Google. Both of you can open this book, read entries, add new memories, and upload photos together.
+                    <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3.5 text-xs text-emerald-800 dark:text-emerald-300 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 font-semibold">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>Connected Co-Author: {collaboratorEmail.trim()}</span>
                         </div>
+                        <span className="text-[10px] font-medium opacity-80 uppercase tracking-wide">
+                          {book.inviteStatus === "accepted" ? "Accepted" : "Invitation Sent"}
+                        </span>
                       </div>
+                      <p className="text-[11px] leading-relaxed opacity-90">
+                        This volume will appear on both bookshelves. Whichever memories or photos either of you upload stay permanently locked and preserved in this book.
+                      </p>
                     </div>
                   ) : (
                     <div className="flex items-start gap-2.5 rounded-lg border border-[var(--hairline)] bg-[var(--paper)]/60 p-3 text-xs text-[var(--ink-soft)]">
@@ -1734,15 +1815,122 @@ export function VolumeEditorModal({
                     </div>
                   )}
 
-                  {(book.ownerEmail || book.sharedBy) && (
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3 text-[11px] text-[var(--ink-soft)]">
+                  {/* Shareable Invite Link button */}
+                  <div className="rounded-xl border border-[var(--hairline)] bg-[var(--paper)]/80 p-3.5 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-semibold text-[var(--ink)]">
+                          Instant Shareable Invite Link
+                        </div>
+                        <div className="text-[11px] text-[var(--ink-soft)]">
+                          Works across all browsers, accounts, incognito tabs, and phones.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const payload = createBookInvitePayload(previewBook);
+                          const origin =
+                            typeof window !== "undefined"
+                              ? window.location.origin + window.location.pathname
+                              : "";
+                          const link = `${origin}?invite=${payload}`;
+                          void navigator.clipboard.writeText(link);
+                          setCopiedInvite(true);
+                          setTimeout(() => setCopiedInvite(false), 2500);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-[var(--ink)] px-3.5 py-1.5 text-xs font-medium text-[var(--paper-light)] hover:bg-[var(--walnut-deep)] transition cursor-pointer shadow-sm"
+                      >
+                        {copiedInvite ? (
+                          <>
+                            <Check className="h-3.5 w-3.5 text-emerald-400" />
+                            <span>Invite Link Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3.5 w-3.5" />
+                            <span>Copy Invite Link</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    {copiedInvite && (
+                      <p className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                        Link copied to clipboard! Share it with your partner so they can immediately accept and place this volume on their shelf.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Creator / Collaborator details & locked status */}
+                  <div className="rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)]/50 p-3 space-y-2 text-xs text-[var(--ink-soft)]">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <span>
-                        Created by: <strong className="font-medium text-[var(--ink)]">{book.ownerEmail || book.sharedBy}</strong>
+                        Created by:{" "}
+                        <strong className="font-semibold text-[var(--ink)]">
+                          {book.ownerEmail || book.sharedBy || currentUser?.email || "You (Owner)"}
+                        </strong>
                       </span>
-                      {book.isShared && (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent)]">
-                          Shared Volume
+                      {isOwner ? (
+                        <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                          (You are the Book Creator)
                         </span>
+                      ) : (
+                        <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                          (Invited Co-Author)
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] leading-relaxed">
+                      🔒 <strong>Locked Preservation:</strong> Entries and photographs uploaded by both co-authors are permanently retained in this volume. Even if a collaborator leaves, the book&apos;s memories remain safe and will not be lost.
+                    </p>
+                  </div>
+
+                  {/* Creator-Only Deletion vs Collaborator Leave */}
+                  {mode === "edit" && onDelete && (
+                    <div className="border-t border-[var(--hairline)] pt-3">
+                      {!confirmDelete ? (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDelete(true)}
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wider uppercase text-[var(--accent)] hover:text-red-600 transition cursor-pointer"
+                        >
+                          {isOwner ? (
+                            <>
+                              <Trash2 className="h-3.5 w-3.5" />
+                              <span>Delete Volume (Creator Only)</span>
+                            </>
+                          ) : (
+                            <>
+                              <LogOut className="h-3.5 w-3.5" />
+                              <span>Leave Shared Book</span>
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-[var(--accent)]/40 bg-[var(--danger-bg)] p-3 text-xs">
+                          <span className="text-[var(--danger-ink)]">
+                            {isOwner
+                              ? `Permanently delete “${book.title}” and its shelf spot?`
+                              : `Remove “${book.title}” from your shelf? Memories remain safe.`}
+                          </span>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDelete(false)}
+                              className="rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-3 py-1 text-xs cursor-pointer"
+                            >
+                              Keep
+                            </button>
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() => void handleDelete()}
+                              className="rounded-full bg-[var(--accent)] px-3 py-1 text-xs font-semibold text-white cursor-pointer"
+                            >
+                              {isOwner ? "Delete Book" : "Leave Book"}
+                            </button>
+                          </div>
+                        </div>
                       )}
                     </div>
                   )}
@@ -1901,22 +2089,33 @@ export function VolumeEditorModal({
                 </div>
               </div>
 
-              {/* Remove Book option when editing & > 1 book exists */}
+              {/* Delete / Leave Book option when editing & > 1 book exists */}
               {mode === "edit" && onDelete && shelfBooks.length > 1 && (
                 <div className="border-t border-[var(--hairline)] pt-4">
                   {!confirmDelete ? (
                     <button
                       type="button"
                       onClick={() => setConfirmDelete(true)}
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wider uppercase text-[var(--accent)] cursor-pointer hover:underline"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wider uppercase text-[var(--accent)] hover:text-red-600 cursor-pointer"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      <span>Remove This Book From Shelf</span>
+                      {isOwner ? (
+                        <>
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>Delete Volume (Creator Only)</span>
+                        </>
+                      ) : (
+                        <>
+                          <LogOut className="h-3.5 w-3.5" />
+                          <span>Leave Shared Book</span>
+                        </>
+                      )}
                     </button>
                   ) : (
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--accent)]/40 bg-[var(--danger-bg)] p-3">
                       <span className="text-xs text-[var(--danger-ink)]">
-                        Remove “{book.title}” and its memories from the shelf?
+                        {isOwner
+                          ? `Permanently delete “${book.title}” from shelf?`
+                          : `Remove “${book.title}” from shelf? Memories stay safe.`}
                       </span>
                       <div className="flex gap-2">
                         <button
@@ -1932,7 +2131,7 @@ export function VolumeEditorModal({
                           onClick={() => void handleDelete()}
                           className="rounded-full bg-[var(--accent)] px-3 py-1 text-xs font-semibold text-white cursor-pointer"
                         >
-                          Remove Book
+                          {isOwner ? "Delete Book" : "Leave Book"}
                         </button>
                       </div>
                     </div>
@@ -2179,29 +2378,80 @@ export function VolumeEditorModal({
             </div>
           )}
 
-          <div className="flex justify-end gap-3 border-t border-[var(--hairline)] pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={tab === "memory" ? memorySaving || memoryUploading : saving || uploadingCover}
-              className="rounded-full bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)] disabled:opacity-50"
-            >
-              {tab === "memory"
-                ? memorySaving
-                  ? "Saving Memory..."
-                  : "Save Memory to Volume"
-                : saving
-                  ? "Saving..."
-                  : mode === "create"
-                    ? "Place Book on Shelf"
-                    : "Save Changes"}
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--hairline)] pt-4">
+            {mode === "edit" && onDelete && shelfBooks.length > 1 ? (
+              <div>
+                {!confirmDelete ? (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(true)}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wider uppercase text-[var(--accent)] hover:text-red-600 transition cursor-pointer"
+                  >
+                    {isOwner ? (
+                      <>
+                        <Trash2 className="h-3.5 w-3.5" />
+                        <span>Delete Volume</span>
+                      </>
+                    ) : (
+                      <>
+                        <LogOut className="h-3.5 w-3.5" />
+                        <span>Leave Shared Book</span>
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--accent)]/40 bg-[var(--danger-bg)] p-2 text-xs">
+                    <span className="text-[var(--danger-ink)]">
+                      {isOwner
+                        ? `Permanently delete “${book.title}”?`
+                        : `Remove “${book.title}” from your shelf? (Memories stay locked)`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(false)}
+                      className="rounded-full border border-[var(--hairline)] bg-[var(--paper-light)] px-2.5 py-0.5 text-xs cursor-pointer"
+                    >
+                      Keep
+                    </button>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void handleDelete()}
+                      className="rounded-full bg-[var(--accent)] px-3 py-0.5 text-xs font-semibold text-white cursor-pointer"
+                    >
+                      {isOwner ? "Delete" : "Leave"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div />
+            )}
+
+            <div className="flex items-center gap-3 ml-auto">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold tracking-wider uppercase cursor-pointer hover:border-[var(--ink)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={tab === "memory" ? memorySaving || memoryUploading : saving || uploadingCover}
+                className="rounded-full bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase cursor-pointer hover:bg-[var(--walnut-deep)] disabled:opacity-50"
+              >
+                {tab === "memory"
+                  ? memorySaving
+                    ? "Saving Memory..."
+                    : "Save Memory to Volume"
+                  : saving
+                    ? "Saving..."
+                    : mode === "create"
+                      ? "Place Book on Shelf"
+                      : "Save Changes"}
+              </button>
+            </div>
           </div>
         </form>
       </div>

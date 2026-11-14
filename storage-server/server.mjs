@@ -902,6 +902,10 @@ function applyBookPatch(current, patch, scopeId = LEGACY_SCOPE_ID) {
       (typeof patch.ownerEmail === "string" && patch.ownerEmail
         ? patch.ownerEmail.trim().toLowerCase()
         : undefined),
+    inviteStatus:
+      typeof patch.inviteStatus === "string" ? patch.inviteStatus : current.inviteStatus,
+    acceptedBy:
+      Array.isArray(patch.acceptedBy) ? patch.acceptedBy : current.acceptedBy,
   };
 }
 
@@ -2064,6 +2068,75 @@ app.delete("/api/books/:id", requireAuth, async (req, res) => {
     return;
   }
   res.json(result);
+});
+
+const presenceByBook = new Map(); // bookId -> Map<viewerId, viewerInfo>
+
+app.post("/api/books/:id/accept", requireAuth, async (req, res) => {
+  const bookId = String(req.params.id || "");
+  const resolved = findBookScope(bookId, req);
+  if (!resolved) {
+    res.status(404).json({ error: "Book not found." });
+    return;
+  }
+  const userEmail = (req.authUser?.email || "").toLowerCase();
+  await mutateDb((db) => {
+    const b = db.books.find((item) => item.id === bookId);
+    if (b) {
+      if (!Array.isArray(b.acceptedBy)) b.acceptedBy = [];
+      if (userEmail && !b.acceptedBy.includes(userEmail)) {
+        b.acceptedBy.push(userEmail);
+      }
+      b.inviteStatus = "accepted";
+    }
+  }, resolved.scopeId);
+  res.json({ ok: true });
+});
+
+app.post("/api/books/:id/presence", requireAuth, (req, res) => {
+  const bookId = String(req.params.id || "");
+  const user = req.authUser || {};
+  const viewerId = user.id || req.storageScope;
+  const viewerInfo = {
+    id: viewerId,
+    email: user.email || "guest",
+    name: user.displayName || user.username || "Reader",
+    avatarUrl: user.avatarUrl || null,
+    lastSeen: Date.now(),
+  };
+
+  let bookViewers = presenceByBook.get(bookId);
+  if (!bookViewers) {
+    bookViewers = new Map();
+    presenceByBook.set(bookId, bookViewers);
+  }
+  bookViewers.set(viewerId, viewerInfo);
+
+  // Clean stale viewers (> 20 seconds)
+  const now = Date.now();
+  for (const [id, info] of bookViewers.entries()) {
+    if (now - info.lastSeen > 20000) {
+      bookViewers.delete(id);
+    }
+  }
+
+  res.json({ viewers: Array.from(bookViewers.values()) });
+});
+
+app.get("/api/books/:id/presence", requireAuth, (req, res) => {
+  const bookId = String(req.params.id || "");
+  const bookViewers = presenceByBook.get(bookId);
+  if (!bookViewers) {
+    res.json({ viewers: [] });
+    return;
+  }
+  const now = Date.now();
+  for (const [id, info] of bookViewers.entries()) {
+    if (now - info.lastSeen > 20000) {
+      bookViewers.delete(id);
+    }
+  }
+  res.json({ viewers: Array.from(bookViewers.values()) });
 });
 
 app.get("/api/memories", requireAuth, (req, res) => {

@@ -10,7 +10,7 @@ import {
   getPageAccentColor,
 } from "@/lib/memory-layout";
 import { resolveMediaUrl } from "@/lib/storage-client";
-import type { DiaryBook } from "@/lib/types";
+import type { ActiveViewer, DiaryBook } from "@/lib/types";
 import { createFrontCover } from "@/three/cover-art";
 
 export type BookSpread = {
@@ -33,12 +33,14 @@ export function FlipBookReader({
   activeIndex,
   onChangeIndex,
   opening: _opening = false,
+  activeViewers = [],
 }: {
   book: DiaryBook;
   spreads: BookSpread[];
   activeIndex: number;
   onChangeIndex: (index: number) => void;
   opening?: boolean;
+  activeViewers?: ActiveViewer[];
 }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const animRafRef = useRef<number>(0);
@@ -645,6 +647,32 @@ export function FlipBookReader({
           aria-hidden="true"
         />
 
+        {/* Live Reader Presence inside the book with Glowing Green Dot */}
+        {activeViewers && activeViewers.length > 0 && (
+          <div
+            className="absolute -top-3.5 left-6 sm:left-10 z-30 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-[var(--paper-light)]/95 px-2.5 py-0.5 text-[10px] font-sans font-medium text-emerald-800 dark:text-emerald-300 shadow-sm backdrop-blur-md transition-opacity duration-300"
+            style={{
+              opacity: coverDone ? 1 : Math.max(0, (coverProgress - 0.55) / 0.35),
+            }}
+            title={activeViewers.map((v) => `${v.name || v.email} (Active now)`).join(", ")}
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span>
+              {activeViewers.length > 1
+                ? `${activeViewers.length} Lively Reading`
+                : "Live · Reading Now"}
+            </span>
+            {activeViewers.length > 1 && (
+              <span className="opacity-70 text-[9px] hidden md:inline">
+                ({activeViewers.map((v) => v.name || v.email.split("@")[0]).join(", ")})
+              </span>
+            )}
+          </div>
+        )}
+
         {isMobileSingle ? (
           /* Mobile / Narrow Portrait: Single Fixed-Size Sheet with Real-Time Cover Opening + 3D Page Turn */
           <div
@@ -1105,19 +1133,33 @@ export function FlipBookReader({
           <span>Prev Page</span>
         </button>
 
-        <span
-          data-testid="flipbook-indicator"
-          className="text-[11px] tracking-[0.14em] uppercase"
-        >
-          {isMobileSingle
-            ? `Page ${String(currentMobilePage + 1).padStart(2, "0")} of ${String(totalPages).padStart(2, "0")} · ${currentSpread?.label || ""}`
-            : currentSpread?.label ||
-              `Spread ${safeSpreadIndex + 1} of ${spreads.length}`}
-          <span className="hidden sm:inline opacity-60">
-            {" "}
-            · Drag page edge or use arrow keys to flip
+        <div className="flex items-center gap-2">
+          {activeViewers && activeViewers.length > 0 && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300"
+              title={activeViewers.map((v) => `${v.name || v.email} (Active now)`).join(", ")}
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span>{activeViewers.length > 1 ? `${activeViewers.length} Active` : "Live"}</span>
+            </span>
+          )}
+          <span
+            data-testid="flipbook-indicator"
+            className="text-[11px] tracking-[0.14em] uppercase"
+          >
+            {isMobileSingle
+              ? `Page ${String(currentMobilePage + 1).padStart(2, "0")} of ${String(totalPages).padStart(2, "0")} · ${currentSpread?.label || ""}`
+              : currentSpread?.label ||
+                `Spread ${safeSpreadIndex + 1} of ${spreads.length}`}
+            <span className="hidden sm:inline opacity-60">
+              {" "}
+              · Drag page edge or use arrow keys to flip
+            </span>
           </span>
-        </span>
+        </div>
 
         <button
           type="button"

@@ -4,20 +4,24 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, BookOpen, ChevronDown, ChevronUp, Feather, Images, PenLine, Plus, SlidersHorizontal, Users } from "lucide-react";
+import { ArrowUpRight, BookOpen, Check, CheckCircle2, ChevronDown, ChevronUp, Feather, Images, Mail, PenLine, Plus, SlidersHorizontal, Sparkles, Users } from "lucide-react";
 import { defaultBooks } from "@/lib/default-books";
 import {
   AUTH_REQUIRED_EVENT,
+  acceptSharedBook,
   createBook,
   deleteBook,
   fetchBooks,
   fetchMemories,
+  getCachedUser,
   isStorageAuthError,
   isUserAuthenticated,
   loadCachedMemories,
   loadCachedServerBooks,
+  parseBookInvitePayload,
   resolveMediaUrl,
   saveCachedMemories,
+  saveToSharedRegistry,
   updateBook,
   type BookPatchInput,
 } from "@/lib/storage-client";
@@ -50,13 +54,16 @@ function resolveBookIndex(list: DiaryBook[], bookId: string | null): number {
 function UrlParamsSync({
   onBookParam,
   onStorageParam,
+  onInviteParam,
 }: {
   onBookParam: (bookId: string) => void;
   onStorageParam: () => void;
+  onInviteParam: (invitePayload: string) => void;
 }) {
   const searchParams = useSearchParams();
   const requestedBookId = searchParams.get("book");
   const openStorageParam = searchParams.get("storage") === "1";
+  const inviteParam = searchParams.get("invite");
 
   useEffect(() => {
     if (requestedBookId) onBookParam(requestedBookId);
@@ -65,6 +72,10 @@ function UrlParamsSync({
   useEffect(() => {
     if (openStorageParam) onStorageParam();
   }, [openStorageParam, onStorageParam]);
+
+  useEffect(() => {
+    if (inviteParam) onInviteParam(inviteParam);
+  }, [inviteParam, onInviteParam]);
 
   return null;
 }
@@ -89,6 +100,7 @@ function ShelfExperienceInner() {
     { mode: "edit"; book: DiaryBook } | { mode: "create" } | null
   >(null);
   const [storageOpen, setStorageOpen] = useState(false);
+  const [pendingInvite, setPendingInvite] = useState<DiaryBook | null>(null);
 
   const booksRef = useRef(books);
   booksRef.current = books;
@@ -105,6 +117,47 @@ function ShelfExperienceInner() {
       throw err;
     }
   }, []);
+
+  const handleInviteParam = useCallback((rawPayload: string) => {
+    const parsed = parseBookInvitePayload(rawPayload);
+    if (parsed) {
+      setPendingInvite(parsed);
+    }
+  }, []);
+
+  const handleAcceptInvite = useCallback(
+    async (bookToAccept: DiaryBook) => {
+      try {
+        await acceptSharedBook(bookToAccept.id);
+        saveToSharedRegistry({
+          ...bookToAccept,
+          inviteStatus: "accepted",
+        });
+        if (typeof window !== "undefined") {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("invite");
+          window.history.replaceState(
+            {},
+            "",
+            url.pathname + (url.search ? "?" + url.searchParams.toString() : ""),
+          );
+        }
+        setPendingInvite(null);
+        await refreshBooks();
+        const updatedList = await fetchBooks();
+        const targetIdx = updatedList.books.findIndex((b) => b.id === bookToAccept.id);
+        if (targetIdx >= 0) {
+          engineRef.current?.focusBook(targetIdx);
+          setSelectedIndex(targetIdx);
+          setActiveIndex(targetIdx);
+          setMode("inspect");
+        }
+      } catch {
+        setPendingInvite(null);
+      }
+    },
+    [refreshBooks],
+  );
 
   useEffect(() => {
     const cached = loadCachedServerBooks();
@@ -622,9 +675,30 @@ function ShelfExperienceInner() {
 
               <h2 className="mt-3">{selectedBook.title}</h2>
               <p className="book-details__author">{selectedBook.subtitle}</p>
-              {selectedBook.isShared && (
-                <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2.5 py-1 text-[10px] font-semibold text-[var(--accent)]">
-                  <Users className="h-3 w-3" />
+              {selectedBook.isShared && selectedBook.inviteStatus === "pending" ? (
+                <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold flex items-center gap-1.5">
+                      <Mail className="h-3.5 w-3.5 text-amber-600" />
+                      Shared Book Invitation
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void handleAcceptInvite(selectedBook)}
+                      className="rounded-full bg-[var(--ink)] px-3 py-1 text-[10px] font-semibold text-[var(--paper-light)] hover:bg-[var(--walnut-deep)] cursor-pointer"
+                    >
+                      Accept & Place on Shelf
+                    </button>
+                  </div>
+                  <p className="text-[11px] leading-relaxed opacity-90 m-0">
+                    {selectedBook.ownerEmail || selectedBook.sharedBy
+                      ? `${selectedBook.ownerEmail || selectedBook.sharedBy} invited you to co-author this volume.`
+                      : "You have an invitation to co-author this volume."}
+                  </p>
+                </div>
+              ) : selectedBook.isShared ? (
+                <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-800 dark:text-emerald-300">
+                  <Users className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
                   <span>
                     {selectedBook.sharedBy
                       ? `Co-authored · Created by ${selectedBook.sharedBy}`
@@ -633,7 +707,7 @@ function ShelfExperienceInner() {
                         : "Co-authored Volume"}
                   </span>
                 </div>
-              )}
+              ) : null}
               {selectedBook.description && (
                 <p className="book-details__description">
                   {selectedBook.description}
@@ -793,10 +867,72 @@ function ShelfExperienceInner() {
         />
       )}
 
+      {/* Floating Shared Book Invitation Card */}
+      {pendingInvite && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm"
+        >
+          <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--paper-light)] p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-4">
+              <div
+                className="grid h-12 w-10 shrink-0 place-items-center rounded-md border border-black/10 shadow-sm"
+                style={{ backgroundColor: pendingInvite.cover || "#8c3f3d" }}
+              >
+                <BookOpen className="h-5 w-5 text-white/90" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 text-[10px] font-semibold tracking-widest uppercase text-[var(--accent)]">
+                  <Sparkles className="h-3 w-3" />
+                  <span>Shared Memory Book Invitation</span>
+                </div>
+                <h3 className="mt-1 font-serif text-lg font-bold text-[var(--ink)]">
+                  {pendingInvite.title}
+                </h3>
+                {pendingInvite.subtitle && (
+                  <p className="font-serif text-xs italic text-[var(--ink-soft)] mt-0.5">
+                    {pendingInvite.subtitle}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-[var(--hairline)] bg-[var(--paper)] p-3 text-xs text-[var(--ink-soft)] space-y-1.5">
+              <div className="flex items-center justify-between font-medium text-[var(--ink)]">
+                <span>Invited by:</span>
+                <span>{pendingInvite.ownerEmail || "Co-Author Partner"}</span>
+              </div>
+              <p className="text-[11px] leading-relaxed m-0">
+                You were invited to co-author this memory book. When accepted, this volume will be permanently placed on your bookshelf. Both accounts can view entries, upload photos, and read together in real time!
+              </p>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setPendingInvite(null)}
+                className="rounded-full border border-[var(--hairline)] px-4 py-2 text-xs font-semibold tracking-wider text-[var(--ink-soft)] uppercase hover:text-[var(--ink)] cursor-pointer"
+              >
+                Decline
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleAcceptInvite(pendingInvite)}
+                className="rounded-full bg-[var(--ink)] px-5 py-2 text-xs font-semibold tracking-widest text-[var(--paper-light)] uppercase hover:bg-[var(--walnut-deep)] transition cursor-pointer shadow-md"
+              >
+                Accept & Place on Shelf
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Suspense fallback={null}>
         <UrlParamsSync
           onBookParam={handleBookParam}
           onStorageParam={handleOpenStorageParam}
+          onInviteParam={handleInviteParam}
         />
       </Suspense>
     </main>

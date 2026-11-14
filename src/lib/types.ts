@@ -105,10 +105,20 @@ export type DiaryBook = {
   collaboratorEmail?: string | null;
   isShared?: boolean;
   sharedBy?: string | null;
+  inviteStatus?: "pending" | "accepted" | "declined";
+  acceptedBy?: string[];
   memoryCount?: number;
   photoCount?: number;
   latestMemoryDate?: string | null;
   latestMemoryTitle?: string | null;
+};
+
+export type ActiveViewer = {
+  id: string;
+  email: string;
+  name: string;
+  avatarUrl?: string | null;
+  lastSeen: number;
 };
 
 export type AlbumStyle = "portrait" | "polaroid" | "grid" | "borderless" | "filmstrip";

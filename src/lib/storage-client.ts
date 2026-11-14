@@ -1,5 +1,6 @@
 import { defaultBooks } from "./default-books";
 import type {
+  ActiveViewer,
   AlbumPhoto,
   AlbumStyle,
   AuthStatusResponse,
@@ -426,6 +427,17 @@ async function deleteFromStore(storeName: "books" | "memories", id: string): Pro
   });
 }
 
+async function getFromStore<T>(storeName: "books" | "memories", id: string): Promise<T | null> {
+  if (typeof indexedDB === "undefined") return null;
+  const db = await openFallbackDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, "readonly");
+    const req = tx.objectStore(storeName).get(id);
+    req.onsuccess = () => resolve((req.result as T) ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 const OFFLINE_BOOK_ORDER_KEY = "mydiary_offline_book_order_v9";
 const SERVER_BOOKS_CACHE_KEY = "mydiary_server_books_cache_v9";
 
@@ -547,6 +559,238 @@ export function clearCachedMemories(bookId?: string) {
     }
   } catch {
     // Ignore storage issues
+  }
+}
+
+const SHARED_REGISTRY_KEY = "mydiary_shared_books_registry_v1";
+const PRESENCE_STORAGE_KEY = "mydiary_live_presence_v1";
+
+export function loadFromSharedRegistry(userEmail?: string | null): DiaryBook[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(SHARED_REGISTRY_KEY);
+    if (!raw) return [];
+    const all = JSON.parse(raw) as DiaryBook[];
+    if (!Array.isArray(all)) return [];
+    if (!userEmail) return all;
+    const norm = userEmail.toLowerCase().trim();
+    return all.filter((b) => {
+      const owner = (b.ownerEmail || "").toLowerCase().trim();
+      const collab = (b.collaboratorEmail || "").toLowerCase().trim();
+      const accepted = Array.isArray(b.acceptedBy)
+        ? b.acceptedBy.map((e) => e.toLowerCase().trim())
+        : [];
+      return (
+        owner === norm ||
+        collab === norm ||
+        accepted.includes(norm) ||
+        b.isShared
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
+export function saveToSharedRegistry(book: DiaryBook) {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(SHARED_REGISTRY_KEY);
+    let all: DiaryBook[] = [];
+    if (raw) {
+      try {
+        all = JSON.parse(raw);
+        if (!Array.isArray(all)) all = [];
+      } catch {
+        all = [];
+      }
+    }
+    const idx = all.findIndex((item) => item.id === book.id);
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], ...book };
+    } else {
+      all.push({ ...book });
+    }
+    window.localStorage.setItem(SHARED_REGISTRY_KEY, JSON.stringify(all));
+    try {
+      if (typeof BroadcastChannel !== "undefined") {
+        const bc = new BroadcastChannel("mydiary_sync_channel");
+        bc.postMessage({ type: "book_updated", bookId: book.id });
+        bc.close();
+      }
+    } catch {}
+  } catch {
+    // Ignore storage quota issues
+  }
+}
+
+export function removeFromSharedRegistry(bookId: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(SHARED_REGISTRY_KEY);
+    if (!raw) return;
+    const all = JSON.parse(raw) as DiaryBook[];
+    if (!Array.isArray(all)) return;
+    const filtered = all.filter((item) => item.id !== bookId);
+    window.localStorage.setItem(SHARED_REGISTRY_KEY, JSON.stringify(filtered));
+  } catch {
+    // Ignore storage issues
+  }
+}
+
+export function createBookInvitePayload(book: DiaryBook): string {
+  try {
+    const minimal = {
+      id: book.id,
+      title: book.title,
+      shortTitle: book.shortTitle,
+      subtitle: book.subtitle,
+      yearLabel: book.yearLabel,
+      description: book.description,
+      quote: book.quote,
+      quoteBy: book.quoteBy,
+      cover: book.cover,
+      secondary: book.secondary,
+      accent: book.accent,
+      ink: book.ink,
+      motif: book.motif,
+      coverTemplate: book.coverTemplate,
+      spineStyle: book.spineStyle,
+      paperStyle: book.paperStyle,
+      fontStyle: book.fontStyle,
+      height: book.height,
+      thickness: book.thickness,
+      width: book.width,
+      ownerEmail: book.ownerEmail || getCachedUser()?.email || "partner",
+      collaboratorEmail: book.collaboratorEmail || "",
+      isShared: true,
+      inviteStatus: "pending",
+    };
+    const jsonStr = JSON.stringify(minimal);
+    if (typeof window !== "undefined" && typeof window.btoa === "function") {
+      return encodeURIComponent(btoa(encodeURIComponent(jsonStr)));
+    }
+    return encodeURIComponent(Buffer.from(jsonStr, "utf-8").toString("base64"));
+  } catch {
+    return "";
+  }
+}
+
+export function parseBookInvitePayload(raw: string): DiaryBook | null {
+  try {
+    const decodedUri = decodeURIComponent(raw);
+    let jsonStr = "";
+    if (typeof window !== "undefined" && typeof window.atob === "function") {
+      jsonStr = decodeURIComponent(atob(decodedUri));
+    } else {
+      jsonStr = Buffer.from(decodedUri, "base64").toString("utf-8");
+    }
+    const parsed = JSON.parse(jsonStr) as Partial<DiaryBook>;
+    if (!parsed || !parsed.id || !parsed.title) return null;
+    return {
+      ...parsed,
+      isShared: true,
+      inviteStatus: "pending",
+    } as DiaryBook;
+  } catch {
+    return null;
+  }
+}
+
+export async function acceptSharedBook(bookId: string): Promise<void> {
+  const currentUser = getCachedUser();
+  const userEmail = (currentUser?.email || "").toLowerCase().trim();
+  try {
+    await serverFetch(`/api/books/${encodeURIComponent(bookId)}/accept`, {
+      method: "POST",
+    });
+  } catch {
+    // Offline fallback
+  }
+
+  try {
+    const book = await getFromStore<DiaryBook>("books", bookId);
+    if (book) {
+      const acceptedBy = Array.isArray(book.acceptedBy) ? [...book.acceptedBy] : [];
+      if (userEmail && !acceptedBy.includes(userEmail)) {
+        acceptedBy.push(userEmail);
+      }
+      const updated: DiaryBook = {
+        ...book,
+        inviteStatus: "accepted",
+        acceptedBy,
+      };
+      await putInStore("books", updated);
+      saveToSharedRegistry(updated);
+    }
+  } catch {
+    // Ignore storage issues
+  }
+}
+
+export async function sendBookPresence(
+  bookId: string,
+  user: { id?: string; email?: string; name?: string; avatarUrl?: string | null },
+): Promise<ActiveViewer[]> {
+  try {
+    const res = await serverFetch<{ viewers: ActiveViewer[] }>(
+      `/api/books/${encodeURIComponent(bookId)}/presence`,
+      { method: "POST" },
+    );
+    if (res && Array.isArray(res.viewers)) {
+      return res.viewers;
+    }
+  } catch {
+    // Server offline or not configured: fallback to cross-tab / local storage presence
+  }
+
+  if (typeof window === "undefined") return [];
+
+  try {
+    const now = Date.now();
+    const myViewerId = user.id || user.email || "local_reader";
+    const myViewer: ActiveViewer = {
+      id: myViewerId,
+      email: user.email || "guest@mydiary.app",
+      name: user.name || "Reader",
+      avatarUrl: user.avatarUrl || null,
+      lastSeen: now,
+    };
+
+    const key = `${PRESENCE_STORAGE_KEY}_${bookId}`;
+    let map: Record<string, ActiveViewer> = {};
+    const raw = window.localStorage.getItem(key);
+    if (raw) {
+      try {
+        map = JSON.parse(raw);
+      } catch {
+        map = {};
+      }
+    }
+
+    map[myViewerId] = myViewer;
+
+    const active: ActiveViewer[] = [];
+    for (const [id, v] of Object.entries(map)) {
+      if (now - v.lastSeen < 18000) {
+        active.push(v);
+      } else {
+        delete map[id];
+      }
+    }
+
+    window.localStorage.setItem(key, JSON.stringify(map));
+    return active;
+  } catch {
+    return [
+      {
+        id: user.id || "local_reader",
+        email: user.email || "you",
+        name: user.name || "You",
+        avatarUrl: user.avatarUrl || null,
+        lastSeen: Date.now(),
+      },
+    ];
   }
 }
 
@@ -688,6 +932,17 @@ async function getOfflineBooks(): Promise<DiaryBook[]> {
     ? [...order, ...Array.from(bookMap.keys()).filter((id) => !order.includes(id))]
     : Array.from(bookMap.keys());
 
+  const currentUser = getCachedUser();
+  const sharedFromRegistry = loadFromSharedRegistry(currentUser?.email);
+  for (const shared of sharedFromRegistry) {
+    if (!bookMap.has(shared.id)) {
+      bookMap.set(shared.id, { ...shared });
+      if (!orderedIds.includes(shared.id)) {
+        orderedIds.push(shared.id);
+      }
+    }
+  }
+
   const result: DiaryBook[] = [];
   for (const id of orderedIds) {
     const resolved = bookMap.get(id);
@@ -826,6 +1081,9 @@ export async function createBook(
       body: JSON.stringify(input),
     });
     saveCachedServerBooks(res.books);
+    if (res.book.isShared) {
+      saveToSharedRegistry(res.book);
+    }
     return { book: res.book, books: res.books, mode: "server" };
   } catch (err) {
     if (isStorageAuthError(err)) throw err;
@@ -844,6 +1102,8 @@ export async function createBook(
       n += 1;
     }
     const { positionIndex, ...rest } = input;
+    const currentUser = getCachedUser();
+    const isShared = Boolean(input.collaboratorEmail?.trim());
     const book: DiaryBook = {
       id,
       title: baseTitle,
@@ -872,10 +1132,21 @@ export async function createBook(
       height: input.height ?? 2.12,
       thickness: input.thickness ?? 0.24,
       width: input.width ?? 1.3,
+      ownerEmail: input.ownerEmail || currentUser?.email || undefined,
+      collaboratorEmail: input.collaboratorEmail?.trim().toLowerCase() || null,
+      collaborators: input.collaboratorEmail?.trim()
+        ? [input.collaboratorEmail.trim().toLowerCase()]
+        : [],
+      isShared,
+      inviteStatus: isShared ? "pending" : undefined,
+      acceptedBy: isShared && currentUser?.email ? [currentUser.email.toLowerCase()] : [],
       ...rest,
     };
     await seedOfflineBooksIfEmpty();
     await putInStore("books", book);
+    if (isShared) {
+      saveToSharedRegistry(book);
+    }
     const ids = books.map((b) => b.id);
     const insertAt =
       typeof positionIndex === "number" && Number.isFinite(positionIndex)
@@ -907,6 +1178,9 @@ export async function updateBook(
     );
     const list = res.books ?? (await fetchBooks()).books;
     saveCachedServerBooks(list);
+    if (res.book.isShared) {
+      saveToSharedRegistry(res.book);
+    }
     return { book: res.book, books: list, mode: "server" };
   } catch (err) {
     if (isStorageAuthError(err)) throw err;
@@ -919,6 +1193,19 @@ export async function updateBook(
     if (!existing) throw new Error("Book volume not found");
     const { positionIndex, ...rest } = patch;
     const updated = { ...existing, ...rest };
+    if (typeof patch.collaboratorEmail === "string" && patch.collaboratorEmail.trim()) {
+      updated.collaboratorEmail = patch.collaboratorEmail.trim().toLowerCase();
+      updated.collaborators = [updated.collaboratorEmail];
+      updated.isShared = true;
+      saveToSharedRegistry(updated);
+    } else if (patch.collaboratorEmail === null || patch.collaboratorEmail === "") {
+      updated.collaboratorEmail = null;
+      updated.collaborators = [];
+      updated.isShared = false;
+      removeFromSharedRegistry(bookId);
+    } else if (updated.isShared) {
+      saveToSharedRegistry(updated);
+    }
     await putInStore("books", updated);
     if (typeof positionIndex === "number" && Number.isFinite(positionIndex) && currentIdx >= 0) {
       const ids = books.map((b) => b.id);
@@ -966,6 +1253,7 @@ export async function deleteBook(
       method: "DELETE",
     });
     saveCachedServerBooks(res.books);
+    removeFromSharedRegistry(bookId);
     return { books: res.books, mode: "server" };
   } catch (err) {
     if (isStorageAuthError(err)) throw err;
@@ -974,15 +1262,30 @@ export async function deleteBook(
     if (books.length <= 1) {
       throw new Error("Keep at least one book on the shelf.");
     }
+    const currentBook = books.find((b) => b.id === bookId);
+    const currentUser = getCachedUser();
+    const isOwner =
+      !currentBook?.sharedBy &&
+      (!currentBook?.ownerEmail ||
+        (currentUser &&
+          currentBook.ownerEmail.toLowerCase().trim() === currentUser.email?.toLowerCase().trim()));
+
     await deleteFromStore("books", bookId);
     const nextIds = books.map((b) => b.id).filter((id) => id !== bookId);
     saveOfflineOrder(nextIds);
-    const memories = await getAllFromStore<MemoryAlbum>("memories");
-    for (const m of memories) {
-      if (m.bookId === bookId) {
-        await deleteFromStore("memories", m.id);
+    removeFromSharedRegistry(bookId);
+
+    // Only delete memories if this was the creator/owner deleting their personal book.
+    // If a collaborator leaves, all memories remain preserved and locked.
+    if (isOwner && !currentBook?.isShared) {
+      const memories = await getAllFromStore<MemoryAlbum>("memories");
+      for (const m of memories) {
+        if (m.bookId === bookId) {
+          await deleteFromStore("memories", m.id);
+        }
       }
     }
+
     const updatedList = await getOfflineBooks();
     return { books: updatedList, mode: "offline-fallback" };
   }
@@ -1176,6 +1479,8 @@ export type SaveMemoryInput = {
   encrypted?: boolean;
   ciphertext?: string;
   iv?: string;
+  authorEmail?: string | null;
+  authorName?: string | null;
 };
 
 export async function createMemory(
@@ -1228,10 +1533,13 @@ export async function createMemory(
     };
   } catch (err) {
     if (isStorageAuthError(err) || isStorageClientError(err)) throw err;
+    const currentUser = getCachedUser();
     const now = new Date().toISOString();
     const memory: MemoryAlbum = {
       ...input,
       id: input.id || crypto.randomUUID(),
+      authorEmail: input.authorEmail || currentUser?.email || undefined,
+      authorName: input.authorName || currentUser?.displayName || currentUser?.email?.split("@")[0] || undefined,
       createdAt: now,
       updatedAt: now,
     };
