@@ -440,9 +440,9 @@ export function FreeformPageSurface({
                       }
                       onPhotoClick?.(photoIndex);
                     }}
-                    className={`flex items-center justify-center w-full overflow-hidden cursor-pointer p-0.5 sm:p-1 ${
+                    className={`block w-full overflow-hidden cursor-pointer relative ${
                       memory.albumStyle === "borderless" || memory.albumStyle === "portrait"
-                        ? "rounded-xl bg-[var(--paper-deep)]/25 shadow-xs"
+                        ? "rounded-xl bg-[var(--paper-deep)]/25 shadow-sm"
                         : "bg-[var(--paper-deep)]/25"
                     }`}
                   >
@@ -450,16 +450,16 @@ export function FreeformPageSurface({
                       src={resolveMediaUrl(photo.url)}
                       alt={photo.caption || `Photo ${photoIndex + 1}`}
                       draggable={false}
-                      className={`max-h-full max-w-full object-contain ${
+                      className={`w-full object-cover ${
                         memory.albumStyle === "borderless" || memory.albumStyle === "portrait"
                           ? sidePhotoBlocks.length > 1 && block.w > 60
-                            ? "h-[26vh] sm:h-[190px] rounded-lg"
+                            ? "h-[26vh] sm:h-[200px] rounded-lg"
                             : sidePhotoBlocks.length > 1
-                              ? "h-[24vh] sm:h-[175px] rounded-lg"
-                              : "h-[48vh] sm:h-[380px] rounded-xl"
+                              ? "h-[24vh] sm:h-[220px] rounded-lg"
+                              : "h-[48vh] sm:h-[440px] rounded-xl"
                           : sidePhotoBlocks.length > 1
-                            ? "h-[22vh] sm:h-[160px]"
-                            : "h-[42vh] sm:h-[320px]"
+                            ? "h-[22vh] sm:h-[180px]"
+                            : "h-[42vh] sm:h-[380px]"
                       }`}
                     />
                   </button>

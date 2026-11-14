@@ -355,27 +355,27 @@ function BookMemoriesContent() {
 
   const renderPhotoCollection = useCallback(
     (mem: MemoryAlbum, photoItems: { photo: AlbumPhoto; idx: number }[]) => {
-      // 1. Frameless Grid (Clean, unbordered fine-art layout with natural aspect fitting)
+      // 1. Frameless Grid (Modern Editorial Photobook — full-bleed photo spreads like Image 1, 4, 5)
       if (mem.albumStyle === "borderless") {
         if (photoItems.length === 1) {
           const { photo, idx } = photoItems[0];
           return (
-            <div className="my-auto flex flex-col items-center justify-center py-1 sm:py-2 w-full">
-              <figure className="m-0 w-full max-w-md mx-auto rounded-xl overflow-hidden border-0 p-0 bg-transparent">
+            <div className="h-full w-full flex flex-col justify-center min-h-0">
+              <figure className="m-0 h-full w-full rounded-lg sm:rounded-xl overflow-hidden shadow-sm relative group bg-[var(--paper-deep)]/25 flex flex-col">
                 <button
                   type="button"
                   data-no-flip="true"
                   onClick={() => setLightboxState({ memory: mem, index: idx })}
-                  className="flex items-center justify-center w-full h-[38vh] sm:h-[320px] overflow-hidden rounded-xl bg-[var(--paper-deep)]/25 p-1 cursor-pointer shadow-xs transition duration-300 hover:shadow-lg"
+                  className="block h-full w-full cursor-pointer overflow-hidden flex-1 relative"
                 >
                   <img
                     src={resolveMediaUrl(photo.url)}
                     alt={photo.caption || `Photo ${idx + 1}`}
-                    className="max-h-full max-w-full object-contain rounded-lg transition duration-300 hover:scale-[1.02] drop-shadow-xs"
+                    className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
                   />
                 </button>
                 {photo.caption && (
-                  <figcaption className="mt-2 text-center text-xs italic text-[var(--page-ink-muted)]">
+                  <figcaption className="absolute bottom-2 left-2 right-2 rounded-md bg-black/45 backdrop-blur-xs px-2.5 py-1 text-center font-serif text-xs italic text-white/95">
                     {photo.caption}
                   </figcaption>
                 )}
@@ -385,24 +385,25 @@ function BookMemoriesContent() {
         }
 
         if (photoItems.length === 2) {
+          // 2 tall vertical photos filling the full page height (Image 1 right page)
           return (
-            <div className="my-auto grid grid-cols-2 gap-2.5 sm:gap-3.5 w-full py-1">
+            <div className="grid grid-cols-2 gap-2 sm:gap-3 h-full w-full min-h-0">
               {photoItems.map(({ photo, idx }) => (
-                <figure key={photo.id} className="m-0 rounded-xl overflow-hidden border-0 p-0 bg-transparent">
+                <figure key={photo.id} className="m-0 h-full w-full rounded-lg sm:rounded-xl overflow-hidden shadow-sm relative group bg-[var(--paper-deep)]/25 flex flex-col min-h-0">
                   <button
                     type="button"
                     data-no-flip="true"
                     onClick={() => setLightboxState({ memory: mem, index: idx })}
-                    className="flex items-center justify-center w-full h-[32vh] sm:h-[270px] overflow-hidden rounded-xl bg-[var(--paper-deep)]/25 p-1 cursor-pointer shadow-xs transition duration-300 hover:shadow-md"
+                    className="block h-full w-full cursor-pointer overflow-hidden flex-1 relative"
                   >
                     <img
                       src={resolveMediaUrl(photo.url)}
                       alt={photo.caption || `Photo ${idx + 1}`}
-                      className="max-h-full max-w-full object-contain rounded-lg transition duration-300 hover:scale-[1.02] drop-shadow-xs"
+                      className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
                     />
                   </button>
                   {photo.caption && (
-                    <figcaption className="mt-1.5 px-1 text-center text-[11px] italic text-[var(--page-ink-muted)] truncate">
+                    <figcaption className="absolute bottom-2 left-2 right-2 rounded bg-black/45 backdrop-blur-xs px-2 py-0.5 text-center font-serif text-[10px] italic text-white/95 truncate">
                       {photo.caption}
                     </figcaption>
                   )}
@@ -413,45 +414,51 @@ function BookMemoriesContent() {
         }
 
         if (photoItems.length === 3) {
-          const [hero, ...others] = photoItems;
+          // Exactly like Image 1 Left Page!
+          // Left column: 1 tall vertical portrait spanning full height
+          // Right column: 2 photos stacked vertically
+          const [hero, ...stacked] = photoItems;
           return (
-            <div className="my-auto flex flex-col gap-2.5 sm:gap-3 w-full py-1">
-              <figure key={hero.photo.id} className="m-0 rounded-xl overflow-hidden border-0 p-0 bg-transparent">
+            <div className="grid grid-cols-2 gap-2 sm:gap-3 h-full w-full min-h-0">
+              {/* Left Column: Full-Height Hero */}
+              <figure className="m-0 h-full w-full rounded-lg sm:rounded-xl overflow-hidden shadow-sm relative group bg-[var(--paper-deep)]/25 flex flex-col min-h-0">
                 <button
                   type="button"
                   data-no-flip="true"
                   onClick={() => setLightboxState({ memory: mem, index: hero.idx })}
-                  className="flex items-center justify-center w-full h-[22vh] sm:h-[180px] overflow-hidden rounded-xl bg-[var(--paper-deep)]/25 p-1 cursor-pointer shadow-xs transition duration-300 hover:shadow-md"
+                  className="block h-full w-full cursor-pointer overflow-hidden flex-1 relative"
                 >
                   <img
                     src={resolveMediaUrl(hero.photo.url)}
                     alt={hero.photo.caption || `Photo ${hero.idx + 1}`}
-                    className="max-h-full max-w-full object-contain rounded-lg transition duration-300 hover:scale-[1.02] drop-shadow-xs"
+                    className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
                   />
                 </button>
                 {hero.photo.caption && (
-                  <figcaption className="mt-1 px-1 text-[11px] italic text-[var(--page-ink-muted)] truncate">
+                  <figcaption className="absolute bottom-2 left-2 right-2 rounded bg-black/45 backdrop-blur-xs px-2 py-0.5 text-center font-serif text-[10px] italic text-white/95 truncate">
                     {hero.photo.caption}
                   </figcaption>
                 )}
               </figure>
-              <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
-                {others.map(({ photo, idx }) => (
-                  <figure key={photo.id} className="m-0 rounded-xl overflow-hidden border-0 p-0 bg-transparent">
+
+              {/* Right Column: 2 Stacked Photos */}
+              <div className="flex flex-col gap-2 sm:gap-3 h-full w-full min-h-0">
+                {stacked.map(({ photo, idx }) => (
+                  <figure key={photo.id} className="m-0 flex-1 h-full w-full rounded-lg sm:rounded-xl overflow-hidden shadow-sm relative group bg-[var(--paper-deep)]/25 flex flex-col min-h-0">
                     <button
                       type="button"
                       data-no-flip="true"
                       onClick={() => setLightboxState({ memory: mem, index: idx })}
-                      className="flex items-center justify-center w-full h-[18vh] sm:h-[150px] overflow-hidden rounded-xl bg-[var(--paper-deep)]/25 p-1 cursor-pointer shadow-xs transition duration-300 hover:shadow-md"
+                      className="block h-full w-full cursor-pointer overflow-hidden flex-1 relative"
                     >
                       <img
                         src={resolveMediaUrl(photo.url)}
                         alt={photo.caption || `Photo ${idx + 1}`}
-                        className="max-h-full max-w-full object-contain rounded-lg transition duration-300 hover:scale-[1.02] drop-shadow-xs"
+                        className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
                       />
                     </button>
                     {photo.caption && (
-                      <figcaption className="mt-1 px-1 text-[10px] italic text-[var(--page-ink-muted)] truncate">
+                      <figcaption className="absolute bottom-2 left-2 right-2 rounded bg-black/45 backdrop-blur-xs px-2 py-0.5 text-center font-serif text-[10px] italic text-white/95 truncate">
                         {photo.caption}
                       </figcaption>
                     )}
@@ -462,28 +469,25 @@ function BookMemoriesContent() {
           );
         }
 
-        // 4 photos: clean frameless 2x2 grid
+        // 4 photos on 1 page: Clean 2x2 grid filling the full page height
         return (
-          <div className="my-auto grid grid-cols-2 gap-2 sm:gap-2.5 w-full py-1">
+          <div className="grid grid-cols-2 grid-rows-2 gap-2 sm:gap-2.5 h-full w-full min-h-0">
             {photoItems.map(({ photo, idx }) => (
-              <figure
-                key={photo.id}
-                className="m-0 rounded-xl overflow-hidden border-0 p-0 bg-transparent"
-              >
+              <figure key={photo.id} className="m-0 h-full w-full rounded-lg sm:rounded-xl overflow-hidden shadow-sm relative group bg-[var(--paper-deep)]/25 flex flex-col min-h-0">
                 <button
                   type="button"
                   data-no-flip="true"
                   onClick={() => setLightboxState({ memory: mem, index: idx })}
-                  className="flex items-center justify-center w-full h-[20vh] sm:h-[165px] overflow-hidden rounded-xl bg-[var(--paper-deep)]/25 p-1 cursor-pointer shadow-xs transition duration-300 hover:shadow-md"
+                  className="block h-full w-full cursor-pointer overflow-hidden flex-1 relative"
                 >
                   <img
                     src={resolveMediaUrl(photo.url)}
                     alt={photo.caption || `Photo ${idx + 1}`}
-                    className="max-h-full max-w-full object-contain rounded-lg transition duration-300 hover:scale-[1.02] drop-shadow-xs"
+                    className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
                   />
                 </button>
                 {photo.caption && (
-                  <figcaption className="mt-1 px-1 text-center text-[10px] italic text-[var(--page-ink-muted)] truncate">
+                  <figcaption className="absolute bottom-1.5 left-1.5 right-1.5 rounded bg-black/45 backdrop-blur-xs px-1.5 py-0.5 text-center font-serif text-[9px] italic text-white/95 truncate">
                     {photo.caption}
                   </figcaption>
                 )}
@@ -493,7 +497,7 @@ function BookMemoriesContent() {
         );
       }
 
-      // 2. Wedding Album / Fine Art Portrait Showcase
+      // 2. Wedding Album (Fine Art Monograph — luxury framing, soft shadows, script captions like Image 2, 5)
       const isPortraitLayout =
         mem.albumStyle === "portrait" || photoItems.length === 1;
 
@@ -501,22 +505,22 @@ function BookMemoriesContent() {
         if (photoItems.length === 1) {
           const { photo, idx } = photoItems[0];
           return (
-            <div className="my-auto flex flex-1 flex-col items-center justify-center py-1 sm:py-2 w-full">
-              <figure className="m-0 w-full max-w-sm sm:max-w-md mx-auto flex flex-col items-center">
+            <div className="h-full w-full flex flex-col justify-center min-h-0">
+              <figure className="m-0 h-full w-full rounded-xl sm:rounded-2xl overflow-hidden shadow-md relative group border border-[var(--hairline)]/60 bg-[var(--paper-deep)]/20 flex flex-col">
                 <button
                   type="button"
                   data-no-flip="true"
                   onClick={() => setLightboxState({ memory: mem, index: idx })}
-                  className="group relative flex items-center justify-center w-full h-[46vh] sm:h-[380px] overflow-hidden rounded-xl sm:rounded-2xl shadow-xl sm:shadow-2xl transition duration-500 hover:scale-[1.015] cursor-pointer bg-[var(--paper-deep)]/25 p-1.5"
+                  className="block h-full w-full cursor-pointer overflow-hidden flex-1 relative"
                 >
                   <img
                     src={resolveMediaUrl(photo.url)}
                     alt={photo.caption || `Wedding Portrait`}
-                    className="max-h-full max-w-full object-contain rounded-lg sm:rounded-xl transition duration-500 group-hover:brightness-105 drop-shadow-sm"
+                    className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.02] group-hover:brightness-105"
                   />
                 </button>
                 {photo.caption && (
-                  <figcaption className="mt-2.5 px-2 text-center font-serif text-xs italic tracking-wider text-[var(--page-ink-muted)]">
+                  <figcaption className="py-2 px-3 text-center font-serif text-xs italic tracking-wider text-[var(--page-ink)] bg-[var(--paper)]/95 border-t border-[var(--hairline)]">
                     {photo.caption}
                   </figcaption>
                 )}
@@ -527,23 +531,23 @@ function BookMemoriesContent() {
 
         if (photoItems.length === 2) {
           return (
-            <div className="my-auto grid grid-cols-2 gap-2.5 sm:gap-3.5 w-full py-1 sm:py-2">
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3.5 h-full w-full min-h-0">
               {photoItems.map(({ photo, idx }) => (
-                <figure key={photo.id} className="m-0 flex flex-col items-center">
+                <figure key={photo.id} className="m-0 h-full w-full rounded-xl overflow-hidden shadow-md relative group border border-[var(--hairline)]/60 bg-[var(--paper-deep)]/20 flex flex-col min-h-0">
                   <button
                     type="button"
                     data-no-flip="true"
                     onClick={() => setLightboxState({ memory: mem, index: idx })}
-                    className="group relative flex items-center justify-center w-full h-[34vh] sm:h-[280px] overflow-hidden rounded-xl shadow-lg transition duration-500 hover:scale-[1.02] cursor-pointer bg-[var(--paper-deep)]/25 p-1"
+                    className="block h-full w-full cursor-pointer overflow-hidden flex-1 relative"
                   >
                     <img
                       src={resolveMediaUrl(photo.url)}
-                      alt={photo.caption || `Wedding frame ${idx + 1}`}
-                      className="max-h-full max-w-full object-contain rounded-lg transition duration-500 group-hover:brightness-105 drop-shadow-xs"
+                      alt={photo.caption || `Wedding Frame ${idx + 1}`}
+                      className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.02] group-hover:brightness-105"
                     />
                   </button>
                   {photo.caption && (
-                    <figcaption className="mt-1.5 px-1 text-center font-serif text-[11px] italic text-[var(--page-ink-muted)] truncate w-full">
+                    <figcaption className="py-1 px-2 text-center font-serif text-[10px] italic tracking-wider text-[var(--page-ink)] bg-[var(--paper)]/95 border-t border-[var(--hairline)] truncate">
                       {photo.caption}
                     </figcaption>
                   )}
@@ -554,45 +558,48 @@ function BookMemoriesContent() {
         }
 
         if (photoItems.length === 3) {
-          const [topHero, ...bottomTwo] = photoItems;
+          const [hero, ...stacked] = photoItems;
           return (
-            <div className="my-auto flex flex-col gap-2 sm:gap-2.5 w-full py-1 sm:py-2">
-              <figure key={topHero.photo.id} className="m-0 flex flex-col items-center">
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3.5 h-full w-full min-h-0">
+              {/* Left Column: Full-Height Hero */}
+              <figure className="m-0 h-full w-full rounded-xl overflow-hidden shadow-md relative group border border-[var(--hairline)]/60 bg-[var(--paper-deep)]/20 flex flex-col min-h-0">
                 <button
                   type="button"
                   data-no-flip="true"
-                  onClick={() => setLightboxState({ memory: mem, index: topHero.idx })}
-                  className="group relative flex items-center justify-center w-full h-[22vh] sm:h-[180px] overflow-hidden rounded-lg sm:rounded-xl shadow-md transition duration-500 hover:scale-[1.015] cursor-pointer bg-[var(--paper-deep)]/25 p-1"
+                  onClick={() => setLightboxState({ memory: mem, index: hero.idx })}
+                  className="block h-full w-full cursor-pointer overflow-hidden flex-1 relative"
                 >
                   <img
-                    src={resolveMediaUrl(topHero.photo.url)}
-                    alt={topHero.photo.caption || `Wedding frame ${topHero.idx + 1}`}
-                    className="max-h-full max-w-full object-contain rounded-md sm:rounded-lg transition duration-500 group-hover:brightness-105 drop-shadow-xs"
+                    src={resolveMediaUrl(hero.photo.url)}
+                    alt={hero.photo.caption || `Wedding Hero`}
+                    className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.02] group-hover:brightness-105"
                   />
                 </button>
-                {topHero.photo.caption && (
-                  <figcaption className="mt-1 px-1 text-center font-serif text-[10px] italic text-[var(--page-ink-muted)] truncate w-full">
-                    {topHero.photo.caption}
+                {hero.photo.caption && (
+                  <figcaption className="py-1 px-2 text-center font-serif text-[10px] italic tracking-wider text-[var(--page-ink)] bg-[var(--paper)]/95 border-t border-[var(--hairline)] truncate">
+                    {hero.photo.caption}
                   </figcaption>
                 )}
               </figure>
-              <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
-                {bottomTwo.map(({ photo, idx }) => (
-                  <figure key={photo.id} className="m-0 flex flex-col items-center">
+
+              {/* Right Column: 2 Stacked Frames */}
+              <div className="flex flex-col gap-2.5 sm:gap-3.5 h-full w-full min-h-0">
+                {stacked.map(({ photo, idx }) => (
+                  <figure key={photo.id} className="m-0 flex-1 h-full w-full rounded-xl overflow-hidden shadow-md relative group border border-[var(--hairline)]/60 bg-[var(--paper-deep)]/20 flex flex-col min-h-0">
                     <button
                       type="button"
                       data-no-flip="true"
                       onClick={() => setLightboxState({ memory: mem, index: idx })}
-                      className="group relative flex items-center justify-center w-full h-[18vh] sm:h-[150px] overflow-hidden rounded-lg shadow-md transition duration-500 hover:scale-[1.02] cursor-pointer bg-[var(--paper-deep)]/25 p-1"
+                      className="block h-full w-full cursor-pointer overflow-hidden flex-1 relative"
                     >
                       <img
                         src={resolveMediaUrl(photo.url)}
-                        alt={photo.caption || `Wedding frame ${idx + 1}`}
-                        className="max-h-full max-w-full object-contain rounded-md transition duration-500 group-hover:brightness-105 drop-shadow-xs"
+                        alt={photo.caption || `Wedding Frame ${idx + 1}`}
+                        className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.02] group-hover:brightness-105"
                       />
                     </button>
                     {photo.caption && (
-                      <figcaption className="mt-1 px-0.5 text-center font-serif text-[10px] italic text-[var(--page-ink-muted)] truncate w-full">
+                      <figcaption className="py-1 px-2 text-center font-serif text-[10px] italic tracking-wider text-[var(--page-ink)] bg-[var(--paper)]/95 border-t border-[var(--hairline)] truncate">
                         {photo.caption}
                       </figcaption>
                     )}
@@ -603,110 +610,42 @@ function BookMemoriesContent() {
           );
         }
 
-        if (photoItems.length === 4) {
-          return (
-            <div className="my-auto grid grid-cols-2 gap-2 sm:gap-2.5 w-full py-1 sm:py-2">
-              {photoItems.map(({ photo, idx }) => (
-                <figure key={photo.id} className="m-0 flex flex-col items-center">
-                  <button
-                    type="button"
-                    data-no-flip="true"
-                    onClick={() => setLightboxState({ memory: mem, index: idx })}
-                    className="group relative flex items-center justify-center w-full h-[20vh] sm:h-[165px] overflow-hidden rounded-lg shadow-md transition duration-500 hover:scale-[1.02] cursor-pointer bg-[var(--paper-deep)]/25 p-1"
-                  >
-                    <img
-                      src={resolveMediaUrl(photo.url)}
-                      alt={photo.caption || `Wedding frame ${idx + 1}`}
-                      className="max-h-full max-w-full object-contain rounded-md transition duration-500 group-hover:brightness-105 drop-shadow-xs"
-                    />
-                  </button>
-                  {photo.caption && (
-                    <figcaption className="mt-1 px-1 text-center font-serif text-[10px] italic text-[var(--page-ink-muted)] truncate w-full">
-                      {photo.caption}
-                    </figcaption>
-                  )}
-                </figure>
-              ))}
-            </div>
-          );
-        }
-
-        if (photoItems.length === 6) {
-          return (
-            <div className="my-auto grid grid-cols-3 gap-2 w-full py-1">
-              {photoItems.map(({ photo, idx }) => (
-                <figure key={photo.id} className="m-0">
-                  <button
-                    type="button"
-                    data-no-flip="true"
-                    onClick={() => setLightboxState({ memory: mem, index: idx })}
-                    className="group relative flex items-center justify-center w-full h-[18vh] sm:h-[145px] overflow-hidden rounded-lg shadow-md transition duration-500 hover:scale-[1.02] cursor-pointer bg-[var(--paper-deep)]/25 p-1"
-                  >
-                    <img
-                      src={resolveMediaUrl(photo.url)}
-                      alt={photo.caption || `Wedding frame ${idx + 1}`}
-                      className="max-h-full max-w-full object-contain rounded-md transition duration-500 group-hover:brightness-105"
-                    />
-                  </button>
-                </figure>
-              ))}
-            </div>
-          );
-        }
-
-        // 5 or custom multi-frame spread
-        const topRow = photoItems.slice(0, 2);
-        const bottomRow = photoItems.slice(2, 5);
+        // 4 photos on 1 page: Fine Art 2x2 grid filling page
         return (
-          <div className="my-auto flex flex-col gap-2 sm:gap-2.5 w-full py-1 sm:py-2">
-            <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
-              {topRow.map(({ photo, idx }) => (
-                <figure key={photo.id} className="m-0">
-                  <button
-                    type="button"
-                    data-no-flip="true"
-                    onClick={() => setLightboxState({ memory: mem, index: idx })}
-                    className="group relative flex items-center justify-center w-full h-[19vh] sm:h-[150px] overflow-hidden rounded-lg shadow-md transition duration-500 hover:scale-[1.02] cursor-pointer bg-[var(--paper-deep)]/25 p-1"
-                  >
-                    <img
-                      src={resolveMediaUrl(photo.url)}
-                      alt={photo.caption || `Wedding frame ${idx + 1}`}
-                      className="max-h-full max-w-full object-contain rounded-md transition duration-500 group-hover:brightness-105"
-                    />
-                  </button>
-                </figure>
-              ))}
-            </div>
-            <div className={`grid gap-2 sm:gap-2.5 ${bottomRow.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
-              {bottomRow.map(({ photo, idx }) => (
-                <figure key={photo.id} className="m-0">
-                  <button
-                    type="button"
-                    data-no-flip="true"
-                    onClick={() => setLightboxState({ memory: mem, index: idx })}
-                    className="group relative flex items-center justify-center w-full h-[18vh] sm:h-[140px] overflow-hidden rounded-lg shadow-md transition duration-500 hover:scale-[1.02] cursor-pointer bg-[var(--paper-deep)]/25 p-1"
-                  >
-                    <img
-                      src={resolveMediaUrl(photo.url)}
-                      alt={photo.caption || `Wedding frame ${idx + 1}`}
-                      className="max-h-full max-w-full object-contain rounded-md transition duration-500 group-hover:brightness-105"
-                    />
-                  </button>
-                </figure>
-              ))}
-            </div>
+          <div className="grid grid-cols-2 grid-rows-2 gap-2 sm:gap-3 h-full w-full min-h-0">
+            {photoItems.map(({ photo, idx }) => (
+              <figure key={photo.id} className="m-0 h-full w-full rounded-lg overflow-hidden shadow-md relative group border border-[var(--hairline)]/60 bg-[var(--paper-deep)]/20 flex flex-col min-h-0">
+                <button
+                  type="button"
+                  data-no-flip="true"
+                  onClick={() => setLightboxState({ memory: mem, index: idx })}
+                  className="block h-full w-full cursor-pointer overflow-hidden flex-1 relative"
+                >
+                  <img
+                    src={resolveMediaUrl(photo.url)}
+                    alt={photo.caption || `Wedding Frame ${idx + 1}`}
+                    className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.02]"
+                  />
+                </button>
+                {photo.caption && (
+                  <figcaption className="py-0.5 px-1.5 text-center font-serif text-[9px] italic tracking-wider text-[var(--page-ink)] bg-[var(--paper)]/95 border-t border-[var(--hairline)] truncate">
+                    {photo.caption}
+                  </figcaption>
+                )}
+              </figure>
+            ))}
           </div>
         );
       }
 
-      // 3. Archival Polaroid style
+      // 3. Archival Polaroid Scrapbook (Vacation memory collage like Image 3)
       if (photoItems.length === 1) {
         const { photo, idx } = photoItems[0];
         return (
-          <div className="my-auto flex flex-col items-center justify-center py-1 sm:py-2">
+          <div className="h-full w-full flex flex-col items-center justify-center min-h-0 py-2">
             <figure
               key={photo.id}
-              className="polaroid-frame m-0 max-w-xs"
+              className="polaroid-frame m-0 max-w-sm w-full shadow-lg"
               style={{
                 transform: `rotate(${POLAROID_TILTS[idx % POLAROID_TILTS.length]})`,
               }}
@@ -715,15 +654,15 @@ function BookMemoriesContent() {
                 type="button"
                 data-no-flip="true"
                 onClick={() => setLightboxState({ memory: mem, index: idx })}
-                className="flex items-center justify-center w-full h-[36vh] sm:h-[290px] overflow-hidden bg-[var(--paper-deep)]/30 rounded-xs p-1 cursor-pointer"
+                className="block w-full overflow-hidden bg-[var(--paper-deep)] cursor-pointer"
               >
                 <img
                   src={resolveMediaUrl(photo.url)}
                   alt={photo.caption || `Polaroid ${idx + 1}`}
-                  className="max-h-full max-w-full object-contain"
+                  className="aspect-square max-h-[38vh] sm:max-h-[320px] w-full object-cover"
                 />
               </button>
-              <figcaption className="mt-2.5 px-1 text-center text-xs italic text-[var(--page-ink-muted)]">
+              <figcaption className="mt-2.5 px-1 text-center font-serif text-xs italic text-[var(--page-ink-muted)]">
                 {photo.caption || `${mem.date} · Frame ${idx + 1}`}
               </figcaption>
             </figure>
@@ -733,11 +672,11 @@ function BookMemoriesContent() {
 
       if (photoItems.length === 2) {
         return (
-          <div className="my-auto grid grid-cols-2 gap-3 sm:gap-4 py-1">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 h-full w-full min-h-0 items-center py-2">
             {photoItems.map(({ photo, idx }) => (
               <figure
                 key={photo.id}
-                className="polaroid-frame m-0"
+                className="polaroid-frame m-0 shadow-md"
                 style={{
                   transform: `rotate(${POLAROID_TILTS[idx % POLAROID_TILTS.length]})`,
                 }}
@@ -746,15 +685,15 @@ function BookMemoriesContent() {
                   type="button"
                   data-no-flip="true"
                   onClick={() => setLightboxState({ memory: mem, index: idx })}
-                  className="flex items-center justify-center w-full h-[26vh] sm:h-[210px] overflow-hidden bg-[var(--paper-deep)]/30 rounded-xs p-1 cursor-pointer"
+                  className="block w-full overflow-hidden bg-[var(--paper-deep)] cursor-pointer"
                 >
                   <img
                     src={resolveMediaUrl(photo.url)}
                     alt={photo.caption || `Polaroid ${idx + 1}`}
-                    className="max-h-full max-w-full object-contain"
+                    className="aspect-square max-h-[30vh] sm:max-h-[240px] w-full object-cover"
                   />
                 </button>
-                <figcaption className="mt-2 px-1 text-center text-[11px] italic text-[var(--page-ink-muted)] truncate">
+                <figcaption className="mt-2 px-1 text-center font-serif text-[11px] italic text-[var(--page-ink-muted)] truncate">
                   {photo.caption || `Frame ${idx + 1}`}
                 </figcaption>
               </figure>
@@ -767,35 +706,37 @@ function BookMemoriesContent() {
         const topOne = photoItems[0];
         const bottomTwo = photoItems.slice(1, 3);
         return (
-          <div className="my-auto flex flex-col items-center gap-2 sm:gap-2.5 py-1">
-            <figure
-              key={topOne.photo.id}
-              className="polaroid-frame m-0 max-w-[190px] sm:max-w-[220px]"
-              style={{
-                transform: `rotate(${POLAROID_TILTS[topOne.idx % POLAROID_TILTS.length]})`,
-              }}
-            >
-              <button
-                type="button"
-                data-no-flip="true"
-                onClick={() => setLightboxState({ memory: mem, index: topOne.idx })}
-                className="flex items-center justify-center w-full h-[18vh] sm:h-[145px] overflow-hidden bg-[var(--paper-deep)]/30 rounded-xs p-1 cursor-pointer"
+          <div className="h-full w-full flex flex-col justify-around gap-2 py-2 min-h-0">
+            <div className="flex justify-center">
+              <figure
+                key={topOne.photo.id}
+                className="polaroid-frame m-0 max-w-[200px] sm:max-w-[230px] shadow-md"
+                style={{
+                  transform: `rotate(${POLAROID_TILTS[topOne.idx % POLAROID_TILTS.length]})`,
+                }}
               >
-                <img
-                  src={resolveMediaUrl(topOne.photo.url)}
-                  alt={topOne.photo.caption || `Polaroid ${topOne.idx + 1}`}
-                  className="max-h-full max-w-full object-contain"
-                />
-              </button>
-              <figcaption className="mt-1.5 px-1 text-center text-[10px] italic text-[var(--page-ink-muted)] truncate">
-                {topOne.photo.caption || `Frame ${topOne.idx + 1}`}
-              </figcaption>
-            </figure>
-            <div className="grid grid-cols-2 gap-2.5 sm:gap-3 w-full">
+                <button
+                  type="button"
+                  data-no-flip="true"
+                  onClick={() => setLightboxState({ memory: mem, index: topOne.idx })}
+                  className="block w-full overflow-hidden bg-[var(--paper-deep)] cursor-pointer"
+                >
+                  <img
+                    src={resolveMediaUrl(topOne.photo.url)}
+                    alt={topOne.photo.caption || `Polaroid ${topOne.idx + 1}`}
+                    className="aspect-square max-h-[18vh] sm:max-h-[145px] w-full object-cover"
+                  />
+                </button>
+                <figcaption className="mt-1 px-1 text-center font-serif text-[10px] italic text-[var(--page-ink-muted)] truncate">
+                  {topOne.photo.caption || `Frame ${topOne.idx + 1}`}
+                </figcaption>
+              </figure>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:gap-3 w-full">
               {bottomTwo.map(({ photo, idx }) => (
                 <figure
                   key={photo.id}
-                  className="polaroid-frame m-0"
+                  className="polaroid-frame m-0 shadow-md"
                   style={{
                     transform: `rotate(${POLAROID_TILTS[idx % POLAROID_TILTS.length]})`,
                   }}
@@ -804,15 +745,15 @@ function BookMemoriesContent() {
                     type="button"
                     data-no-flip="true"
                     onClick={() => setLightboxState({ memory: mem, index: idx })}
-                    className="flex items-center justify-center w-full h-[16vh] sm:h-[125px] overflow-hidden bg-[var(--paper-deep)]/30 rounded-xs p-1 cursor-pointer"
+                    className="block w-full overflow-hidden bg-[var(--paper-deep)] cursor-pointer"
                   >
                     <img
                       src={resolveMediaUrl(photo.url)}
                       alt={photo.caption || `Polaroid ${idx + 1}`}
-                      className="max-h-full max-w-full object-contain"
+                      className="aspect-square max-h-[18vh] sm:max-h-[145px] w-full object-cover"
                     />
                   </button>
-                  <figcaption className="mt-1.5 px-1 text-center text-[10px] italic text-[var(--page-ink-muted)] truncate">
+                  <figcaption className="mt-1 px-1 text-center font-serif text-[10px] italic text-[var(--page-ink-muted)] truncate">
                     {photo.caption || `Frame ${idx + 1}`}
                   </figcaption>
                 </figure>
@@ -822,12 +763,13 @@ function BookMemoriesContent() {
         );
       }
 
+      // 4 polaroids in scrapbook grid
       return (
-        <div className="my-auto grid grid-cols-2 gap-2 sm:gap-2.5 py-1">
+        <div className="grid grid-cols-2 grid-rows-2 gap-2 sm:gap-2.5 h-full w-full min-h-0 items-center py-1">
           {photoItems.map(({ photo, idx }) => (
             <figure
               key={photo.id}
-              className="polaroid-frame m-0 p-1.5! pb-3!"
+              className="polaroid-frame m-0 shadow-md p-1.5! pb-3!"
               style={{
                 transform: `rotate(${POLAROID_TILTS[idx % POLAROID_TILTS.length]})`,
               }}
@@ -836,16 +778,16 @@ function BookMemoriesContent() {
                 type="button"
                 data-no-flip="true"
                 onClick={() => setLightboxState({ memory: mem, index: idx })}
-                className="flex items-center justify-center w-full h-[15vh] sm:h-[120px] overflow-hidden bg-[var(--paper-deep)]/30 rounded-xs p-0.5 cursor-pointer"
+                className="block w-full overflow-hidden bg-[var(--paper-deep)] cursor-pointer"
               >
                 <img
                   src={resolveMediaUrl(photo.url)}
                   alt={photo.caption || `Polaroid ${idx + 1}`}
-                  className="max-h-full max-w-full object-contain"
+                  className="aspect-square max-h-[18vh] sm:max-h-[140px] w-full object-cover"
                 />
               </button>
-              <figcaption className="mt-1 px-1 text-center text-[9px] italic text-[var(--page-ink-muted)] truncate">
-                {photo.caption || `${mem.date} · Frame ${idx + 1}`}
+              <figcaption className="mt-1 px-1 text-center font-serif text-[9px] italic text-[var(--page-ink-muted)] truncate">
+                {photo.caption || `Frame ${idx + 1}`}
               </figcaption>
             </figure>
           ))}
@@ -1501,7 +1443,34 @@ function BookMemoriesContent() {
         const leftPhotos = partition.leftPhotos;
         const rightPhotos = partition.rightPhotos;
 
-        const leftContent = isPrimary ? (
+        const isPhotoSpread = isPrimary && leftPhotos.length > 0;
+
+        const leftContent = isPhotoSpread ? (
+          <div className="flex flex-1 h-full flex-col justify-between min-h-0">
+            <div className="flex flex-1 h-full flex-col min-h-0">
+              <div className="mb-2 sm:mb-2.5 flex items-center justify-between text-[11px] tracking-[0.16em] uppercase text-[var(--ink-soft)] font-serif shrink-0 border-b border-[var(--hairline)]/70 pb-1.5">
+                <span className="font-semibold text-[var(--page-ink)] tracking-wider text-xs sm:text-sm">
+                  {mem.title?.trim() && mem.title.trim() !== "Encrypted Entry" ? mem.title : "First"}
+                </span>
+                <span className="text-[10px] tracking-widest text-[var(--ink-soft)]">
+                  {mem.date}{mem.mood ? ` · ${mem.mood}` : ""}
+                </span>
+              </div>
+
+              {mem.note && (
+                <div className="mb-2 px-2 text-center text-xs italic text-[var(--page-ink-muted)] shrink-0 font-serif">
+                  “{mem.note}”
+                </div>
+              )}
+
+              <div className="flex-1 h-full w-full min-h-0">
+                {renderPhotoCollection(mem, leftPhotos)}
+              </div>
+            </div>
+
+            {makeSpreadToolbarFooter(pageLeftStr)}
+          </div>
+        ) : isPrimary ? (
           <div className="flex flex-1 flex-col justify-between">
             <div className="flex flex-1 flex-col">
               <div
@@ -1561,31 +1530,24 @@ function BookMemoriesContent() {
                   ))}
                 </div>
               )}
-
-              {leftPhotos.length > 0 && (
-                <div className="mt-3.5 flex flex-1 flex-col justify-center">
-                  {renderPhotoCollection(mem, leftPhotos)}
-                </div>
-              )}
             </div>
 
             {makeSpreadToolbarFooter(pageLeftStr)}
           </div>
         ) : (
-          <div className="flex flex-1 flex-col justify-between">
-            <div>
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--hairline)] pb-2 text-[10px] font-semibold tracking-[0.15em] uppercase text-[var(--ink-soft)]">
-                <span className="inline-flex items-center gap-1.5">
-                  <Calendar className="h-3 w-3" />
-                  {mem.date}
-                  {mem.location ? ` · ${mem.location}` : ""}
+          <div className="flex flex-1 h-full flex-col justify-between min-h-0">
+            <div className="flex flex-1 h-full flex-col min-h-0">
+              <div className="mb-2 sm:mb-2.5 flex items-center justify-between text-[10px] tracking-[0.16em] uppercase text-[var(--ink-soft)] font-serif shrink-0 border-b border-[var(--hairline)]/70 pb-1.5">
+                <span className="font-semibold text-[var(--page-ink)] tracking-wider text-xs">
+                  {displayTitle}
                 </span>
-                <span style={{ color: pageAccent }}>{mem.mood}</span>
+                <span className="text-[10px] tracking-widest text-[var(--ink-soft)]">
+                  Gallery Spread
+                </span>
               </div>
-              <div className="mb-3 text-[11px] font-semibold tracking-wider uppercase text-[var(--ink-soft)] opacity-80">
-                {displayTitle} · Photographic Gallery
+              <div className="flex-1 h-full w-full min-h-0">
+                {renderPhotoCollection(mem, leftPhotos)}
               </div>
-              {renderPhotoCollection(mem, leftPhotos)}
             </div>
 
             {makeSpreadToolbarFooter(pageLeftStr)}
@@ -1593,35 +1555,22 @@ function BookMemoriesContent() {
         );
 
         const rightContent = (
-          <div className="flex flex-1 flex-col justify-between">
+          <div className="flex flex-1 h-full flex-col justify-between min-h-0">
             {rightPhotos.length > 0 ? (
-              <div className="flex flex-1 flex-col justify-between">
-                {!isWeddingPortrait ? (
-                  <div className="mb-4 flex items-center justify-between border-b border-[var(--hairline)] pb-2 text-[10px] font-semibold tracking-[0.16em] uppercase text-[var(--ink-soft)]">
-                    <span className="inline-flex items-center gap-1.5">
-                      <Images className="h-3.5 w-3.5" style={{ color: pageAccent }} />
-                      {rightPhotos.length === 1
-                        ? `Photo ${rightPhotos[0].idx + 1}`
-                        : `Photos ${rightPhotos[0].idx + 1}–${rightPhotos[rightPhotos.length - 1].idx + 1} of ${mem.photos.length}`}
-                    </span>
-                    <span>
-                      {mem.albumStyle === "borderless"
-                        ? "Frameless Grid"
-                        : mem.albumStyle === "portrait"
-                          ? "Wedding Album"
-                          : "Polaroids"}
-                    </span>
-                  </div>
-                ) : mem.photos.length > 1 ? (
-                  <div className="mb-2.5 flex items-center justify-between text-[10px] font-semibold tracking-[0.2em] uppercase text-[var(--ink-soft)] opacity-70">
-                    <span className="inline-flex items-center gap-1.5">
-                      <Images className="h-3.5 w-3.5" style={{ color: pageAccent }} />
-                      Wedding Album · Frame {rightPhotos[0].idx + 1}
-                      {rightPhotos.length > 1 ? `–${rightPhotos[rightPhotos.length - 1].idx + 1}` : ""} of {mem.photos.length}
-                    </span>
-                  </div>
-                ) : null}
-                <div className="flex flex-1 flex-col justify-center">
+              <div className="flex flex-1 h-full flex-col justify-between min-h-0">
+                <div className="mb-2 sm:mb-2.5 flex items-center justify-between text-[10px] tracking-[0.16em] uppercase text-[var(--ink-soft)] font-serif shrink-0 border-b border-[var(--hairline)]/70 pb-1.5">
+                  <span className="text-[10px] tracking-widest text-[var(--ink-soft)]">
+                    {mem.location || book.title}
+                  </span>
+                  <span className="text-[10px] tracking-widest text-[var(--accent)] font-medium">
+                    {mem.albumStyle === "portrait"
+                      ? "Wedding Album"
+                      : mem.albumStyle === "polaroid"
+                        ? "Polaroids"
+                        : "Photobook Spread"}
+                  </span>
+                </div>
+                <div className="flex-1 h-full w-full min-h-0">
                   {renderPhotoCollection(mem, rightPhotos)}
                 </div>
               </div>

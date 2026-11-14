@@ -320,7 +320,27 @@ export function partitionMemoryIntoSpreads(mem: MemoryAlbum): MemorySpreadPartit
       ];
     }
 
-    // 5+ photos with minimal text: 2 on left, 2 on right of primary spread; remainder flow across spreads
+    if (photos.length === 5) {
+      // Exactly matches classic editorial photobook spread: 3 on left (1 tall + 2 stacked), 2 tall on right!
+      return [
+        {
+          isPrimary: true,
+          spreadSubIndex: 0,
+          totalSubSpreads: 1,
+          leftPhotos: [
+            { photo: photos[0], idx: 0 },
+            { photo: photos[1], idx: 1 },
+            { photo: photos[2], idx: 2 },
+          ],
+          rightPhotos: [
+            { photo: photos[3], idx: 3 },
+            { photo: photos[4], idx: 4 },
+          ],
+        },
+      ];
+    }
+
+    // 6+ photos with minimal text: 3 on left, 2 on right of primary spread; remainder flow across spreads
     const partitions: MemorySpreadPartition[] = [
       {
         isPrimary: true,
@@ -329,15 +349,16 @@ export function partitionMemoryIntoSpreads(mem: MemoryAlbum): MemorySpreadPartit
         leftPhotos: [
           { photo: photos[0], idx: 0 },
           { photo: photos[1], idx: 1 },
+          { photo: photos[2], idx: 2 },
         ],
         rightPhotos: [
-          { photo: photos[2], idx: 2 },
           { photo: photos[3], idx: 3 },
+          { photo: photos[4], idx: 4 },
         ],
       },
     ];
 
-    let currIdx = 4;
+    let currIdx = 5;
     let subIdx = 1;
     while (currIdx < photos.length) {
       const remaining = photos.length - currIdx;
