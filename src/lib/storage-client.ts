@@ -482,6 +482,10 @@ const MEMORIES_CACHE_PREFIX = "mydiary_memories_cache_v10_";
 
 export function loadCachedServerBooks(): DiaryBook[] | null {
   if (typeof window === "undefined") return null;
+  // Unauthenticated / logged-out users must NOT read cached books from a previous user session
+  if (!isUserAuthenticated() && !getSessionToken().trim()) {
+    return null;
+  }
   if (hasVaultEnvelope() && !isVaultUnlocked()) return null;
   try {
     const raw =
@@ -840,6 +844,25 @@ async function seedOfflineBooksIfEmpty(): Promise<DiaryBook[]> {
   return defaultBooks.map((b) => ({ ...b }));
 }
 
+export async function resetOfflineBooksToDefault(): Promise<void> {
+  if (typeof indexedDB === "undefined") return;
+  try {
+    const stored = await getAllFromStore<DiaryBook>("books");
+    const defaultIds = new Set(defaultBooks.map((b) => b.id));
+    for (const b of stored) {
+      if (!defaultIds.has(b.id)) {
+        await deleteFromStore("books", b.id).catch(() => {});
+      }
+    }
+    for (const b of defaultBooks) {
+      await putInStore("books", b).catch(() => {});
+    }
+    saveOfflineOrder(defaultBooks.map((b) => b.id));
+  } catch {
+    // Ignore storage issues
+  }
+}
+
 async function getOfflineBooks(): Promise<DiaryBook[]> {
   let storedBooks = await getAllFromStore<DiaryBook>("books");
   const storedMemories = await getAllFromStore<MemoryAlbum>("memories");
@@ -1041,15 +1064,23 @@ export async function fetchBooks(): Promise<{
     throw new StorageAuthError("Owner Vault is locked.", 401);
   }
   const config = loadStorageConfig();
-  const hasToken = Boolean(config.token?.trim());
-  try {
-    // In guest or unauthenticated incognito mode without token, return cached books immediately to avoid noisy 401 console errors
-    if (!hasToken) {
-      const cached = loadCachedServerBooks();
-      if (cached && cached.length > 0) {
-        return { books: cached, mode: "server" };
-      }
+  const hasToken = Boolean(config.token?.trim()) || isUserAuthenticated();
+
+  // In guest or unauthenticated mode without token, return canonical default 19 books
+  if (!hasToken) {
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
+        window.sessionStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
+      } catch {}
     }
+    return {
+      books: defaultBooks.map((b) => ({ ...b })),
+      mode: "server",
+    };
+  }
+
+  try {
     // Single fast network fetch without redundant health ping
     const booksData = await serverFetch<{ books: DiaryBook[] }>("/api/books", {}, config);
     const books = booksData.books;
@@ -1060,11 +1091,12 @@ export async function fetchBooks(): Promise<{
     };
   } catch (err) {
     if (isStorageAuthError(err)) {
-      const cached = loadCachedServerBooks();
-      if (cached && cached.length > 0) {
-        return { books: cached, mode: "server" };
-      }
-      throw err;
+      saveSessionToken("");
+      saveCachedUser(null);
+      return {
+        books: defaultBooks.map((b) => ({ ...b })),
+        mode: "server",
+      };
     }
     const cached = loadCachedServerBooks();
     if (cached && cached.length > 0) {
@@ -1999,6 +2031,12 @@ export async function logoutAccount(customConfig?: StorageConfig): Promise<void>
   try {
     window.localStorage.removeItem(AUTH_SESSION_KEY);
     window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+    window.localStorage.removeItem(GOOGLE_USER_CACHE_KEY);
+    window.sessionStorage.removeItem(GOOGLE_USER_CACHE_KEY);
+    window.localStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
+    window.sessionStorage.removeItem(SERVER_BOOKS_CACHE_KEY);
+    window.localStorage.removeItem(SHARED_REGISTRY_KEY);
+    window.localStorage.removeItem(OFFLINE_BOOK_ORDER_KEY);
   } catch {
     // Ignore storage issues
   }
@@ -2006,12 +2044,14 @@ export async function logoutAccount(customConfig?: StorageConfig): Promise<void>
   scrubPlaintextConfigToken();
   clearActiveUserEncryptionKey();
   saveCachedUser(null);
+  await resetOfflineBooksToDefault().catch(() => {});
   if (typeof window !== "undefined") {
     window.dispatchEvent(
       new CustomEvent(AUTH_REQUIRED_EVENT, {
         detail: { message: "Signed out of your diary session.", status: 401 },
       }),
     );
+    window.dispatchEvent(new CustomEvent("mydiary:storage-config-changed"));
   }
 }
 

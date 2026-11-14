@@ -1523,7 +1523,7 @@ app.post("/api/auth/google", async (req, res) => {
           decoded.sub &&
           decoded.iss &&
           (decoded.iss.includes("accounts.google.com") || decoded.iss === "https://accounts.google.com") &&
-          Number(decoded.exp) > nowSec
+          Number(decoded.exp) + 300 > nowSec
         ) {
           payload = decoded;
         }

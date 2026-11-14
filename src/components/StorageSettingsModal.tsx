@@ -107,11 +107,25 @@ export function StorageSettingsModal({
         if (res.user) {
           saveCachedUser(res.user);
         }
+        const freshCfg = loadStorageConfig();
+        setConfig(freshCfg);
+        setAuthStatus({
+          ok: true,
+          authenticated: true,
+          user: res.user,
+          accountRequired: true,
+          needsOwnerSetup: false,
+          needsSetupToken: false,
+          registrationMode: "invite-only",
+        });
         try {
-          await syncOfflineToServer(targetCfg);
+          await syncOfflineToServer(freshCfg);
         } catch {}
-        await refreshConnectionAndAccount(targetCfg);
+        await refreshConnectionAndAccount(freshCfg);
         onConnected?.();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("mydiary:storage-config-changed"));
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Google authentication failed.");
       } finally {
@@ -201,6 +215,10 @@ export function StorageSettingsModal({
       await logoutAccount();
       saveCachedUser(null);
       saveSessionToken("");
+      const freshCfg = loadStorageConfig();
+      setConfig(freshCfg);
+      setAuthStatus(null);
+      setHealth(null);
       onClose();
     } finally {
       setAuthBusy(false);

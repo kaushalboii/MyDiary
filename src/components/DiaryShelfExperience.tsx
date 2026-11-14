@@ -115,12 +115,23 @@ function ShelfExperienceInner() {
 
   const refreshBooks = useCallback(async () => {
     try {
+      if (!isUserAuthenticated()) {
+        booksRef.current = defaultBooks;
+        setBooks(defaultBooks);
+        engineRef.current?.syncBooks(defaultBooks);
+        return;
+      }
       const res = await fetchBooks();
       booksRef.current = res.books;
       setBooks(res.books);
       engineRef.current?.syncBooks(res.books);
     } catch (err) {
-      if (isStorageAuthError(err)) return;
+      if (isStorageAuthError(err)) {
+        booksRef.current = defaultBooks;
+        setBooks(defaultBooks);
+        engineRef.current?.syncBooks(defaultBooks);
+        return;
+      }
       throw err;
     }
   }, []);
@@ -167,21 +178,45 @@ function ShelfExperienceInner() {
   );
 
   useEffect(() => {
-    const cached = loadCachedServerBooks();
-    if (cached && cached.length > 0) {
-      booksRef.current = cached;
-      setBooks(cached);
+    if (isUserAuthenticated()) {
+      const cached = loadCachedServerBooks();
+      if (cached && cached.length > 0) {
+        booksRef.current = cached;
+        setBooks(cached);
+      }
+    } else {
+      booksRef.current = defaultBooks;
+      setBooks(defaultBooks);
+      try {
+        window.localStorage.removeItem("mydiary_server_books_cache_v10");
+        window.sessionStorage.removeItem("mydiary_server_books_cache_v10");
+      } catch {}
     }
     initialFetchRef.current = refreshBooks();
 
+    const onAuthRequired = () => {
+      booksRef.current = defaultBooks;
+      setBooks(defaultBooks);
+      engineRef.current?.syncBooks(defaultBooks);
+    };
+    window.addEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
+
     // Auto-sync any local drafts or offline created books to cloud
-    void autoSyncOfflineDataIfAny().then((synced) => {
-      if (synced && (synced.addedMemories > 0 || synced.updatedBooks > 0)) {
-        void refreshBooks();
-      }
-    });
+    if (isUserAuthenticated()) {
+      void autoSyncOfflineDataIfAny().then((synced) => {
+        if (synced && (synced.addedMemories > 0 || synced.updatedBooks > 0)) {
+          void refreshBooks();
+        }
+      });
+    }
 
     const handler = () => {
+      if (!isUserAuthenticated()) {
+        booksRef.current = defaultBooks;
+        setBooks(defaultBooks);
+        engineRef.current?.syncBooks(defaultBooks);
+        return;
+      }
       const fresh = loadCachedServerBooks();
       if (fresh && fresh.length > 0) {
         booksRef.current = fresh;
@@ -194,6 +229,7 @@ function ShelfExperienceInner() {
     };
     window.addEventListener("mydiary:storage-config-changed", handler);
     return () => {
+      window.removeEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
       window.removeEventListener("mydiary:storage-config-changed", handler);
     };
   }, [refreshBooks]);
