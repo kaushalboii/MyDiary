@@ -158,6 +158,8 @@ export function MemoryEditorModal({
 
     try {
       const photoCountChanged = (memory.photos?.length || 0) !== photos.length;
+      const styleChanged = memory.albumStyle !== albumStyle;
+      const shouldResetLayout = photoCountChanged || styleChanged;
       const res = await updateMemory(memory.id, {
         title: title.trim(),
         date,
@@ -168,7 +170,7 @@ export function MemoryEditorModal({
         albumStyle,
         photos,
         coverPhotoId: photos[0]?.id || null,
-        layoutBlocks: photoCountChanged ? [] : memory.layoutBlocks,
+        layoutBlocks: shouldResetLayout ? [] : memory.layoutBlocks,
       });
 
       onSave(res.memory);

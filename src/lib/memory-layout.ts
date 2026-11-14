@@ -536,6 +536,8 @@ export function buildDefaultLayoutBlocks(
   const isPortraitAlbum =
     (mem as { albumStyle?: string }).albumStyle === "portrait" ||
     (mem as { albumStyle?: string }).albumStyle === "borderless" ||
+    (mem as { albumStyle?: string }).albumStyle === "grid" ||
+    (mem as { albumStyle?: string }).albumStyle === "filmstrip" ||
     photos.length === 1;
   const photoTilts = [-2, 2, -1.5, 2.5];
 
@@ -701,11 +703,19 @@ export function autoAlignMemoryBlocks(
  * Automatically recovers from stale single-photo configurations or clashing block positions.
  */
 export function syncLayoutBlocksWithMemory(
-  mem: Pick<MemoryAlbum, "title" | "note" | "paragraphs" | "photos" | "layoutBlocks">,
+  mem: Pick<MemoryAlbum, "title" | "note" | "paragraphs" | "photos" | "layoutBlocks"> & {
+    albumStyle?: string;
+  },
 ): MemoryLayoutBlock[] {
   const fallback = buildDefaultLayoutBlocks(mem);
   const existing = mem.layoutBlocks;
   if (!Array.isArray(existing) || existing.length === 0) return fallback;
+
+  const isZeroTilt =
+    mem.albumStyle === "portrait" ||
+    mem.albumStyle === "borderless" ||
+    mem.albumStyle === "grid" ||
+    mem.albumStyle === "filmstrip";
 
   // If existing blocks were saved without a header on left, restore clean layout with header
   const hasHeaderBlock = existing.some((b) => b.kind === "header");
@@ -746,7 +756,13 @@ export function syncLayoutBlocksWithMemory(
     const id = raw.kind === "photo" && raw.photoId ? `photo-${raw.photoId}` : raw.kind;
     if (!valid || seen.has(id)) continue;
     seen.add(id);
-    result.push(clampBlock({ ...raw, id }));
+    result.push(
+      clampBlock({
+        ...raw,
+        id,
+        rotation: isZeroTilt ? 0 : raw.rotation,
+      }),
+    );
   }
 
   for (const def of fallback) {

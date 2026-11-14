@@ -424,10 +424,13 @@ export function FreeformPageSurface({
                   }`}
                   style={{
                     transform: `rotate(${
-                      block.rotation !== undefined
-                        ? `${block.rotation}deg`
-                        : memory.albumStyle === "borderless" || memory.albumStyle === "portrait"
-                          ? "0deg"
+                      memory.albumStyle === "borderless" ||
+                      memory.albumStyle === "portrait" ||
+                      memory.albumStyle === "grid" ||
+                      memory.albumStyle === "filmstrip"
+                        ? "0deg"
+                        : block.rotation !== undefined
+                          ? `${block.rotation}deg`
                           : memory.albumStyle === "polaroid"
                             ? PHOTO_DEFAULT_TILTS[photoIndex % PHOTO_DEFAULT_TILTS.length]
                             : "0deg"

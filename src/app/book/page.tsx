@@ -70,6 +70,44 @@ import type {
 
 const POLAROID_TILTS = ["-1.4deg", "1.1deg", "-0.8deg", "1.5deg", "-1.1deg", "0.7deg"];
 
+const ALBUM_STYLE_OPTIONS: Array<{
+  id: AlbumStyle;
+  label: string;
+  badge: string;
+  desc: string;
+}> = [
+  {
+    id: "portrait",
+    label: "Wedding Album",
+    badge: "Fine Art",
+    desc: "Border-free fine art portraits & luxury multi-photo spreads",
+  },
+  {
+    id: "borderless",
+    label: "Frameless Grid",
+    badge: "Modern",
+    desc: "Clean borderless photos with no outer frame or card padding",
+  },
+  {
+    id: "polaroid",
+    label: "Archival Polaroid",
+    badge: "Tactile",
+    desc: "Tilted frames with cream borders & serif captions",
+  },
+  {
+    id: "grid",
+    label: "Editorial Mat",
+    badge: "Museum",
+    desc: "Matted museum framing with subtle hairline borders",
+  },
+  {
+    id: "filmstrip",
+    label: "Contact Sheet",
+    badge: "Darkroom",
+    desc: "Darkroom film-strip frames with numbered margins",
+  },
+];
+
 function BookMemoriesContent() {
   const params = useSearchParams();
   const router = useRouter();
@@ -109,8 +147,15 @@ function BookMemoriesContent() {
       if ((e.target as HTMLElement).closest("[data-memory-menu]")) return;
       setOpenMenuMemoryId(null);
     }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpenMenuMemoryId(null);
+    }
     window.addEventListener("pointerdown", handleClickOutside);
-    return () => window.removeEventListener("pointerdown", handleClickOutside);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handleClickOutside);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [openMenuMemoryId]);
   const [lightboxState, setLightboxState] = useState<{
     memory: MemoryAlbum;
@@ -301,19 +346,40 @@ function BookMemoriesContent() {
     }
   }, []);
 
-  const handleToggleFrameStyle = useCallback(
-    async (memId: string, currentStyle?: AlbumStyle) => {
-      const nextStyle: AlbumStyle = currentStyle === "borderless" ? "polaroid" : "borderless";
+  const handleChangeAlbumStyle = useCallback(
+    async (memId: string, nextStyle: AlbumStyle) => {
+      setOpenMenuMemoryId(null);
+      setDraftBlocksByMemory((prev) => {
+        const next = { ...prev };
+        delete next[memId];
+        return next;
+      });
+      setArrangingMemoryId(null);
+      setSelectedBlockId(null);
+
       setMemories((prev) =>
-        prev.map((m) => (m.id === memId ? { ...m, albumStyle: nextStyle } : m)),
+        prev.map((m) =>
+          m.id === memId
+            ? { ...m, albumStyle: nextStyle, layoutBlocks: [] }
+            : m,
+        ),
       );
+
       try {
-        await updateMemory(memId, { albumStyle: nextStyle });
-      } catch {
-        // Fallback silently if offline
+        await updateMemory(memId, { albumStyle: nextStyle, layoutBlocks: [] });
+      } catch (err) {
+        console.error("Failed to update album style:", err);
       }
     },
     [],
+  );
+
+  const handleToggleFrameStyle = useCallback(
+    async (memId: string, currentStyle?: AlbumStyle) => {
+      const nextStyle: AlbumStyle = currentStyle === "borderless" ? "polaroid" : "borderless";
+      await handleChangeAlbumStyle(memId, nextStyle);
+    },
+    [handleChangeAlbumStyle],
   );
 
   const renderPhotoCollection = useCallback(
@@ -1266,99 +1332,173 @@ function BookMemoriesContent() {
                       e.stopPropagation();
                       setOpenMenuMemoryId((prev) => (prev === mem.id ? null : mem.id));
                     }}
-                    className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer hover:underline py-0.5 px-1 rounded transition-colors"
-                    title="Page Options Menu"
+                    className="inline-flex items-center gap-1 font-semibold tracking-wider uppercase text-[11px] text-[var(--ink-soft)] hover:text-[var(--ink)] cursor-pointer hover:underline py-0.5 px-1.5 rounded transition-colors"
+                    title="Memory Page Options"
                   >
                     <MoreHorizontal className="h-3.5 w-3.5" />
                     <span>Options</span>
                   </button>
 
                   {openMenuMemoryId === mem.id && (
-                    <div
-                      data-no-flip="true"
-                      className="absolute bottom-full left-0 mb-2 w-52 rounded-xl border border-[var(--hairline)] bg-[var(--paper)]/98 p-1.5 shadow-2xl backdrop-blur-md z-40 text-xs animate-in fade-in zoom-in-95 duration-150"
-                    >
-                      <button
-                        type="button"
+                    <>
+                      {/* Fixed backdrop to guarantee outside clicks close menu without conflicts */}
+                      <div
                         data-no-flip="true"
-                        data-testid={`arrange-memory-${mem.id}`}
-                        onClick={() => {
+                        className="fixed inset-0 z-40 cursor-default"
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setOpenMenuMemoryId(null);
-                          if (!isUserAuthenticated()) {
-                            window.dispatchEvent(
-                              new CustomEvent(AUTH_REQUIRED_EVENT, {
-                                detail: { message: "Sign in to arrange memory blocks." },
-                              }),
-                            );
-                            return;
-                          }
-                          setDraftBlocksByMemory((prev) => ({
-                            ...prev,
-                            [mem.id]:
-                              prev[mem.id] ||
-                              (mem.layoutBlocks?.length
-                                ? syncLayoutBlocksWithMemory(mem)
-                                : buildDefaultLayoutBlocks(mem)),
-                          }));
-                          setArrangingMemoryId(mem.id);
                         }}
-                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-medium text-[var(--ink)] hover:bg-[var(--paper-deep)] cursor-pointer transition-colors"
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuMemoryId(null);
+                        }}
+                      />
+                      <div
+                        data-no-flip="true"
+                        className="absolute bottom-full left-0 mb-2 w-64 sm:w-72 rounded-xl border border-[var(--hairline)] bg-[var(--paper-light)] p-2 shadow-2xl backdrop-blur-md z-50 text-xs animate-in fade-in zoom-in-95 duration-150"
+                        onClick={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
                       >
-                        <LayoutGrid className="h-3.5 w-3.5 text-[var(--ink-soft)]" />
-                        <span>Arrange Page</span>
-                      </button>
+                        {/* 1. Album Style Picker */}
+                        {mem.photos?.length > 0 && (
+                          <div className="py-0.5">
+                            <div className="px-2 py-1 text-[10px] font-semibold tracking-[0.15em] uppercase text-[var(--ink-soft)] flex items-center justify-between">
+                              <span>Album Style</span>
+                              <SlidersHorizontal className="h-3 w-3 text-[var(--accent)]" />
+                            </div>
+                            <div className="mt-1 space-y-0.5">
+                              {ALBUM_STYLE_OPTIONS.map((style) => {
+                                const isCurrent =
+                                  mem.albumStyle === style.id ||
+                                  (!mem.albumStyle && style.id === "portrait");
+                                return (
+                                  <button
+                                    type="button"
+                                    key={style.id}
+                                    data-no-flip="true"
+                                    onClick={() => {
+                                      setOpenMenuMemoryId(null);
+                                      void handleChangeAlbumStyle(mem.id, style.id);
+                                    }}
+                                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs cursor-pointer transition-colors ${
+                                      isCurrent
+                                        ? "bg-[var(--paper-deep)] text-[var(--ink)] font-semibold"
+                                        : "text-[var(--ink-soft)] hover:bg-[var(--paper-deep)]/60 hover:text-[var(--ink)]"
+                                    }`}
+                                  >
+                                    <div className="flex flex-col pr-2">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-serif text-[12px]">{style.label}</span>
+                                        <span className="text-[9px] uppercase tracking-wider text-[var(--accent)] font-mono">
+                                          {style.badge}
+                                        </span>
+                                      </div>
+                                      <span className="text-[10px] text-[var(--ink-soft)] leading-tight">
+                                        {style.desc}
+                                      </span>
+                                    </div>
+                                    {isCurrent && (
+                                      <Check className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="my-1.5 border-t border-[var(--hairline)]" />
+                          </div>
+                        )}
 
-                      {isUserAuthenticated() && mem.photos?.length > 0 && (
+                        {/* 2. Arrange Page */}
                         <button
                           type="button"
                           data-no-flip="true"
+                          data-testid={`arrange-memory-${mem.id}`}
                           onClick={() => {
                             setOpenMenuMemoryId(null);
-                            void handleToggleFrameStyle(mem.id, mem.albumStyle);
+                            if (!isUserAuthenticated()) {
+                              window.dispatchEvent(
+                                new CustomEvent(AUTH_REQUIRED_EVENT, {
+                                  detail: { message: "Sign in to arrange memory blocks." },
+                                }),
+                              );
+                              return;
+                            }
+                            setDraftBlocksByMemory((prev) => ({
+                              ...prev,
+                              [mem.id]:
+                                prev[mem.id] ||
+                                (mem.layoutBlocks?.length
+                                  ? syncLayoutBlocksWithMemory(mem)
+                                  : buildDefaultLayoutBlocks(mem)),
+                            }));
+                            setArrangingMemoryId(mem.id);
                           }}
                           className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-medium text-[var(--ink)] hover:bg-[var(--paper-deep)] cursor-pointer transition-colors"
                         >
-                          <SlidersHorizontal className="h-3.5 w-3.5 text-[var(--accent)]" />
-                          <span>
-                            {mem.albumStyle === "borderless" ? "Use Polaroid Frame" : "Use Frameless Grid"}
-                          </span>
+                          <LayoutGrid className="h-3.5 w-3.5 text-[var(--ink-soft)]" />
+                          <span>Arrange Page Blocks</span>
                         </button>
-                      )}
 
-                      {hasCustomLayout && (
-                        <button
-                          type="button"
-                          data-no-flip="true"
-                          onClick={() => {
-                            setOpenMenuMemoryId(null);
-                            void handleResetLayout(mem.id);
-                          }}
-                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-medium text-[var(--ink-soft)] hover:text-[var(--ink)] hover:bg-[var(--paper-deep)] cursor-pointer transition-colors"
-                        >
-                          <RotateCcw className="h-3.5 w-3.5" />
-                          <span>Reset Layout</span>
-                        </button>
-                      )}
-
-                      {isUserAuthenticated() && (
-                        <>
-                          <div className="my-1 border-t border-[var(--hairline)]" />
+                        {/* 3. Reset to Default Layout */}
+                        {hasCustomLayout && (
                           <button
                             type="button"
                             data-no-flip="true"
                             onClick={() => {
                               setOpenMenuMemoryId(null);
-                              void handleDeleteMemory(mem);
+                              void handleResetLayout(mem.id);
                             }}
-                            disabled={deletingMemoryId === mem.id}
-                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-medium text-[var(--accent)] hover:bg-[var(--paper-deep)] cursor-pointer transition-colors disabled:opacity-50"
+                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-medium text-[var(--ink-soft)] hover:text-[var(--ink)] hover:bg-[var(--paper-deep)] cursor-pointer transition-colors"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            <span>{deletingMemoryId === mem.id ? "Removing..." : "Remove Memory"}</span>
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            <span>Reset to Default Layout</span>
                           </button>
-                        </>
-                      )}
-                    </div>
+                        )}
+
+                        {/* 4. Edit Memory */}
+                        <button
+                          type="button"
+                          data-no-flip="true"
+                          onClick={() => {
+                            setOpenMenuMemoryId(null);
+                            if (!isUserAuthenticated()) {
+                              window.dispatchEvent(
+                                new CustomEvent(AUTH_REQUIRED_EVENT, {
+                                  detail: { message: "Sign in to edit this memory." },
+                                }),
+                              );
+                              return;
+                            }
+                            setEditingMemory(mem);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-medium text-[var(--ink)] hover:bg-[var(--paper-deep)] cursor-pointer transition-colors"
+                        >
+                          <Edit3 className="h-3.5 w-3.5 text-[var(--ink-soft)]" />
+                          <span>Edit Story & Photos</span>
+                        </button>
+
+                        {/* 5. Remove Memory */}
+                        {isUserAuthenticated() && (
+                          <>
+                            <div className="my-1 border-t border-[var(--hairline)]" />
+                            <button
+                              type="button"
+                              data-no-flip="true"
+                              onClick={() => {
+                                setOpenMenuMemoryId(null);
+                                void handleDeleteMemory(mem);
+                              }}
+                              disabled={deletingMemoryId === mem.id}
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left font-medium text-[var(--accent)] hover:bg-[var(--paper-deep)] cursor-pointer transition-colors disabled:opacity-50"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              <span>{deletingMemoryId === mem.id ? "Removing..." : "Remove Memory"}</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
               </>
@@ -1749,9 +1889,11 @@ function BookMemoriesContent() {
     book,
     deletingMemoryId,
     draftBlocksByMemory,
+    handleChangeAlbumStyle,
     handleBlocksChange,
     handleResetLayout,
     memories,
+    openMenuMemoryId,
     renderPhotoCollection,
     savingLayoutId,
     selectedBlockId,
@@ -2021,6 +2163,11 @@ function BookMemoriesContent() {
         open={Boolean(editingMemory)}
         onClose={() => setEditingMemory(null)}
         onSave={(updated) => {
+          setDraftBlocksByMemory((prev) => {
+            const next = { ...prev };
+            delete next[updated.id];
+            return next;
+          });
           setMemories((prev) =>
             prev.map((m) => (m.id === updated.id ? updated : m)),
           );
