@@ -1,35 +1,90 @@
-name: Keep Storage Server Awake
+name: Keep Storage Server Awake & Activity Heartbeat
 
 on:
   schedule:
-    # Run every 5 minutes to guarantee traffic before 15-minute inactivity shutdown (even with GitHub Actions queue delays)
-    - cron: "*/5 * * * *"
+    # Run every 20 minutes (at :00, :20, :40 of each hour)
+    - cron: "*/20 * * * *"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  ping:
+  heartbeat:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping configured storage server health endpoint
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wake and ping storage server
+        id: ping_server
         env:
           MYDIARY_STORAGE_URL: ${{ secrets.MYDIARY_STORAGE_URL || vars.MYDIARY_STORAGE_URL || 'https://4321-agq2i7yzuidu26jymgrfnit3ea.instabox.tech' }}
+          INSTABOX_API_KEY: ${{ secrets.INSTABOX_API_KEY }}
         run: |
+          # 1. If InstaBox API key is provided, send wake signal
+          if [ -n "$INSTABOX_API_KEY" ]; then
+            echo "InstaBox API key detected. Triggering machine wake API..."
+            curl -sS -X POST "https://api.instabox.sh/v1/machines/kaushals-mini-server/wake" \
+              -H "Authorization: Bearer $INSTABOX_API_KEY" \
+              -H "Content-Type: application/json" || true
+          fi
+
           TARGET_URL="${MYDIARY_STORAGE_URL%/}/api/health"
           echo "Pinging health endpoint: $TARGET_URL at $(date -u +%FT%TZ)"
 
-          # Allow up to 60s for cold starts with automatic retries
-          HTTP_STATUS=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 60 --retry 2 --retry-delay 3 "$TARGET_URL" || true)
-
-          echo "Response HTTP Status: $HTTP_STATUS"
-
-          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 400 ]; then
-            echo "Keep-alive ping succeeded with status $HTTP_STATUS at $(date -u +%FT%TZ)"
-          else
-            echo "::warning::Health check returned status $HTTP_STATUS"
-            ROOT_STATUS=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 30 "${MYDIARY_STORAGE_URL%/}/" || true)
-            echo "Fallback root ping returned status $ROOT_STATUS"
-            if [ "$ROOT_STATUS" -lt 200 ] || [ "$ROOT_STATUS" -ge 400 ]; then
-              echo "::error::Both /api/health ($HTTP_STATUS) and / ($ROOT_STATUS) failed. Storage server may be unreachable."
-              exit 1
+          # 2. Wake-on-use retry loop (up to 60s for cold boot / resume)
+          FINAL_STATUS="000"
+          SUCCESS="false"
+          for i in {1..12}; do
+            HTTP_STATUS=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 10 "$TARGET_URL" || true)
+            echo "Attempt $i: HTTP Status $HTTP_STATUS"
+            FINAL_STATUS="$HTTP_STATUS"
+            if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 400 ]; then
+              SUCCESS="true"
+              echo "Server is online and healthy (Status: $HTTP_STATUS)"
+              break
             fi
+            sleep 5
+          done
+
+          echo "final_status=$FINAL_STATUS" >> "$GITHUB_OUTPUT"
+          echo "success=$SUCCESS" >> "$GITHUB_OUTPUT"
+
+      - name: Update Heartbeat Log and Commit Contribution
+        run: |
+          NOW_UTC=$(date -u "+%Y-%m-%d %H:%M:%S UTC")
+          STATUS="${{ steps.ping_server.outputs.final_status }}"
+          SUCCESS="${{ steps.ping_server.outputs.success }}"
+
+          cat <<EOF > .github/HEARTBEAT.md
+# MyDiary Activity & Storage Heartbeat
+
+This file is automatically updated every 20 minutes by GitHub Actions to keep the storage server awake and register continuous GitHub contribution activity.
+
+- **Last Heartbeat**: $NOW_UTC
+- **Storage Target**: \`https://4321-agq2i7yzuidu26jymgrfnit3ea.instabox.tech\`
+- **HTTP Response Code**: \`$STATUS\`
+- **Server Health**: $([ "$SUCCESS" = "true" ] && echo "🟢 Online & Healthy" || echo "🟡 Waking / Pending ($STATUS)")
+- **Interval**: Every 20 minutes (\`*/20 * * * *\`)
+- **Author Identity**: kaushalboii <kaushal.work.0809@gmail.com>
+EOF
+
+          git config --local user.name "kaushalboii"
+          git config --local user.email "kaushal.work.0809@gmail.com"
+
+          git add .github/HEARTBEAT.md
+
+          # Rebase in case any concurrent commits occurred
+          git pull --rebase origin main || true
+
+          if ! git diff --staged --quiet; then
+            git commit -m "chore(heartbeat): ping storage & update activity [$NOW_UTC] [skip ci]"
+            git push origin main
+            echo "Heartbeat committed and pushed. GitHub contribution registered!"
+          else
+            echo "No changes to commit."
           fi
