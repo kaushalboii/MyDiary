@@ -60,23 +60,32 @@ jobs:
           echo "success=$SUCCESS" >> "$GITHUB_OUTPUT"
 
       - name: Update Heartbeat Log and Commit Contribution
+        env:
+          STATUS: ${{ steps.ping_server.outputs.final_status }}
+          SUCCESS: ${{ steps.ping_server.outputs.success }}
         run: |
           NOW_UTC=$(date -u "+%Y-%m-%d %H:%M:%S UTC")
-          STATUS="${{ steps.ping_server.outputs.final_status }}"
-          SUCCESS="${{ steps.ping_server.outputs.success }}"
 
-          cat <<EOF > .github/HEARTBEAT.md
-# MyDiary Activity & Storage Heartbeat
-
-This file is automatically updated every 20 minutes by GitHub Actions to keep the storage server awake and register continuous GitHub contribution activity.
-
-- **Last Heartbeat**: $NOW_UTC
-- **Storage Target**: \`https://4321-agq2i7yzuidu26jymgrfnit3ea.instabox.tech\`
-- **HTTP Response Code**: \`$STATUS\`
-- **Server Health**: $([ "$SUCCESS" = "true" ] && echo "🟢 Online & Healthy" || echo "🟡 Waking / Pending ($STATUS)")
-- **Interval**: Every 20 minutes (\`*/20 * * * *\`)
-- **Author Identity**: kaushalboii <kaushal.work.0809@gmail.com>
-EOF
+          node -e "
+            const fs = require('fs');
+            const now = '$NOW_UTC';
+            const status = process.env.STATUS || '000';
+            const success = process.env.SUCCESS === 'true';
+            const health = success ? '🟢 Online & Healthy' : '🟡 Waking / Pending (' + status + ')';
+            const text = [
+              '# MyDiary Activity & Storage Heartbeat',
+              '',
+              'This file is automatically updated every 20 minutes by GitHub Actions to keep the storage server awake and register continuous GitHub contribution activity.',
+              '',
+              '- **Last Heartbeat**: ' + now,
+              '- **Storage Target**: \`https://4321-agq2i7yzuidu26jymgrfnit3ea.instabox.tech\`',
+              '- **HTTP Response Code**: \`' + status + '\`',
+              '- **Server Health**: ' + health,
+              '- **Interval**: Every 20 minutes (\`*/20 * * * *\`)',
+              '- **Author Identity**: kaushalboii <kaushal.work.0809@gmail.com>'
+            ].join('\n') + '\n';
+            fs.writeFileSync('.github/HEARTBEAT.md', text, 'utf8');
+          "
 
           git config --local user.name "kaushalboii"
           git config --local user.email "kaushal.work.0809@gmail.com"
