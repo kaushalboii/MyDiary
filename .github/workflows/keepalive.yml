@@ -1,15 +1,9 @@
 name: Keep Storage Server Awake & Activity Heartbeat
 
 on:
-  workflow_dispatch:
-    inputs:
-      trigger_reason:
-        description: "Manual trigger reason"
-        required: false
-        default: "Manual heartbeat wake"
   schedule:
-    # Run every 15 minutes so with GitHub queue jitter it fires every ~20 minutes before 30m idle sleep
     - cron: "*/15 * * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
